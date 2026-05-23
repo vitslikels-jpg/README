@@ -6,6 +6,8 @@ import { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { syncCatalogForDocument } from "@/lib/catalog-sync-core.js";
 import { upsertDocumentQualityReport } from "@/lib/document-quality";
+import { refineParsedProductIdentity } from "@/lib/product-identity-refiner.mjs";
+import { isRedDragonSupplierName, parseRedDragonSheetRows } from "@/lib/price-parser-red-dragon.mjs";
 import { prisma } from "@/lib/prisma";
 
 const execFile = promisify(execFileCallback);
@@ -53,6 +55,10 @@ type ParsedProductRow = {
   stock: Prisma.Decimal | null;
   sourceRow: number;
   rawData: Record<string, string>;
+};
+
+type ParseRowsOptions = {
+  supplierName?: string | null;
 };
 
 type SupplierProfile = {
@@ -1595,6 +1601,7 @@ async function parseWorkbookRows(filePath: string) {
     type: "buffer",
     cellDates: true,
     raw: false,
+    codepage: 65001,
   });
 
   const firstSheetName = workbook.SheetNames[0];
@@ -1796,7 +1803,7 @@ function hasRealProductPayload(product: Omit<ParsedProductRow, "sourceRow" | "ra
   return Boolean(product.article || product.price || product.stock || product.brand);
 }
 
-function parseRows(rows: unknown[][]): { products: ParsedProductRow[]; skippedCount: number } {
+async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Promise<{ products: ParsedProductRow[]; skippedCount: number }> {
   const headerMatch = detectHeaderRow(rows);
 
   if (!headerMatch) {
@@ -1811,6 +1818,8 @@ function parseRows(rows: unknown[][]): { products: ParsedProductRow[]; skippedCo
     supplierProfiles.find((profile) => profile.id === headerMatch.supplierProfileId) ?? null;
   const products: ParsedProductRow[] = [];
   let skippedCount = 0;
+  let identityAiRowsUsed = 0;
+  const maxIdentityAiRows = 40;
 
   for (let rowIndex = headerMatch.headerRowIndex + headerMatch.headerRowSpan; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex] ?? [];
@@ -1909,11 +1918,24 @@ function parseRows(rows: unknown[][]): { products: ParsedProductRow[]; skippedCo
       brand: parsedProduct.brand,
       country: parsedProduct.country,
     });
-    const product = {
-      ...parsedProduct,
-      name: finalizedNameParts.name,
+    const refinedIdentity = await refineParsedProductIdentity({
+      rawName: rawNameValue || resolvedName,
+      parsedName: finalizedNameParts.name,
       brand: finalizedNameParts.brand,
       country: finalizedNameParts.country,
+      rawBrand: directBrand,
+      rawCountry: directCountry,
+      supplierName: options.supplierName ?? null,
+      disableAi: identityAiRowsUsed >= maxIdentityAiRows,
+    });
+    if (refinedIdentity.usedAi) {
+      identityAiRowsUsed += 1;
+    }
+    const product = {
+      ...parsedProduct,
+      name: refinedIdentity.name,
+      brand: refinedIdentity.brand,
+      country: refinedIdentity.country,
     };
     const finalizedUnitsPerPack =
       product.unitsPerPack ??
@@ -1935,6 +1957,9 @@ function parseRows(rows: unknown[][]): { products: ParsedProductRow[]; skippedCo
         orderStep: product.orderStep?.toString() ?? "",
         allowFractionalOrder: product.allowFractionalOrder ? "true" : "false",
         shipByBoxesOnly: product.shipByBoxesOnly ? "true" : "",
+        identityRefinerSource: refinedIdentity.source,
+        identityRefinerConfidence: refinedIdentity.confidence?.toString() ?? "",
+        identityRefinerExplanation: refinedIdentity.explanation ?? "",
       },
       sourceRow: rowIndex + 1,
     });
@@ -1946,6 +1971,13 @@ function parseRows(rows: unknown[][]): { products: ParsedProductRow[]; skippedCo
 export async function parsePriceDocument(documentId: string): Promise<ParseDocumentResult> {
   const document = await prisma.document.findUnique({
     where: { id: documentId },
+    include: {
+      supplier: {
+        select: {
+          name: true,
+        },
+      },
+    },
   });
 
   if (!document) {
@@ -1976,7 +2008,11 @@ export async function parsePriceDocument(documentId: string): Promise<ParseDocum
     const { products, skippedCount } =
       document.sourceFormat === "pdf"
         ? parsePdfRows(await extractPdfLayoutText(absolutePath))
-        : parseRows(await parseWorkbookRows(absolutePath));
+        : isRedDragonSupplierName(document.supplier?.name)
+          ? await parseRedDragonSheetRows(await parseWorkbookRows(absolutePath))
+          : await parseRows(await parseWorkbookRows(absolutePath), {
+              supplierName: document.supplier?.name ?? null,
+            });
 
     if (products.length === 0) {
       await prisma.document.update({

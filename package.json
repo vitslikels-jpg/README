@@ -10,7 +10,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "catalog:seed-units": "node scripts/seed-units.mjs",
-    "catalog:backfill": "node scripts/backfill-catalog-model.mjs"
+    "catalog:backfill": "node scripts/backfill-catalog-model.mjs",
+    "verify:red-dragon": "node scripts/verify-red-dragon-parser.mjs",
+    "verify:identity": "node scripts/verify-product-identity.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.17.1",
