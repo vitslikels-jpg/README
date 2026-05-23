@@ -1,0 +1,457 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DocumentType {
+  price_list
+}
+
+enum DocumentSourceFormat {
+  excel
+  pdf
+  word
+  csv
+  image
+  archive
+  unknown
+}
+
+enum DocumentStatus {
+  uploaded
+  processing
+  parsed
+  parsed_with_errors
+  failed
+}
+
+enum DocumentQualityStatus {
+  good
+  warning
+  bad
+}
+
+enum DocumentUsabilityStatus {
+  usable
+  needs_review
+  blocked
+}
+
+enum DocumentManualReviewStatus {
+  not_reviewed
+  in_review
+  approved
+  rejected
+}
+
+enum OrderStatus {
+  draft
+  submitted
+  cancelled
+}
+
+enum OrderOptimizationStatus {
+  draft
+  processed
+}
+
+enum OrderOptimizationSelectionMode {
+  auto
+  manual
+}
+
+enum OrderOptimizationMatchStatus {
+  pending
+  review
+  not_found
+}
+
+model Enterprise {
+  id                 String              @id @default(cuid())
+  name               String
+  address            String
+  phone              String
+  suppliers          Supplier[]
+  documents          Document[]
+  products           Product[]
+  productMasters     ProductMaster[]
+  supplierOffers     SupplierOffer[]
+  priceSnapshots     PriceSnapshot[]
+  productMappings    ProductMapping[]
+  orders             Order[]
+  orderOptimizations OrderOptimization[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+}
+
+model Supplier {
+  id                  String                    @id @default(cuid())
+  enterpriseId        String
+  name                String
+  phone               String?
+  managerName         String?
+  email               String?
+  comment             String?
+  minOrderAmount      Decimal?                  @db.Decimal(14, 2)
+  archivedAt          DateTime?
+  enterprise          Enterprise                @relation(fields: [enterpriseId], references: [id])
+  documents           Document[]
+  products            Product[]
+  supplierOffers      SupplierOffer[]
+  priceSnapshots      PriceSnapshot[]
+  orders              Order[]
+  optimizationResults OrderOptimizationResult[]
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+
+  @@index([enterpriseId])
+  @@index([enterpriseId, archivedAt])
+}
+
+model Document {
+  id               String               @id @default(cuid())
+  enterpriseId     String
+  supplierId       String
+  type             DocumentType
+  sourceFormat     DocumentSourceFormat
+  originalFileName String
+  storedFilePath   String
+  mimeType         String
+  fileSize         Int
+  status           DocumentStatus
+  uploadedAt       DateTime             @default(now())
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  isCurrent        Boolean              @default(false)
+  enterprise       Enterprise           @relation(fields: [enterpriseId], references: [id])
+  supplier         Supplier             @relation(fields: [supplierId], references: [id])
+  products         Product[]
+  priceSnapshots   PriceSnapshot[]
+  qualityReport    DocumentQualityReport?
+
+  @@index([enterpriseId])
+  @@index([supplierId])
+  @@index([enterpriseId, supplierId])
+}
+
+model DocumentQualityReport {
+  id                        String                @id @default(cuid())
+  documentId                String                @unique
+  qualityStatus             DocumentQualityStatus
+  usabilityStatus           DocumentUsabilityStatus
+  usabilityReason           String?
+  manualReviewStatus        DocumentManualReviewStatus @default(not_reviewed)
+  manualReviewComment       String?
+  manualReviewedAt          DateTime?
+  manualReviewedBy          String?
+  totalRows                 Int
+  parsedProductsCount       Int
+  rowsWithoutPrice          Int
+  rowsWithoutUnit           Int
+  rowsWithoutName           Int
+  rowsWithoutArticle        Int
+  newSupplierOffersCount    Int
+  unmappedOffersCount       Int
+  autoMappedOffersCount     Int
+  lowConfidenceMappingsCount Int
+  manualMappedOffersCount   Int
+  currentPriceSnapshotsCount Int
+  warningMessage            String?
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+  document                  Document              @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([qualityStatus])
+}
+
+model Product {
+  id                   String                    @id @default(cuid())
+  enterpriseId         String
+  supplierId           String
+  documentId           String
+  name                 String
+  article              String?
+  brand                String?
+  country              String?
+  unit                 String?
+  unitsPerPack         Decimal?                  @db.Decimal(14, 3)
+  minOrderQuantity     Decimal?                  @db.Decimal(14, 3)
+  orderStep            Decimal?                  @db.Decimal(14, 3)
+  allowFractionalOrder Boolean @default(false)
+  shipByBoxesOnly      Boolean                   @default(false)
+  price                Decimal?                  @db.Decimal(14, 2)
+  stock                Decimal?                  @db.Decimal(14, 3)
+  sourceRow            Int
+  rawData              Json?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  enterprise           Enterprise                @relation(fields: [enterpriseId], references: [id])
+  supplier             Supplier                  @relation(fields: [supplierId], references: [id])
+  document             Document                  @relation(fields: [documentId], references: [id])
+  orderItems           OrderItem[]
+  priceSnapshots       PriceSnapshot[]
+  optimizationResults OrderOptimizationResult[]
+
+  @@index([enterpriseId])
+  @@index([supplierId])
+  @@index([documentId])
+  @@index([enterpriseId, supplierId])
+}
+
+model Unit {
+  id             String           @id @default(cuid())
+  code           String           @unique
+  name           String
+  symbol         String
+  kind           String
+  baseUnitCode   String
+  multiplier     Decimal          @db.Decimal(14, 6)
+  aliases        Json?
+  productMasters ProductMaster[]
+  supplierOffers SupplierOffer[]
+  priceSnapshots PriceSnapshot[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([kind])
+}
+
+model ProductMaster {
+  id              String           @id @default(cuid())
+  enterpriseId    String
+  unitId          String?
+  name            String
+  normalizedName  String
+  brand           String?
+  normalizedBrand String?
+  category        String?
+  legacyUnit      String?
+  dedupeKey       String
+  enterprise      Enterprise       @relation(fields: [enterpriseId], references: [id])
+  unit            Unit?            @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  mappings        ProductMapping[]
+  orderItems      OrderItem[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([enterpriseId, dedupeKey])
+  @@index([enterpriseId])
+  @@index([enterpriseId, normalizedName])
+}
+
+model SupplierOffer {
+  id                   String           @id @default(cuid())
+  enterpriseId         String
+  supplierId           String
+  unitId               String?
+  name                 String
+  normalizedName       String
+  article              String?
+  normalizedArticle    String?
+  brand                String?
+  normalizedBrand      String?
+  country              String?
+  legacyUnit           String?
+  dedupeKey            String
+  unitsPerPack         Decimal?         @db.Decimal(14, 3)
+  minOrderQuantity     Decimal?         @db.Decimal(14, 3)
+  orderStep            Decimal?         @db.Decimal(14, 3)
+  allowFractionalOrder Boolean          @default(false)
+  shipByBoxesOnly      Boolean          @default(false)
+  enterprise           Enterprise       @relation(fields: [enterpriseId], references: [id])
+  supplier             Supplier         @relation(fields: [supplierId], references: [id])
+  unit                 Unit?            @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  priceSnapshots       PriceSnapshot[]
+  mappings             ProductMapping[]
+  orderItems           OrderItem[]
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@unique([supplierId, dedupeKey])
+  @@index([enterpriseId])
+  @@index([supplierId])
+  @@index([supplierId, normalizedName])
+}
+
+model PriceSnapshot {
+  id             String         @id @default(cuid())
+  enterpriseId   String
+  supplierId     String
+  supplierOfferId String
+  documentId     String?
+  legacyProductId String?       @unique
+  unitId         String?
+  legacyUnit     String?
+  price          Decimal?       @db.Decimal(14, 2)
+  stock          Decimal?       @db.Decimal(14, 3)
+  sourceRow      Int?
+  capturedAt     DateTime
+  isCurrent      Boolean        @default(false)
+  rawData        Json?
+  enterprise     Enterprise     @relation(fields: [enterpriseId], references: [id])
+  supplier       Supplier       @relation(fields: [supplierId], references: [id])
+  supplierOffer  SupplierOffer  @relation(fields: [supplierOfferId], references: [id])
+  document       Document?      @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  legacyProduct  Product?       @relation(fields: [legacyProductId], references: [id], onDelete: SetNull)
+  unit           Unit?          @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  orderItems     OrderItem[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([enterpriseId])
+  @@index([supplierId])
+  @@index([supplierOfferId, isCurrent])
+  @@index([documentId])
+}
+
+model ProductMapping {
+  id                  String         @id @default(cuid())
+  enterpriseId        String
+  supplierOfferId     String
+  productMasterId     String?
+  iikoProductExternalId String?
+  confidence          Decimal?       @db.Decimal(5, 4)
+  matchKey            String?
+  matchSource         String?
+  status              String         @default("active")
+  enterprise          Enterprise     @relation(fields: [enterpriseId], references: [id])
+  supplierOffer       SupplierOffer  @relation(fields: [supplierOfferId], references: [id])
+  productMaster       ProductMaster? @relation(fields: [productMasterId], references: [id], onDelete: SetNull)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@unique([supplierOfferId, productMasterId])
+  @@index([enterpriseId])
+  @@index([supplierOfferId])
+  @@index([productMasterId])
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  enterpriseId String
+  supplierId   String
+  status       OrderStatus @default(draft)
+  comment      String?
+  submittedAt  DateTime?
+  cancelledAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  enterprise   Enterprise  @relation(fields: [enterpriseId], references: [id])
+  supplier     Supplier    @relation(fields: [supplierId], references: [id])
+  items        OrderItem[]
+
+  @@index([enterpriseId])
+  @@index([supplierId])
+  @@index([enterpriseId, supplierId, status])
+}
+
+model OrderItem {
+  id              String         @id @default(cuid())
+  orderId          String
+  productId        String?
+  productMasterId  String?
+  supplierOfferId  String?
+  priceSnapshotId  String?
+  quantity         Decimal        @db.Decimal(14, 3)
+  unit             String?
+  price            Decimal?       @db.Decimal(14, 2)
+  lineTotal        Decimal        @db.Decimal(14, 2)
+  sortOrder        Int
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  order            Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product          Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productMaster    ProductMaster? @relation(fields: [productMasterId], references: [id], onDelete: SetNull)
+  supplierOffer    SupplierOffer? @relation(fields: [supplierOfferId], references: [id], onDelete: SetNull)
+  priceSnapshot    PriceSnapshot? @relation(fields: [priceSnapshotId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([productMasterId])
+  @@index([supplierOfferId])
+  @@index([priceSnapshotId])
+  @@index([orderId, sortOrder])
+}
+
+model OrderOptimization {
+  id               String                  @id @default(cuid())
+  enterpriseId     String
+  title            String?
+  sourceText       String                  @db.Text
+  baselineTotal    Decimal?                @db.Decimal(14, 2)
+  optimizedTotal   Decimal?                @db.Decimal(14, 2)
+  savingsAmount    Decimal?                @db.Decimal(14, 2)
+  savingsPercent   Decimal?                @db.Decimal(7, 2)
+  status           OrderOptimizationStatus @default(draft)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  enterprise        Enterprise              @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  items            OrderOptimizationItem[]
+  results          OrderOptimizationResult[]
+
+  @@index([enterpriseId])
+  @@index([enterpriseId, createdAt])
+  @@index([enterpriseId, status])
+}
+
+model OrderOptimizationItem {
+  id                    String                    @id @default(cuid())
+  optimizationId        String
+  sourceLine            String                    @db.Text
+  requestedSupplierName String?
+  lockSupplier          Boolean                   @default(false)
+  parsedName            String?
+  parsedQuantity        Decimal?                  @db.Decimal(14, 3)
+  parsedUnit            String?
+  requestedAmount       Decimal?                  @db.Decimal(14, 3)
+  selectedCandidateId   String?
+  selectionMode         OrderOptimizationSelectionMode?
+  matchStatus           OrderOptimizationMatchStatus @default(pending)
+  notes                 String?
+  sortOrder             Int
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  optimization          OrderOptimization         @relation(fields: [optimizationId], references: [id], onDelete: Cascade)
+  results               OrderOptimizationResult[] @relation("OrderOptimizationItemResults")
+  selectedCandidate     OrderOptimizationResult?  @relation("OrderOptimizationSelectedCandidate", fields: [selectedCandidateId], references: [id], onDelete: SetNull)
+
+  @@index([optimizationId])
+  @@index([optimizationId, sortOrder])
+  @@index([selectedCandidateId])
+}
+
+model OrderOptimizationResult {
+  id                 String                 @id @default(cuid())
+  optimizationId     String
+  itemId             String
+  selectedSupplierId String?
+  selectedProductId  String?
+  baselineUnitPrice  Decimal?               @db.Decimal(14, 2)
+  optimizedUnitPrice Decimal?               @db.Decimal(14, 2)
+  baselineLineTotal  Decimal?               @db.Decimal(14, 2)
+  optimizedLineTotal Decimal?               @db.Decimal(14, 2)
+  coverageMode       String?
+  requiredAmount     Decimal?               @db.Decimal(14, 3)
+  packSize           Decimal?               @db.Decimal(14, 3)
+  suggestedPacksCount Int?
+  totalCoveredAmount Decimal?               @db.Decimal(14, 3)
+  overage            Decimal?               @db.Decimal(14, 3)
+  shortage           Decimal?               @db.Decimal(14, 3)
+  isManualOverride   Boolean                @default(false)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  optimization       OrderOptimization      @relation(fields: [optimizationId], references: [id], onDelete: Cascade)
+  item               OrderOptimizationItem  @relation("OrderOptimizationItemResults", fields: [itemId], references: [id], onDelete: Cascade)
+  selectedForItems   OrderOptimizationItem[] @relation("OrderOptimizationSelectedCandidate")
+  selectedSupplier   Supplier?              @relation(fields: [selectedSupplierId], references: [id], onDelete: SetNull)
+  selectedProduct    Product?               @relation(fields: [selectedProductId], references: [id], onDelete: SetNull)
+
+  @@index([optimizationId])
+  @@index([itemId])
+  @@index([selectedSupplierId])
+  @@index([selectedProductId])
+}
