@@ -750,9 +750,51 @@ function buildCandidateRows(
 }
 
 function compareCandidateRows(
-  left: Pick<CandidateCoverage, "mode" | "shortage" | "overage"> & { optimizedLineTotal: Prisma.Decimal | null },
-  right: Pick<CandidateCoverage, "mode" | "shortage" | "overage"> & { optimizedLineTotal: Prisma.Decimal | null },
+  left: {
+    mode: CoverageMode | null;
+    shortage: Prisma.Decimal | null;
+    overage: Prisma.Decimal | null;
+    optimizedLineTotal: Prisma.Decimal | null;
+  },
+  right: {
+    mode: CoverageMode | null;
+    shortage: Prisma.Decimal | null;
+    overage: Prisma.Decimal | null;
+    optimizedLineTotal: Prisma.Decimal | null;
+  },
 ) {
+  const leftHasCoverage = Boolean(left.mode && left.shortage && left.overage);
+  const rightHasCoverage = Boolean(right.mode && right.shortage && right.overage);
+
+  if (leftHasCoverage && !rightHasCoverage) {
+    return -1;
+  }
+
+  if (!leftHasCoverage && rightHasCoverage) {
+    return 1;
+  }
+
+  if (!leftHasCoverage && !rightHasCoverage) {
+    if (left.optimizedLineTotal && right.optimizedLineTotal && !left.optimizedLineTotal.eq(right.optimizedLineTotal)) {
+      return left.optimizedLineTotal.lt(right.optimizedLineTotal) ? -1 : 1;
+    }
+
+    if (left.optimizedLineTotal && !right.optimizedLineTotal) {
+      return -1;
+    }
+
+    if (!left.optimizedLineTotal && right.optimizedLineTotal) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  const leftOverage = left.overage as Prisma.Decimal;
+  const rightOverage = right.overage as Prisma.Decimal;
+  const leftShortage = left.shortage as Prisma.Decimal;
+  const rightShortage = right.shortage as Prisma.Decimal;
+
   if (left.mode === "no_shortage" && right.mode !== "no_shortage") {
     return -1;
   }
@@ -766,23 +808,23 @@ function compareCandidateRows(
       return left.optimizedLineTotal.lt(right.optimizedLineTotal) ? -1 : 1;
     }
 
-    if (!left.overage.eq(right.overage)) {
-      return left.overage.lt(right.overage) ? -1 : 1;
+    if (!leftOverage.eq(rightOverage)) {
+      return leftOverage.lt(rightOverage) ? -1 : 1;
     }
 
     return 0;
   }
 
-  if (!left.shortage.eq(right.shortage)) {
-    return left.shortage.lt(right.shortage) ? -1 : 1;
+  if (!leftShortage.eq(rightShortage)) {
+    return leftShortage.lt(rightShortage) ? -1 : 1;
   }
 
   if (left.optimizedLineTotal && right.optimizedLineTotal && !left.optimizedLineTotal.eq(right.optimizedLineTotal)) {
     return left.optimizedLineTotal.lt(right.optimizedLineTotal) ? -1 : 1;
   }
 
-  if (!left.overage.eq(right.overage)) {
-    return left.overage.lt(right.overage) ? -1 : 1;
+  if (!leftOverage.eq(rightOverage)) {
+    return leftOverage.lt(rightOverage) ? -1 : 1;
   }
 
   return 0;
@@ -823,15 +865,15 @@ function chooseAutoSelectedIndex(rows: ItemCandidatePlan["rows"]) {
     .sort((left, right) => {
       const byCandidate = compareCandidateRows(
         {
-          mode: left.row.data.coverageMode as CoverageMode,
-          shortage: left.row.data.shortage as Prisma.Decimal,
-          overage: left.row.data.overage as Prisma.Decimal,
+          mode: (left.row.data.coverageMode as CoverageMode | null) ?? null,
+          shortage: (left.row.data.shortage as Prisma.Decimal | null) ?? null,
+          overage: (left.row.data.overage as Prisma.Decimal | null) ?? null,
           optimizedLineTotal: (left.row.data.optimizedLineTotal as Prisma.Decimal | null) ?? null,
         },
         {
-          mode: right.row.data.coverageMode as CoverageMode,
-          shortage: right.row.data.shortage as Prisma.Decimal,
-          overage: right.row.data.overage as Prisma.Decimal,
+          mode: (right.row.data.coverageMode as CoverageMode | null) ?? null,
+          shortage: (right.row.data.shortage as Prisma.Decimal | null) ?? null,
+          overage: (right.row.data.overage as Prisma.Decimal | null) ?? null,
           optimizedLineTotal: (right.row.data.optimizedLineTotal as Prisma.Decimal | null) ?? null,
         },
       );
