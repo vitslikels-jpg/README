@@ -51,10 +51,10 @@ export function Sidebar() {
     <aside className="sidebar">
       <div className="sidebarBrand">
         <span className="sidebarBrandMark" aria-hidden="true">
-          <Home size={15} strokeWidth={2.1} />
+          <img src="/smart-order-mark.png" alt="" />
         </span>
         <div className="sidebarBrandText">
-          <h1>Цитадель Прайсы</h1>
+          <h1>Умный заказ</h1>
         </div>
       </div>
 

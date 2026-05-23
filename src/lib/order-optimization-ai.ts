@@ -55,7 +55,7 @@ function getRemoteAiProvider(): RemoteAiProvider | null {
     ),
     headers: {
       "HTTP-Referer": process.env.OPENROUTER_SITE_URL ?? "http://localhost",
-      "X-Title": "Citadel Prices Smart Order",
+      "X-Title": "Umnyy Zakaz",
     },
   };
 }

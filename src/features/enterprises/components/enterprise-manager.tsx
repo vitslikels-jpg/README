@@ -55,7 +55,7 @@ export function EnterpriseManager() {
               onChange={(event) =>
                 setFormState((current) => ({ ...current, name: event.target.value }))
               }
-              placeholder="ООО Цитадель"
+              placeholder="ООО Север"
             />
           </label>
 

@@ -7,7 +7,7 @@ export function Topbar() {
       <div className="topbarInner">
         <div>
           <p className="panelEyebrow">Рабочая панель</p>
-          <h2 className="topbarTitle">Прайсы 1.1</h2>
+          <h2 className="topbarTitle">Умный заказ</h2>
         </div>
 
         <div className="topbarMeta">
