@@ -12,19 +12,85 @@ type AuthConfig = {
 };
 
 let cachedAuthConfig: AuthConfig | null = null;
+let cachedLoginConfig: Pick<AuthConfig, "login" | "passwordHash"> | null = null;
+
+function readRuntimeEnv(name: string) {
+  const value = process.env[name];
+
+  return typeof value === "string" ? value.trim() : "";
+}
 
 async function getAuthConfig() {
   if (cachedAuthConfig) {
     return cachedAuthConfig;
   }
 
+  const login = readRuntimeEnv("APP_LOGIN");
+  const passwordHash = readRuntimeEnv("APP_PASSWORD_HASH");
+  const sessionSecret = readRuntimeEnv("APP_SESSION_SECRET") || passwordHash;
+
   cachedAuthConfig = {
-    login: process.env.APP_LOGIN?.trim() || "",
-    passwordHash: process.env.APP_PASSWORD_HASH?.trim() || "",
-    sessionSecret: process.env.APP_SESSION_SECRET?.trim() || process.env.APP_PASSWORD_HASH?.trim() || "",
+    login,
+    passwordHash,
+    sessionSecret,
   };
 
   return cachedAuthConfig;
+}
+
+function normalizeEnvValue(value: string) {
+  const trimmed = value.trim();
+
+  if (
+    (trimmed.startsWith("\"") && trimmed.endsWith("\"")) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed.replace(/\\\$/g, "$");
+}
+
+async function getLoginConfig() {
+  if (cachedLoginConfig) {
+    return cachedLoginConfig;
+  }
+
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const envFile = await readFile(`${process.cwd()}/.env`, "utf8");
+    const values = new Map<string, string>();
+
+    for (const rawLine of envFile.split(/\r?\n/)) {
+      const line = rawLine.trim();
+
+      if (!line || line.startsWith("#")) {
+        continue;
+      }
+
+      const separatorIndex = line.indexOf("=");
+
+      if (separatorIndex <= 0) {
+        continue;
+      }
+
+      const key = line.slice(0, separatorIndex).trim();
+      const value = normalizeEnvValue(line.slice(separatorIndex + 1));
+      values.set(key, value);
+    }
+
+    cachedLoginConfig = {
+      login: values.get("APP_LOGIN") || readRuntimeEnv("APP_LOGIN"),
+      passwordHash: values.get("APP_PASSWORD_HASH") || readRuntimeEnv("APP_PASSWORD_HASH"),
+    };
+  } catch {
+    cachedLoginConfig = {
+      login: readRuntimeEnv("APP_LOGIN"),
+      passwordHash: readRuntimeEnv("APP_PASSWORD_HASH"),
+    };
+  }
+
+  return cachedLoginConfig;
 }
 
 async function createSigningKey(secret: string) {
@@ -69,19 +135,19 @@ async function signSessionValue(value: string, secret: string) {
 }
 
 export async function getPasswordHash() {
-  const config = await getAuthConfig();
+  const config = await getLoginConfig();
 
   return config.passwordHash;
 }
 
 export async function getAuthLogin() {
-  const config = await getAuthConfig();
+  const config = await getLoginConfig();
 
   return config.login;
 }
 
 export async function hasAuthConfig() {
-  const config = await getAuthConfig();
+  const config = await getLoginConfig();
 
   return Boolean(config.login && config.passwordHash);
 }
