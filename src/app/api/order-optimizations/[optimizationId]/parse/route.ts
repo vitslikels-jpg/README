@@ -1,9 +1,14 @@
 import { jsonUtf8 } from "@/lib/http";
 import {
+  calculateRequestedAmount,
+  getOrderOptimizationWithDetails,
   normalizeOptionalString,
+  normalizeOrderOptimizationUnit,
+  parseNullablePositiveDecimal,
   rebuildOrderOptimizationItems,
   serializeOrderOptimization,
 } from "@/lib/order-optimizations";
+import { suggestOrderOptimizationItem } from "@/lib/order-optimization-ai";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -12,6 +17,111 @@ type RouteContext = {
     optimizationId: string;
   }>;
 };
+
+async function applyAiParsingFixes(optimizationId: string, enterpriseId: string) {
+  const optimization = await prisma.orderOptimization.findFirst({
+    where: {
+      id: optimizationId,
+      enterpriseId,
+    },
+    include: {
+      items: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      },
+    },
+  });
+
+  if (!optimization?.items.length) {
+    return;
+  }
+
+  const updates = (
+    await Promise.all(
+      optimization.items.map(async (item) => {
+        const needsAiFix =
+          !item.parsedName?.trim() ||
+          item.parsedName.trim() === item.sourceLine.trim() ||
+          !item.parsedQuantity ||
+          !item.parsedUnit;
+
+        if (!needsAiFix) {
+          return null;
+        }
+
+        const suggestion = await suggestOrderOptimizationItem(item);
+
+        if (suggestion.source === "local") {
+          return null;
+        }
+
+        const nextName = normalizeOptionalString(suggestion.suggestedName) ?? item.parsedName ?? item.sourceLine;
+        const nextSupplierName = item.requestedSupplierName ?? normalizeOptionalString(suggestion.suggestedSupplierName);
+        const nextUnit = item.parsedUnit ?? normalizeOrderOptimizationUnit(suggestion.suggestedUnit);
+
+        let nextQuantity = item.parsedQuantity;
+
+        try {
+          if (!item.parsedQuantity && suggestion.suggestedQuantity) {
+            nextQuantity = parseNullablePositiveDecimal(suggestion.suggestedQuantity, "suggestedQuantity");
+          }
+        } catch {
+          nextQuantity = item.parsedQuantity;
+        }
+
+        const hasChanges =
+          nextName !== item.parsedName ||
+          nextSupplierName !== item.requestedSupplierName ||
+          String(nextQuantity?.toString() ?? "") !== String(item.parsedQuantity?.toString() ?? "") ||
+          nextUnit !== item.parsedUnit;
+
+        if (!hasChanges) {
+          return null;
+        }
+
+        return {
+          id: item.id,
+          requestedSupplierName: nextSupplierName,
+          parsedName: nextName,
+          parsedQuantity: nextQuantity?.toString() ?? null,
+          parsedUnit: nextUnit,
+          requestedAmount: calculateRequestedAmount(nextQuantity, nextUnit)?.toString() ?? null,
+        };
+      }),
+    )
+  ).filter(
+    (
+      update,
+    ): update is {
+      id: string;
+      requestedSupplierName: string | null;
+      parsedName: string;
+      parsedQuantity: string | null;
+      parsedUnit: string | null;
+      requestedAmount: string | null;
+    } => Boolean(update),
+  );
+
+  if (updates.length === 0) {
+    return;
+  }
+
+  await prisma.$transaction(
+    updates.map((update) =>
+      prisma.orderOptimizationItem.update({
+        where: {
+          id: update.id,
+        },
+        data: {
+          requestedSupplierName: update.requestedSupplierName,
+          parsedName: update.parsedName,
+          parsedQuantity: update.parsedQuantity,
+          parsedUnit: update.parsedUnit,
+          requestedAmount: update.requestedAmount,
+        },
+      }),
+    ),
+  );
+}
 
 export async function POST(request: Request, context: RouteContext) {
   const { optimizationId } = await context.params;
@@ -67,6 +177,10 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonUtf8({ message: "Умный заказ не найден." }, { status: 404 });
   }
 
-  return jsonUtf8(serializeOrderOptimization(optimization));
+  await applyAiParsingFixes(optimizationId, enterpriseId);
+
+  const updatedOptimization = await getOrderOptimizationWithDetails(optimizationId, enterpriseId);
+
+  return jsonUtf8(serializeOrderOptimization(updatedOptimization ?? optimization));
 }
 

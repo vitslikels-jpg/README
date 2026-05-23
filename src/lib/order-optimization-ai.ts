@@ -134,7 +134,7 @@ export async function suggestOrderOptimizationItem(
           {
             role: "system",
             content:
-              "Ты помощник разбора строки заказа. Верни только JSON с полями suggestedSupplierName, suggestedName, suggestedQuantity, suggestedUnit, explanation. Не подбирай товары из базы. Единицы только: шт, кг, г, л, мл, уп, пач, кор, бут. Если не уверен, ставь null. explanation коротко по-русски.",
+              "Ты помощник разбора строки заказа. Верни только JSON с полями suggestedSupplierName, suggestedName, suggestedQuantity, suggestedUnit, explanation. Исправляй явные опечатки и кривой ввод в названии товара и единице измерения. Примеры: 'макороны' -> 'макароны', 'сметна' -> 'сметана', 'кк' -> 'кг'. Не подбирай товары из базы и не придумывай бренды. Единицы только: шт, кг, г, л, мл, уп, пач, кор, бут. Если не уверен, ставь null. explanation коротко по-русски.",
           },
           {
             role: "user",

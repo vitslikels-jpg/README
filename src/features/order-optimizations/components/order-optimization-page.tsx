@@ -513,7 +513,10 @@ export function OrderOptimizationPage() {
       <div className="pageStack smartOrderPage">
         <section className="smartOrderHero">
           <h1 className="pageTitle">Умный заказ</h1>
-          <p className="pageDescription">Вставьте список товаров и получите готовый заказ по поставщикам.</p>
+          <p className="pageDescription">
+            Вставьте список товаров и получите готовый заказ по поставщикам. AI попытается сам исправить опечатки,
+            кривые названия и неполные строки заказа.
+          </p>
         </section>
 
         <section className="card smartOrderComposerCard smartOrderComposerCardPrimary">
