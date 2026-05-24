@@ -465,6 +465,76 @@ function getProductFallbackScoreAdjustment(searchText: string | null | undefined
     }
   }
 
+  if (normalizedQuery === "рис") {
+    if (normalizedName.includes("рис жасмин")) {
+      score += 130;
+    }
+
+    if (normalizedName.includes("рис басмати")) {
+      score += 130;
+    }
+
+    if (normalizedName.includes("рис круглозер")) {
+      score += 130;
+    }
+
+    if (normalizedName.includes("рис длиннозер")) {
+      score += 130;
+    }
+
+    if (normalizedName.includes("рис пропаренн")) {
+      score += 130;
+    }
+
+    if (normalizedName.includes("рис для суши")) {
+      score += 120;
+    }
+
+    if (normalizedName.includes("900 гр") || normalizedName.includes("900г")) {
+      score += 70;
+    }
+
+    if (normalizedName.includes("500 г") || normalizedName.includes("500гр")) {
+      score += 50;
+    }
+
+    if (/\b\d+(?:[.,]\d+)?\s*кг\b/u.test(normalizedName)) {
+      score += 70;
+    }
+
+    if (normalizedName.includes("готов")) {
+      score -= 180;
+    }
+
+    if (normalizedName.includes("в вакууме")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("быстрого приготовления")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("со вкусом")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("лапша")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("паста")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("из риса")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("рисовая")) {
+      score -= 200;
+    }
+  }
+
   return score;
 }
 
