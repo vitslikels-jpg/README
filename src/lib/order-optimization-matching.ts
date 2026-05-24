@@ -70,6 +70,11 @@ type ScoredProductCandidate = {
   supplierMatched: boolean;
   hasUnitSupport: boolean;
   exactPhraseMatch: boolean;
+  catalogSelection?: {
+    supplierOfferId: string;
+    productMasterId: string | null;
+    priceSnapshotId: string | null;
+  } | null;
 };
 
 type ScoredCatalogCandidate = {
@@ -1439,6 +1444,11 @@ export async function findPreferredSmartOrderProductCandidates(
             supplierMatched: true,
             hasUnitSupport: true,
             exactPhraseMatch: candidate.exactPhraseMatch,
+            catalogSelection: {
+              supplierOfferId: candidate.candidate.supplierOfferId,
+              productMasterId: candidate.candidate.productMaster?.id ?? candidate.candidate.mapping?.productMasterId ?? null,
+              priceSnapshotId: candidate.candidate.currentPriceSnapshot?.id ?? null,
+            },
           };
 
           return mappedCandidate;
@@ -1510,11 +1520,38 @@ function buildCandidateRows(
               id: candidate.product.supplierId,
             },
           },
+          ...(candidate.catalogSelection?.supplierOfferId
+            ? {
+                selectedSupplierOffer: {
+                  connect: {
+                    id: candidate.catalogSelection.supplierOfferId,
+                  },
+                },
+              }
+            : {}),
+          ...(candidate.catalogSelection?.productMasterId
+            ? {
+                selectedProductMaster: {
+                  connect: {
+                    id: candidate.catalogSelection.productMasterId,
+                  },
+                },
+              }
+            : {}),
           selectedProduct: {
             connect: {
               id: candidate.product.id,
             },
           },
+          ...(candidate.catalogSelection?.priceSnapshotId
+            ? {
+                selectedPriceSnapshot: {
+                  connect: {
+                    id: candidate.catalogSelection.priceSnapshotId,
+                  },
+                },
+              }
+            : {}),
           optimizedUnitPrice: candidate.product.price,
           optimizedLineTotal: null,
           coverageMode: null,
@@ -1558,11 +1595,38 @@ function buildCandidateRows(
               id: candidate.product.supplierId,
             },
           },
+          ...(candidate.catalogSelection?.supplierOfferId
+            ? {
+                selectedSupplierOffer: {
+                  connect: {
+                    id: candidate.catalogSelection.supplierOfferId,
+                  },
+                },
+              }
+            : {}),
+          ...(candidate.catalogSelection?.productMasterId
+            ? {
+                selectedProductMaster: {
+                  connect: {
+                    id: candidate.catalogSelection.productMasterId,
+                  },
+                },
+              }
+            : {}),
           selectedProduct: {
             connect: {
               id: candidate.product.id,
             },
           },
+          ...(candidate.catalogSelection?.priceSnapshotId
+            ? {
+                selectedPriceSnapshot: {
+                  connect: {
+                    id: candidate.catalogSelection.priceSnapshotId,
+                  },
+                },
+              }
+            : {}),
           optimizedUnitPrice: unitPrice,
           optimizedLineTotal: lineTotal,
           coverageMode: variant.mode,
