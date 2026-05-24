@@ -173,10 +173,8 @@ const SEARCH_RESULTS_PER_SUPPLIER = 4;
 const SAFE_CATALOG_PRIMARY_QUERIES = new Set([
   "бекон",
   "сливки",
-  "сыр",
   "масло сливочное",
   "молоко",
-  "курица",
 ]);
 const DANGEROUS_CATALOG_QUERIES = new Set(["сахар", "картофель", "рис"]);
 const CATALOG_NEGATIVE_PREPOSITIONS = new Set([
