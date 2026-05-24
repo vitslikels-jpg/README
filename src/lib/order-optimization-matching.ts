@@ -348,6 +348,14 @@ function getCatalogPhraseScoreAdjustment(params: {
     score += 260;
   }
 
+  if (normalizedQuery === "рис" && candidateName.startsWith("рис ")) {
+    score += 180;
+  }
+
+  if (normalizedQuery === "курица" && candidateName.startsWith("курица ")) {
+    score += 140;
+  }
+
   if (productMasterName.startsWith(normalizedQuery)) {
     score += 28;
   }
@@ -381,6 +389,8 @@ function getCatalogNegativeScoreAdjustment(params: {
   const queryLooksLikeOil = queryWordRoots.some((token) => token.startsWith("\u043c\u0430\u0441"));
   const isCheeseQuery = normalizedQuery === "сыр";
   const isButterQuery = normalizedQuery === "масло сливочное";
+  const isRiceQuery = normalizedQuery === "рис";
+  const isChickenQuery = normalizedQuery === "курица";
 
   if (CATALOG_NEGATIVE_LEAD_WORDS.includes(firstCandidateWord as (typeof CATALOG_NEGATIVE_LEAD_WORDS)[number])) {
     penalty -= 75;
@@ -448,6 +458,82 @@ function getCatalogNegativeScoreAdjustment(params: {
       if (candidateName.includes("каперсы в масле")) {
         penalty -= 320;
       }
+    }
+  }
+
+  if (isRiceQuery) {
+    if (candidateName.includes("со вкусом")) {
+      penalty -= 140;
+    }
+
+    if (candidateName.includes("быстрого приготовления")) {
+      penalty -= 180;
+    }
+
+    if (candidateName.includes("лапша")) {
+      penalty -= 170;
+    }
+
+    if (candidateName.includes("паста")) {
+      penalty -= 170;
+    }
+
+    if (candidateName.includes("из риса")) {
+      penalty -= 170;
+    }
+
+    if (candidateName.includes("рисовая")) {
+      penalty -= 160;
+    }
+  }
+
+  if (isChickenQuery) {
+    if (candidateName.includes("со вкусом")) {
+      penalty -= 150;
+    }
+
+    if (candidateName.includes("для курицы")) {
+      penalty -= 220;
+    }
+
+    if (candidateName.includes("заливная")) {
+      penalty -= 180;
+    }
+
+    if (candidateName.includes("специи")) {
+      penalty -= 220;
+    }
+
+    if (candidateName.includes("приправа")) {
+      penalty -= 220;
+    }
+
+    if (candidateName.includes("суповой набор")) {
+      penalty -= 180;
+    } else if (candidateName.includes("суп")) {
+      penalty -= 120;
+    }
+
+    if (candidateName.includes("15гр")) {
+      penalty -= 150;
+    }
+
+    if (candidateName.includes("10шт")) {
+      penalty -= 120;
+    }
+
+    const hasRealChickenCut = [
+      "филе",
+      "бедро",
+      "окороч",
+      "голень",
+      "грудк",
+      "крыл",
+      "тушк",
+    ].some((token) => candidateName.includes(token));
+
+    if (hasRealChickenCut) {
+      penalty += 90;
     }
   }
 
