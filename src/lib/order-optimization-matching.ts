@@ -2,7 +2,29 @@ import { Prisma, type OrderOptimizationItem, type Product, type Supplier } from 
 import { getOrderOptimizationWithDetails, normalizeOrderOptimizationUnit } from "@/lib/order-optimizations";
 import { prisma } from "@/lib/prisma";
 
-type ProductCandidate = Product & {
+type ProductCandidate = Pick<
+  Product,
+  | "id"
+  | "enterpriseId"
+  | "supplierId"
+  | "documentId"
+  | "name"
+  | "article"
+  | "brand"
+  | "country"
+  | "unit"
+  | "unitsPerPack"
+  | "minOrderQuantity"
+  | "orderStep"
+  | "allowFractionalOrder"
+  | "shipByBoxesOnly"
+  | "price"
+  | "stock"
+  | "sourceRow"
+  | "rawData"
+  | "createdAt"
+  | "updatedAt"
+> & {
   supplier: Pick<Supplier, "id" | "name" | "archivedAt">;
 };
 
@@ -59,6 +81,7 @@ type ScoredCatalogCandidate = {
   exactPhraseAtStart: boolean;
   startsWithFirstToken: boolean;
   exactPhraseMatch: boolean;
+  negativeAdjustment: number;
 };
 
 type CatalogCandidate = {
@@ -78,6 +101,8 @@ type CatalogCandidate = {
     id: string;
     price: Prisma.Decimal | null;
     rawData: unknown;
+    legacyProductId: string | null;
+    legacyProduct: ProductCandidate | null;
   } | null;
   productMaster: {
     id: string;
@@ -90,6 +115,13 @@ type CatalogCandidate = {
     confidence: Prisma.Decimal | null;
     matchSource: string | null;
   } | null;
+};
+
+type CandidateSource = "catalog" | "product_fallback";
+
+type SmartOrderProductSearchResult = {
+  candidateSource: CandidateSource;
+  candidates: ScoredProductCandidate[];
 };
 
 type CandidatePlanRow = Prisma.OrderOptimizationResultCreateInput & {
@@ -138,6 +170,15 @@ const MAX_PRODUCTS_TO_SCORE = 400;
 const MAX_RESULTS_PER_ITEM = 8;
 const SEARCH_RESULTS_PER_REQUEST = 24;
 const SEARCH_RESULTS_PER_SUPPLIER = 4;
+const SAFE_CATALOG_PRIMARY_QUERIES = new Set([
+  "бекон",
+  "сливки",
+  "сыр",
+  "масло сливочное",
+  "молоко",
+  "курица",
+]);
+const DANGEROUS_CATALOG_QUERIES = new Set(["сахар", "картофель", "рис"]);
 const CATALOG_NEGATIVE_PREPOSITIONS = new Set([
   "\u0434\u043b\u044f",
   "\u0441\u043e",
@@ -975,14 +1016,111 @@ async function findCandidateProducts(
   );
 }
 
-export async function findCatalogCandidateProducts(
+function getCatalogStrongGarbageSignals(query: string, candidateName: string) {
+  const normalizedQuery = normalizeSearchText(query);
+  const normalizedName = normalizeSearchText(candidateName);
+
+  if (normalizedQuery === "сыр") {
+    return (
+      normalizedName.includes("сыровялен") ||
+      normalizedName.includes(" с сыром") ||
+      normalizedName.includes(" со сливочным сыром") ||
+      normalizedName.includes(" фаршированный сыром")
+    );
+  }
+
+  if (normalizedQuery === "масло сливочное") {
+    return (
+      normalizedName.includes("в масле") ||
+      normalizedName.includes("подсолнечном масле") ||
+      normalizedName.includes("оливковом масле")
+    );
+  }
+
+  if (normalizedQuery === "курица") {
+    return (
+      normalizedName.includes("для курицы") ||
+      normalizedName.includes("специи") ||
+      normalizedName.includes("приправа") ||
+      normalizedName.includes("суповой набор") ||
+      normalizedName.includes(" заливная")
+    );
+  }
+
+  if (normalizedQuery === "рис") {
+    return (
+      normalizedName.includes("со вкусом") ||
+      normalizedName.includes("быстрого приготовления") ||
+      normalizedName.includes("рисовая") ||
+      normalizedName.includes("лапша") ||
+      normalizedName.includes("паста") ||
+      normalizedName.includes("из риса") ||
+      normalizedName.includes("готовый в вакууме")
+    );
+  }
+
+  return false;
+}
+
+function isCatalogQueryAllowedAsPrimary(query: string) {
+  const normalizedQuery = normalizeSearchText(query);
+
+  if (!normalizedQuery || DANGEROUS_CATALOG_QUERIES.has(normalizedQuery)) {
+    return false;
+  }
+
+  return SAFE_CATALOG_PRIMARY_QUERIES.has(normalizedQuery);
+}
+
+function isCatalogSearchSafe(query: string, candidates: ScoredCatalogCandidate[]) {
+  const normalizedQuery = normalizeSearchText(query);
+
+  if (!isCatalogQueryAllowedAsPrimary(normalizedQuery)) {
+    return false;
+  }
+
+  if (candidates.length < 3) {
+    return false;
+  }
+
+  const topOne = candidates[0];
+  const topTwo = candidates[1];
+
+  if (!topOne) {
+    return false;
+  }
+
+  const topOneClearlyStronger =
+    !topTwo ||
+    topOne.score > topTwo.score ||
+    (topOne.exactPhraseAtStart && topTwo.exactPhraseAtStart) ||
+    topOne.negativeAdjustment > topTwo.negativeAdjustment;
+
+  if (!topOneClearlyStronger) {
+    return false;
+  }
+
+  const topFive = candidates.slice(0, 5);
+
+  if (topFive.some((candidate) => getCatalogStrongGarbageSignals(normalizedQuery, candidate.candidate.name))) {
+    return false;
+  }
+
+  return true;
+}
+
+function mapCatalogCandidateToLegacyProduct(candidate: CatalogCandidate): ProductCandidate | null {
+  return candidate.currentPriceSnapshot?.legacyProduct ?? null;
+}
+
+async function findCatalogCandidateProductsWithScores(
   item: OrderOptimizationItem,
   enterpriseId: string,
   options?: {
     searchText?: string | null;
     maxProducts?: number;
   },
-): Promise<CatalogCandidate[]> {
+): Promise<ScoredCatalogCandidate[]> {
   const searchText = options?.searchText ?? item.parsedName;
   const requestedMaxProducts = options?.maxProducts ?? MAX_PRODUCTS_TO_SCORE;
   const rawTake = Math.min(Math.max(requestedMaxProducts * 20, 200), 500);
@@ -1059,6 +1197,31 @@ export async function findCatalogCandidateProducts(
           id: true,
           price: true,
           rawData: true,
+          legacyProductId: true,
+          legacyProduct: {
+            select: {
+              id: true,
+              enterpriseId: true,
+              supplierId: true,
+              documentId: true,
+              name: true,
+              article: true,
+              brand: true,
+              country: true,
+              unit: true,
+              unitsPerPack: true,
+              minOrderQuantity: true,
+              orderStep: true,
+              allowFractionalOrder: true,
+              shipByBoxesOnly: true,
+              price: true,
+              stock: true,
+              sourceRow: true,
+              rawData: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
         },
       },
       mappings: {
@@ -1108,6 +1271,17 @@ export async function findCatalogCandidateProducts(
             id: currentPriceSnapshot.id,
             price: currentPriceSnapshot.price,
             rawData: currentPriceSnapshot.rawData,
+            legacyProductId: currentPriceSnapshot.legacyProductId,
+            legacyProduct: currentPriceSnapshot.legacyProduct
+              ? {
+                  ...currentPriceSnapshot.legacyProduct,
+                  supplier: {
+                    id: offer.supplier.id,
+                    name: offer.supplier.name,
+                    archivedAt: offer.supplier.archivedAt,
+                  },
+                }
+              : null,
           }
         : null,
       productMaster: activeMapping?.productMaster
@@ -1149,6 +1323,14 @@ export async function findCatalogCandidateProducts(
       const startsWithFirstToken = Boolean(queryWordRoots[0] && candidateWordRoots[0] === queryWordRoots[0]);
       const exactPhraseMatch = Boolean(normalizedQuery && candidateName.includes(normalizedQuery));
       const exactWordMatches = queryWordRoots.filter((token) => candidateWordRoots.includes(token));
+      const negativeAdjustment = getCatalogNegativeScoreAdjustment({
+        normalizedQuery,
+        queryWords,
+        queryWordRoots,
+        candidateName,
+        candidateWords,
+        candidateWordRoots,
+      });
       const score =
         matchedTokens.length * 22 +
         exactWordMatches.length * 18 +
@@ -1161,14 +1343,7 @@ export async function findCatalogCandidateProducts(
           candidateWordRoots,
           productMasterName,
         }) +
-        getCatalogNegativeScoreAdjustment({
-          normalizedQuery,
-          queryWords,
-          queryWordRoots,
-          candidateName,
-          candidateWords,
-          candidateWordRoots,
-        });
+        negativeAdjustment;
 
       return {
         candidate,
@@ -1179,6 +1354,7 @@ export async function findCatalogCandidateProducts(
         exactPhraseAtStart,
         startsWithFirstToken,
         exactPhraseMatch,
+        negativeAdjustment,
       };
     })
     .filter((candidate) => candidate.score > 0)
@@ -1213,7 +1389,82 @@ export async function findCatalogCandidateProducts(
       return leftPrice - rightPrice;
     });
 
-  return scoredCandidates.slice(0, requestedMaxProducts).map((candidate) => candidate.candidate);
+  return scoredCandidates.slice(0, requestedMaxProducts);
+}
+
+export async function findCatalogCandidateProducts(
+  item: OrderOptimizationItem,
+  enterpriseId: string,
+  options?: {
+    searchText?: string | null;
+    maxProducts?: number;
+  },
+): Promise<CatalogCandidate[]> {
+  const scoredCandidates = await findCatalogCandidateProductsWithScores(item, enterpriseId, options);
+  return scoredCandidates.map((candidate) => candidate.candidate);
+}
+
+export async function findPreferredSmartOrderProductCandidates(
+  item: OrderOptimizationItem,
+  enterpriseId: string,
+  options?: {
+    searchText?: string | null;
+    maxProducts?: number;
+    maxPerSupplier?: number;
+  },
+): Promise<SmartOrderProductSearchResult> {
+  const searchText = options?.searchText ?? item.parsedName ?? "";
+  const normalizedQuery = normalizeSearchText(searchText);
+
+  if (isCatalogQueryAllowedAsPrimary(normalizedQuery)) {
+    const catalogCandidates = await findCatalogCandidateProductsWithScores(item, enterpriseId, {
+      searchText,
+      maxProducts: options?.maxProducts ?? MAX_PRODUCTS_TO_SCORE,
+    });
+
+    if (isCatalogSearchSafe(normalizedQuery, catalogCandidates)) {
+      const mappedCandidates = catalogCandidates
+        .map((candidate) => {
+          const legacyProduct = mapCatalogCandidateToLegacyProduct(candidate.candidate);
+
+          if (!legacyProduct) {
+            return null;
+          }
+
+          const mappedCandidate: ScoredProductCandidate = {
+            product: legacyProduct,
+            score: candidate.score,
+            matchedTokensCount: candidate.matchedTokensCount,
+            totalTokensCount: candidate.totalTokensCount,
+            matchedRatio: candidate.matchedRatio,
+            firstTokenMatched: candidate.startsWithFirstToken,
+            supplierMatched: true,
+            hasUnitSupport: true,
+            exactPhraseMatch: candidate.exactPhraseMatch,
+          };
+
+          return mappedCandidate;
+        })
+        .filter((candidate): candidate is ScoredProductCandidate => Boolean(candidate));
+
+      if (mappedCandidates.length >= 3) {
+        console.info("[smart-order] candidateSource=catalog query=%s count=%d", normalizedQuery, mappedCandidates.length);
+
+        return {
+          candidateSource: "catalog",
+          candidates: mappedCandidates.slice(0, options?.maxProducts ?? mappedCandidates.length),
+        };
+      }
+    }
+  }
+
+  const fallbackCandidates = await findCandidateProducts(item, enterpriseId, options);
+  console.info("[smart-order] candidateSource=product_fallback query=%s count=%d", normalizedQuery, fallbackCandidates.length);
+
+  return {
+    candidateSource: "product_fallback",
+    candidates: fallbackCandidates,
+  };
 }
 
 function buildCandidateRows(
@@ -1516,7 +1767,7 @@ export async function rebuildOrderOptimizationCandidates(optimizationId: string,
       continue;
     }
 
-    const candidates = await findCandidateProducts(item, enterpriseId);
+    const { candidates } = await findPreferredSmartOrderProductCandidates(item, enterpriseId);
     const rows = buildCandidateRows(optimizationId, item, candidates, MAX_RESULTS_PER_ITEM);
 
     candidatePlans.push({
@@ -1594,7 +1845,7 @@ export async function searchOrderOptimizationItemCandidates(params: {
     return null;
   }
 
-  const candidates = await findCandidateProducts(item, params.enterpriseId, {
+  const { candidates } = await findPreferredSmartOrderProductCandidates(item, params.enterpriseId, {
     searchText: params.query,
     maxProducts: SEARCH_RESULTS_PER_REQUEST,
     maxPerSupplier: SEARCH_RESULTS_PER_SUPPLIER,
