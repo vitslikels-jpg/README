@@ -50,6 +50,17 @@ type ScoredProductCandidate = {
   exactPhraseMatch: boolean;
 };
 
+type ScoredCatalogCandidate = {
+  candidate: CatalogCandidate;
+  score: number;
+  matchedTokensCount: number;
+  totalTokensCount: number;
+  matchedRatio: number;
+  exactPhraseAtStart: boolean;
+  startsWithFirstToken: boolean;
+  exactPhraseMatch: boolean;
+};
+
 type CatalogCandidate = {
   supplierOfferId: string;
   supplierId: string;
@@ -127,6 +138,19 @@ const MAX_PRODUCTS_TO_SCORE = 400;
 const MAX_RESULTS_PER_ITEM = 8;
 const SEARCH_RESULTS_PER_REQUEST = 24;
 const SEARCH_RESULTS_PER_SUPPLIER = 4;
+const CATALOG_NEGATIVE_PREPOSITIONS = new Set([
+  "\u0434\u043b\u044f",
+  "\u0441\u043e",
+  "\u0441",
+  "\u0432",
+  "\u0438\u0437",
+]);
+const CATALOG_NEGATIVE_LEAD_WORDS = [
+  "\u0441\u043e\u0443\u0441",
+  "\u043f\u0430\u0441\u0442\u0430",
+  "\u043b\u0430\u043f\u0448\u0430",
+  "\u043d\u044c\u043e\u043a\u043a\u0438",
+] as const;
 const RUSSIAN_TOKEN_ENDINGS = [
   "иями",
   "ями",
@@ -255,6 +279,11 @@ function buildSearchTokenSet(value: string | null | undefined) {
   return new Set(getSearchTokens(value));
 }
 
+function getNormalizedWords(value: string | null | undefined) {
+  const normalized = normalizeSearchText(value);
+  return normalized ? normalized.split(" ").filter(Boolean) : [];
+}
+
 function getSemanticScoreAdjustment(searchTokens: string[], productTokens: Set<string>) {
   const queryTokens = new Set(searchTokens);
   let score = 0;
@@ -287,6 +316,132 @@ function getSemanticScoreAdjustment(searchTokens: string[], productTokens: Set<s
   }
 
   return score;
+}
+
+function getCatalogPhraseScoreAdjustment(params: {
+  normalizedQuery: string;
+  queryWordRoots: string[];
+  candidateName: string;
+  candidateWordRoots: string[];
+  productMasterName: string;
+}) {
+  const { normalizedQuery, queryWordRoots, candidateName, candidateWordRoots, productMasterName } = params;
+
+  if (!normalizedQuery) {
+    return 0;
+  }
+
+  let score = 0;
+  const firstQueryRoot = queryWordRoots[0] ?? null;
+
+  if (candidateName.startsWith(normalizedQuery)) {
+    score += 140;
+  } else if (candidateName.includes(normalizedQuery)) {
+    score += 36;
+  }
+
+  if (productMasterName.startsWith(normalizedQuery)) {
+    score += 28;
+  }
+
+  if (firstQueryRoot && candidateWordRoots[0] === firstQueryRoot) {
+    score += 18;
+  }
+
+  return score;
+}
+
+function getCatalogNegativeScoreAdjustment(params: {
+  normalizedQuery: string;
+  queryWords: string[];
+  queryWordRoots: string[];
+  candidateName: string;
+  candidateWords: string[];
+  candidateWordRoots: string[];
+}) {
+  const { normalizedQuery, queryWords, queryWordRoots, candidateName, candidateWords, candidateWordRoots } = params;
+
+  if (!normalizedQuery || queryWords.length === 0 || queryWords.length > 2) {
+    return 0;
+  }
+
+  let penalty = 0;
+  const seenPenalties = new Set<string>();
+  const firstCandidateWord = candidateWords[0] ?? "";
+  const singleQueryWord = queryWords.length === 1 ? queryWords[0] : null;
+  const singleQueryRoot = queryWordRoots.length === 1 ? queryWordRoots[0] : null;
+  const queryLooksLikeOil = queryWordRoots.some((token) => token.startsWith("\u043c\u0430\u0441"));
+
+  if (CATALOG_NEGATIVE_LEAD_WORDS.includes(firstCandidateWord as (typeof CATALOG_NEGATIVE_LEAD_WORDS)[number])) {
+    penalty -= 75;
+    seenPenalties.add(`lead:${firstCandidateWord}`);
+  }
+
+  if (candidateName.includes("\u0432\u043a\u0443\u0441 ")) {
+    penalty -= 35;
+  }
+
+  if (candidateName.includes("\u0441\u043e\u0443\u0441 ")) {
+    penalty -= 80;
+  }
+
+  if (candidateName.includes("\u0441\u044b\u0440\u043e\u0432\u044f\u043b\u0435\u043d")) {
+    penalty -= 95;
+  }
+
+  for (let index = 0; index < candidateWordRoots.length; index += 1) {
+    const candidateRoot = candidateWordRoots[index];
+
+    if (!queryWordRoots.includes(candidateRoot)) {
+      continue;
+    }
+
+    const previousWord = candidateWords[index - 1] ?? "";
+    const previousTwoWords = candidateWords.slice(Math.max(0, index - 2), index);
+
+    if (CATALOG_NEGATIVE_PREPOSITIONS.has(previousWord)) {
+      const key = `prep:${previousWord}:${candidateRoot}`;
+
+      if (!seenPenalties.has(key)) {
+        penalty -= 55;
+        seenPenalties.add(key);
+      }
+    }
+
+    if (
+      queryLooksLikeOil &&
+      previousTwoWords.includes("\u0432") &&
+      candidateWords[index] !== queryWords[0] &&
+      candidateWords[index] !== queryWords[1]
+    ) {
+      const key = `oil-context:${index}`;
+
+      if (!seenPenalties.has(key)) {
+        penalty -= 70;
+        seenPenalties.add(key);
+      }
+    }
+  }
+
+  if (singleQueryWord && singleQueryRoot) {
+    for (let index = 0; index < candidateWords.length; index += 1) {
+      const candidateWord = candidateWords[index];
+      const candidateRoot = candidateWordRoots[index];
+
+      if (!candidateWord.includes(singleQueryWord)) {
+        continue;
+      }
+
+      if (candidateWord === singleQueryWord || candidateRoot === singleQueryRoot) {
+        continue;
+      }
+
+      penalty -= 110;
+      break;
+    }
+  }
+
+  return penalty;
 }
 
 function convertAmountToUnit(amount: Prisma.Decimal, sourceUnit: string | null, targetUnit: string | null) {
@@ -781,7 +936,7 @@ export async function findCatalogCandidateProducts(
   });
 
   // TODO: next step - enable catalog search as primary and Product search as fallback.
-  return supplierOffers.map((offer) => {
+  const candidates = supplierOffers.map((offer) => {
     const currentPriceSnapshot = offer.priceSnapshots[0] ?? null;
     const activeMapping = offer.mappings[0] ?? null;
 
@@ -822,6 +977,93 @@ export async function findCatalogCandidateProducts(
         : null,
     };
   });
+
+  const normalizedQuery = normalizeSearchText(searchText);
+  const queryWords = getNormalizedWords(searchText);
+  const queryWordRoots = queryWords.map((word) => normalizeSearchToken(word)).filter((word) => word.length > 1);
+  const queryTokens = getSearchTokens(searchText);
+
+  const scoredCandidates = candidates
+    .map<ScoredCatalogCandidate>((candidate) => {
+      const candidateName = normalizeSearchText(candidate.name);
+      const productMasterName = normalizeSearchText(candidate.productMaster?.name ?? "");
+      const candidateWords = getNormalizedWords(candidate.name);
+      const candidateWordRoots = candidateWords
+        .map((word) => normalizeSearchToken(word))
+        .filter((word) => word.length > 1);
+      const candidateTokens = buildSearchTokenSet(
+        `${candidate.name} ${candidate.productMaster?.name ?? ""} ${candidate.brand ?? ""} ${candidate.article ?? ""}`,
+      );
+      const matchedTokens = queryTokens.filter((token) => candidateTokens.has(token));
+      const exactPhraseAtStart = Boolean(normalizedQuery && candidateName.startsWith(normalizedQuery));
+      const startsWithFirstToken = Boolean(queryWordRoots[0] && candidateWordRoots[0] === queryWordRoots[0]);
+      const exactPhraseMatch = Boolean(normalizedQuery && candidateName.includes(normalizedQuery));
+      const exactWordMatches = queryWordRoots.filter((token) => candidateWordRoots.includes(token));
+      const score =
+        matchedTokens.length * 22 +
+        exactWordMatches.length * 18 +
+        (candidate.currentPriceSnapshot?.price ? 3 : 0) +
+        getSemanticScoreAdjustment(queryTokens, candidateTokens) +
+        getCatalogPhraseScoreAdjustment({
+          normalizedQuery,
+          queryWordRoots,
+          candidateName,
+          candidateWordRoots,
+          productMasterName,
+        }) +
+        getCatalogNegativeScoreAdjustment({
+          normalizedQuery,
+          queryWords,
+          queryWordRoots,
+          candidateName,
+          candidateWords,
+          candidateWordRoots,
+        });
+
+      return {
+        candidate,
+        score,
+        matchedTokensCount: matchedTokens.length,
+        totalTokensCount: queryTokens.length,
+        matchedRatio: queryTokens.length > 0 ? matchedTokens.length / queryTokens.length : 0,
+        exactPhraseAtStart,
+        startsWithFirstToken,
+        exactPhraseMatch,
+      };
+    })
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      if (left.exactPhraseAtStart !== right.exactPhraseAtStart) {
+        return left.exactPhraseAtStart ? -1 : 1;
+      }
+
+      if (left.startsWithFirstToken !== right.startsWithFirstToken) {
+        return left.startsWithFirstToken ? -1 : 1;
+      }
+
+      if (right.matchedRatio !== left.matchedRatio) {
+        return right.matchedRatio - left.matchedRatio;
+      }
+
+      if (left.exactPhraseMatch !== right.exactPhraseMatch) {
+        return left.exactPhraseMatch ? -1 : 1;
+      }
+
+      const leftPrice = left.candidate.currentPriceSnapshot?.price
+        ? Number(left.candidate.currentPriceSnapshot.price.toString())
+        : Number.POSITIVE_INFINITY;
+      const rightPrice = right.candidate.currentPriceSnapshot?.price
+        ? Number(right.candidate.currentPriceSnapshot.price.toString())
+        : Number.POSITIVE_INFINITY;
+
+      return leftPrice - rightPrice;
+    });
+
+  return scoredCandidates.map((candidate) => candidate.candidate);
 }
 
 function buildCandidateRows(
