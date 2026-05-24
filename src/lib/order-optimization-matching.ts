@@ -898,6 +898,8 @@ export async function findCatalogCandidateProducts(
   },
 ): Promise<CatalogCandidate[]> {
   const searchText = options?.searchText ?? item.parsedName;
+  const requestedMaxProducts = options?.maxProducts ?? MAX_PRODUCTS_TO_SCORE;
+  const rawTake = Math.min(Math.max(requestedMaxProducts * 20, 200), 500);
   const tokens = getSearchTokens(searchText).slice(0, 6);
 
   if (tokens.length === 0) {
@@ -994,7 +996,7 @@ export async function findCatalogCandidateProducts(
         },
       },
     },
-    take: options?.maxProducts ?? MAX_PRODUCTS_TO_SCORE,
+    take: rawTake,
   });
 
   // TODO: next step - enable catalog search as primary and Product search as fallback.
@@ -1125,7 +1127,7 @@ export async function findCatalogCandidateProducts(
       return leftPrice - rightPrice;
     });
 
-  return scoredCandidates.map((candidate) => candidate.candidate);
+  return scoredCandidates.slice(0, requestedMaxProducts).map((candidate) => candidate.candidate);
 }
 
 function buildCandidateRows(
