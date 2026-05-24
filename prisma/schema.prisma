@@ -235,6 +235,7 @@ model ProductMaster {
   unit            Unit?            @relation(fields: [unitId], references: [id], onDelete: SetNull)
   mappings        ProductMapping[]
   orderItems      OrderItem[]
+  optimizationResults OrderOptimizationResult[] @relation("OrderOptimizationSelectedProductMaster")
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -268,6 +269,7 @@ model SupplierOffer {
   priceSnapshots       PriceSnapshot[]
   mappings             ProductMapping[]
   orderItems           OrderItem[]
+  optimizationResults  OrderOptimizationResult[] @relation("OrderOptimizationSelectedSupplierOffer")
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
@@ -299,6 +301,7 @@ model PriceSnapshot {
   legacyProduct  Product?       @relation(fields: [legacyProductId], references: [id], onDelete: SetNull)
   unit           Unit?          @relation(fields: [unitId], references: [id], onDelete: SetNull)
   orderItems     OrderItem[]
+  optimizationResults OrderOptimizationResult[] @relation("OrderOptimizationSelectedPriceSnapshot")
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -429,7 +432,10 @@ model OrderOptimizationResult {
   optimizationId     String
   itemId             String
   selectedSupplierId String?
+  selectedSupplierOfferId String?
+  selectedProductMasterId String?
   selectedProductId  String?
+  selectedPriceSnapshotId String?
   baselineUnitPrice  Decimal?               @db.Decimal(14, 2)
   optimizedUnitPrice Decimal?               @db.Decimal(14, 2)
   baselineLineTotal  Decimal?               @db.Decimal(14, 2)
@@ -448,10 +454,16 @@ model OrderOptimizationResult {
   item               OrderOptimizationItem  @relation("OrderOptimizationItemResults", fields: [itemId], references: [id], onDelete: Cascade)
   selectedForItems   OrderOptimizationItem[] @relation("OrderOptimizationSelectedCandidate")
   selectedSupplier   Supplier?              @relation(fields: [selectedSupplierId], references: [id], onDelete: SetNull)
+  selectedSupplierOffer SupplierOffer?      @relation("OrderOptimizationSelectedSupplierOffer", fields: [selectedSupplierOfferId], references: [id], onDelete: SetNull)
+  selectedProductMaster ProductMaster?      @relation("OrderOptimizationSelectedProductMaster", fields: [selectedProductMasterId], references: [id], onDelete: SetNull)
   selectedProduct    Product?               @relation(fields: [selectedProductId], references: [id], onDelete: SetNull)
+  selectedPriceSnapshot PriceSnapshot?      @relation("OrderOptimizationSelectedPriceSnapshot", fields: [selectedPriceSnapshotId], references: [id], onDelete: SetNull)
 
   @@index([optimizationId])
   @@index([itemId])
   @@index([selectedSupplierId])
+  @@index([selectedSupplierOfferId])
+  @@index([selectedProductMasterId])
   @@index([selectedProductId])
+  @@index([selectedPriceSnapshotId])
 }

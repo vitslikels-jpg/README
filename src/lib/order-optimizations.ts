@@ -45,6 +45,17 @@ type ParsedSourceItem = {
   sortOrder: number;
 };
 
+export type SmartOrderSelectedProductDto = {
+  id: string;
+  name: string;
+  article: string | null;
+  brand: string | null;
+  unit: string | null;
+  unitsPerPack: string | null;
+  minOrderQuantity: string | null;
+  orderStep: string | null;
+};
+
 export const parsedOrderUnits = ["шт", "кг", "г", "л", "мл", "уп", "пач", "кор", "бут"] as const;
 
 export type ParsedOrderUnit = (typeof parsedOrderUnits)[number];
@@ -74,6 +85,29 @@ export function normalizeOptionalString(value: unknown) {
 
 function decimalToString(value: { toString: () => string } | null | undefined) {
   return value ? value.toString() : null;
+}
+
+function buildSmartOrderSelectedProductDto(
+  product:
+    | Pick<Product, "id" | "name" | "article" | "brand" | "unit" | "unitsPerPack" | "minOrderQuantity" | "orderStep">
+    | null
+    | undefined,
+): SmartOrderSelectedProductDto | null {
+  if (!product) {
+    return null;
+  }
+
+  // TODO: add support for SupplierOffer + PriceSnapshot while keeping this DTO shape unchanged for the UI.
+  return {
+    id: product.id,
+    name: product.name,
+    article: product.article,
+    brand: product.brand,
+    unit: product.unit,
+    unitsPerPack: decimalToString(product.unitsPerPack),
+    minOrderQuantity: decimalToString(product.minOrderQuantity),
+    orderStep: decimalToString(product.orderStep),
+  };
 }
 
 function hasUsefulName(value: string | null | undefined) {
@@ -380,18 +414,7 @@ export function serializeOrderOptimizationResult(
     createdAt: result.createdAt,
     updatedAt: result.updatedAt,
     selectedSupplier: result.selectedSupplier ?? null,
-    selectedProduct: result.selectedProduct
-      ? {
-          id: result.selectedProduct.id,
-          name: result.selectedProduct.name,
-          article: result.selectedProduct.article,
-          brand: result.selectedProduct.brand,
-          unit: result.selectedProduct.unit,
-          unitsPerPack: decimalToString(result.selectedProduct.unitsPerPack),
-          minOrderQuantity: decimalToString(result.selectedProduct.minOrderQuantity),
-          orderStep: decimalToString(result.selectedProduct.orderStep),
-        }
-      : null,
+    selectedProduct: buildSmartOrderSelectedProductDto(result.selectedProduct),
   };
 }
 

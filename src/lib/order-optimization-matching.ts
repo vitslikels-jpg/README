@@ -8,6 +8,14 @@ type ProductCandidate = Product & {
 
 type ProductForPack = Pick<Product, "unit" | "unitsPerPack" | "minOrderQuantity" | "orderStep" | "rawData">;
 
+type PackagingSource = {
+  unit: string | null;
+  unitsPerPack: Prisma.Decimal | null | undefined;
+  minOrderQuantity: Prisma.Decimal | null | undefined;
+  orderStep: Prisma.Decimal | null | undefined;
+  rawData: Prisma.JsonValue;
+};
+
 type CoverageMode = "nearest_lower" | "no_shortage";
 
 export type OrderOptimizationCoverage = {
@@ -40,6 +48,37 @@ type ScoredProductCandidate = {
   supplierMatched: boolean;
   hasUnitSupport: boolean;
   exactPhraseMatch: boolean;
+};
+
+type CatalogCandidate = {
+  supplierOfferId: string;
+  supplierId: string;
+  supplierName: string;
+  supplierArchivedAt: Date | null;
+  name: string;
+  article: string | null;
+  brand: string | null;
+  unit: string | null;
+  unitsPerPack: Prisma.Decimal | null | undefined;
+  minOrderQuantity: Prisma.Decimal | null | undefined;
+  orderStep: Prisma.Decimal | null | undefined;
+  rawData: unknown;
+  currentPriceSnapshot: {
+    id: string;
+    price: Prisma.Decimal | null;
+    rawData: unknown;
+  } | null;
+  productMaster: {
+    id: string;
+    name: string;
+    category: string | null;
+  } | null;
+  mapping: {
+    id: string;
+    productMasterId: string | null;
+    confidence: Prisma.Decimal | null;
+    matchSource: string | null;
+  } | null;
 };
 
 type CandidatePlanRow = Prisma.OrderOptimizationResultCreateInput & {
@@ -314,21 +353,33 @@ function findRawPackagingAmount(rawData: Prisma.JsonValue, targetUnit: string | 
   return null;
 }
 
+function getPackagingSourceFromProduct(product: ProductForPack): PackagingSource {
+  // TODO: add support for SupplierOffer + PriceSnapshot.rawData without changing packaging math.
+  return {
+    unit: product.unit,
+    unitsPerPack: product.unitsPerPack,
+    minOrderQuantity: product.minOrderQuantity,
+    orderStep: product.orderStep,
+    rawData: product.rawData,
+  };
+}
+
 function getPackSize(product: ProductForPack, item: Pick<OrderOptimizationItem, "parsedUnit">) {
+  const packagingSource = getPackagingSourceFromProduct(product);
   const requiredUnit = normalizeOrderOptimizationUnit(item.parsedUnit);
-  const productUnit = normalizeOrderOptimizationUnit(product.unit);
-  const rawPackagingAmount = findRawPackagingAmount(product.rawData, requiredUnit);
+  const productUnit = normalizeOrderOptimizationUnit(packagingSource.unit);
+  const rawPackagingAmount = findRawPackagingAmount(packagingSource.rawData, requiredUnit);
 
   if (rawPackagingAmount?.gt(ZERO)) {
     return rawPackagingAmount;
   }
 
   if (productUnit === requiredUnit) {
-    return product.unitsPerPack ?? product.orderStep ?? product.minOrderQuantity ?? ONE;
+    return packagingSource.unitsPerPack ?? packagingSource.orderStep ?? packagingSource.minOrderQuantity ?? ONE;
   }
 
-  if (requiredUnit === "шт") {
-    return product.unitsPerPack ?? ONE;
+  if (requiredUnit === "\u0448\u0442") {
+    return packagingSource.unitsPerPack ?? ONE;
   }
 
   return null;
@@ -619,6 +670,158 @@ async function findCandidateProducts(
     options?.maxProducts ?? Math.max(4, Math.ceil(MAX_RESULTS_PER_ITEM / 2)),
     options?.maxPerSupplier ?? 2,
   );
+}
+
+export async function findCatalogCandidateProducts(
+  item: OrderOptimizationItem,
+  enterpriseId: string,
+  options?: {
+    searchText?: string | null;
+    maxProducts?: number;
+  },
+): Promise<CatalogCandidate[]> {
+  const searchText = options?.searchText ?? item.parsedName;
+  const tokens = getSearchTokens(searchText).slice(0, 6);
+
+  if (tokens.length === 0) {
+    return [];
+  }
+
+  const supplierOffers = await prisma.supplierOffer.findMany({
+    where: {
+      enterpriseId,
+      supplier: {
+        archivedAt: null,
+      },
+      priceSnapshots: {
+        some: {
+          isCurrent: true,
+        },
+      },
+      OR: tokens.flatMap((token) => [
+        {
+          name: {
+            contains: token,
+            mode: "insensitive",
+          },
+        },
+        {
+          article: {
+            contains: token,
+            mode: "insensitive",
+          },
+        },
+        {
+          brand: {
+            contains: token,
+            mode: "insensitive",
+          },
+        },
+        {
+          mappings: {
+            some: {
+              status: "active",
+              productMaster: {
+                normalizedName: {
+                  contains: token,
+                },
+              },
+            },
+          },
+        },
+      ]),
+    },
+    include: {
+      supplier: {
+        select: {
+          id: true,
+          name: true,
+          archivedAt: true,
+        },
+      },
+      unit: {
+        select: {
+          symbol: true,
+        },
+      },
+      priceSnapshots: {
+        where: {
+          isCurrent: true,
+        },
+        orderBy: [{ capturedAt: "desc" }, { createdAt: "desc" }],
+        take: 1,
+        select: {
+          id: true,
+          price: true,
+          rawData: true,
+        },
+      },
+      mappings: {
+        where: {
+          status: "active",
+        },
+        orderBy: [{ confidence: "desc" }, { updatedAt: "desc" }, { createdAt: "desc" }],
+        take: 1,
+        select: {
+          id: true,
+          productMasterId: true,
+          confidence: true,
+          matchSource: true,
+          productMaster: {
+            select: {
+              id: true,
+              name: true,
+              category: true,
+            },
+          },
+        },
+      },
+    },
+    take: options?.maxProducts ?? MAX_PRODUCTS_TO_SCORE,
+  });
+
+  // TODO: next step - enable catalog search as primary and Product search as fallback.
+  return supplierOffers.map((offer) => {
+    const currentPriceSnapshot = offer.priceSnapshots[0] ?? null;
+    const activeMapping = offer.mappings[0] ?? null;
+
+    return {
+      supplierOfferId: offer.id,
+      supplierId: offer.supplierId,
+      supplierName: offer.supplier.name,
+      supplierArchivedAt: offer.supplier.archivedAt,
+      name: offer.name,
+      article: offer.article,
+      brand: offer.brand,
+      unit: offer.unit?.symbol ?? offer.legacyUnit ?? null,
+      unitsPerPack: offer.unitsPerPack,
+      minOrderQuantity: offer.minOrderQuantity,
+      orderStep: offer.orderStep,
+      rawData: currentPriceSnapshot?.rawData ?? Prisma.JsonNull,
+      currentPriceSnapshot: currentPriceSnapshot
+        ? {
+            id: currentPriceSnapshot.id,
+            price: currentPriceSnapshot.price,
+            rawData: currentPriceSnapshot.rawData,
+          }
+        : null,
+      productMaster: activeMapping?.productMaster
+        ? {
+            id: activeMapping.productMaster.id,
+            name: activeMapping.productMaster.name,
+            category: activeMapping.productMaster.category,
+          }
+        : null,
+      mapping: activeMapping
+        ? {
+            id: activeMapping.id,
+            productMasterId: activeMapping.productMasterId,
+            confidence: activeMapping.confidence,
+            matchSource: activeMapping.matchSource,
+          }
+        : null,
+    };
+  });
 }
 
 function buildCandidateRows(
