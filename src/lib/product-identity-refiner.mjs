@@ -16,6 +16,7 @@ const COUNTRY_ALIASES = new Map([
   ["italia", "ИТАЛИЯ"],
   ["китай", "КИТАЙ"],
   ["china", "КИТАЙ"],
+  ["кнр", "КИТАЙ"],
   ["индия", "ИНДИЯ"],
   ["india", "ИНДИЯ"],
   ["япония", "ЯПОНИЯ"],
@@ -46,6 +47,12 @@ const NON_BRAND_TERMS = new Set([
   "индонезия",
   "вьетнам",
   "сша",
+  "hot",
+  "mild",
+  "big bowl",
+  "plain noodles",
+  "stir fry",
+  "spicy",
 ]);
 
 function normalizeComparableText(value) {
@@ -108,7 +115,19 @@ function hasBrandSignalWord(value) {
   return String(value ?? "")
     .split(/\s+/u)
     .filter(Boolean)
-    .some((word) => /^[A-Z]{2,}[A-Za-z0-9.&'’`/\-]*$/u.test(word) || /^[A-Z][a-z][A-Za-z0-9.&'’`/\-]*$/u.test(word));
+    .some(
+      (word) =>
+        /^[A-Z]{2,}[A-Za-z0-9.&'’`/\-]*$/u.test(word) ||
+        /^[A-Z][A-Za-z0-9.&'’`/\-]*$/u.test(word) ||
+        /^[A-Z]-[A-Za-z0-9.&'’`/-]+$/u.test(word),
+    );
+}
+
+function hasLowercaseLatinBrandSignal(value) {
+  return String(value ?? "")
+    .split(/\s+/u)
+    .filter(Boolean)
+    .every((word) => /^[a-z][a-z0-9.&'’`/\-]{3,}$/u.test(word));
 }
 
 function isPackagingLikeText(value) {
@@ -144,6 +163,10 @@ function isPotentialBrandCandidate(value) {
     return true;
   }
 
+  if (hasLatinLetters(candidate) && hasLowercaseLatinBrandSignal(candidate)) {
+    return true;
+  }
+
   return /^[A-ZА-ЯЁ][A-ZА-ЯЁ0-9'’`/&.\-]*(?:\s+[A-ZА-ЯЁ][A-ZА-ЯЁ0-9'’`/&.\-]*){0,2}$/u.test(candidate);
 }
 
@@ -171,6 +194,67 @@ function dedupeCandidates(values) {
   return result;
 }
 
+function buildQuotedBrandCandidates(rawName) {
+  const source = String(rawName ?? "").replace(/[«»„“”]/gu, "\"");
+  const matches = [...source.matchAll(/"([^"]+)"/gu)];
+  const candidates = [];
+
+  for (const match of matches) {
+    const candidate = normalizeOptionalText(match[1]);
+
+    if (candidate && isPotentialBrandCandidate(candidate)) {
+      candidates.push(candidate);
+    }
+  }
+
+  return dedupeCandidates(candidates);
+}
+
+function buildBrandAfterQuotedCandidates(rawName) {
+  const source = String(rawName ?? "").replace(/[«»„“”]/gu, "\"");
+  const matches = [...source.matchAll(/"[^"]+"/gu)];
+  const candidates = [];
+
+  for (const match of matches) {
+    if (match.index === undefined) {
+      continue;
+    }
+
+    const tail = source.slice(match.index + match[0].length);
+    const tailMatch = tail.match(
+      /^\s*([A-Z][A-Za-z0-9.&'’`/\-]*(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]*|[a-z][A-Za-z0-9.&'’`/\-]*)){0,3})(?=,?\s*(?:ж\/б\s*)?\d+(?:[.,]\d+)?\s*(?:кг|г|гр|л|л\.|мл|шт)\b)/u,
+    );
+
+    if (tailMatch?.[1] && isPotentialBrandCandidate(tailMatch[1])) {
+      candidates.push(tailMatch[1]);
+    }
+  }
+
+  return dedupeCandidates(candidates);
+}
+
+function buildLowercaseTailBrandCandidates(rawName) {
+  const source = String(rawName ?? "");
+  const matches = [
+    ...source.matchAll(
+      /([A-Za-z][A-Za-z0-9.&'’`/\-]*(?:\s+[A-Za-z][A-Za-z0-9.&'’`/\-]*){0,2})\s*,?\s*(?:ж\/б\s*)?\d+(?:[.,]\d+)?\s*(?:кг|г|гр|л|л\.|мл|шт)\b/gu,
+    ),
+  ];
+  const candidates = [];
+
+  for (const match of matches) {
+    const candidate = normalizeOptionalText(match[1]);
+
+    if (!candidate || !isPotentialBrandCandidate(candidate) || match.index === undefined) {
+      continue;
+    }
+
+    candidates.push(candidate);
+  }
+
+  return dedupeCandidates(candidates);
+}
+
 function buildBrandCandidates(rawName) {
   const compactName = normalizeOptionalText(rawName) ?? "";
   const candidates = [];
@@ -187,16 +271,45 @@ function buildBrandCandidates(rawName) {
   const noPackaging = stripPackagingHints(compactName);
   const withoutCountry = splitNameBySemanticCommas(noPackaging).filter((part) => !looksLikeCountry(part)).join(", ");
   const compactWithoutCountry = withoutCountry.replace(/[,\s]+$/gu, "").trim();
+  candidates.push(...buildBrandAfterQuotedCandidates(compactName));
+  const afterMeasureTailMatch = compactName.match(
+    /(?:кг|г|гр|л|л\.|мл|шт)\s+([A-Z][A-Za-z0-9.&'’`/\-]*(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]*|[a-z][A-Za-z0-9.&'’`/\-]*)){0,3}|[a-z][a-z0-9.&'’`/\-]{3,}(?:\s+[a-z][a-z0-9.&'’`/\-]{3,}){0,2})$/u,
+  );
+
+  if (afterMeasureTailMatch?.[1] && isPotentialBrandCandidate(afterMeasureTailMatch[1])) {
+    candidates.push(afterMeasureTailMatch[1]);
+  }
+
+  const postQuotedBeforeMeasureMatch = compactName.match(
+    /"[^"]+"\s+([A-Z][A-Za-z0-9.&'’`/\-]*(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]*|[a-z][A-Za-z0-9.&'’`/\-]*)){0,3})(?=,?\s*(?:ж\/б\s*)?\d+(?:[.,]\d+)?\s*(?:кг|г|гр|л|л\.|мл|шт)\b)/u,
+  );
+
+  if (postQuotedBeforeMeasureMatch?.[1] && isPotentialBrandCandidate(postQuotedBeforeMeasureMatch[1])) {
+    candidates.push(postQuotedBeforeMeasureMatch[1]);
+  }
+
+  candidates.push(...buildQuotedBrandCandidates(compactName));
+
   const beforeMeasureMatch = compactName.match(
-    /(?:^|[\s,(])([A-Z][A-Za-z0-9.&'’`/\-]+(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]+|[a-z][A-Za-z0-9.&'’`/\-]+)){0,3})(?=,?\s*(?:ж\/б\s*)?\d+(?:[.,]\d+)?\s*(?:кг|г|гр|л|л\.|мл|шт)\b)/u,
+    /(?:^|[\s,(])([A-Z][A-Za-z0-9.&'’`/\-]*(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]*|[a-z][A-Za-z0-9.&'’`/\-]*)){0,3})(?=,?\s*(?:ж\/б\s*)?\d+(?:[.,]\d+)?\s*(?:кг|г|гр|л|л\.|мл|шт)\b)/u,
   );
 
   if (beforeMeasureMatch?.[1] && isPotentialBrandCandidate(beforeMeasureMatch[1])) {
     candidates.push(beforeMeasureMatch[1]);
   }
 
+  const titleCaseBeforeMeasureMatch = compactName.match(
+    /([A-Z][A-Za-z0-9.&'’`/\-]*(?:\s+[A-Z][A-Za-z0-9.&'’`/\-]*){1,3})(?=,?\s*(?:ж\/б\s*)?\d+(?:[.,]\d+)?\s*(?:кг|г|гр|л|л\.|мл|шт)\b)/u,
+  );
+
+  if (titleCaseBeforeMeasureMatch?.[1] && isPotentialBrandCandidate(titleCaseBeforeMeasureMatch[1])) {
+    candidates.push(titleCaseBeforeMeasureMatch[1]);
+  }
+
+  candidates.push(...buildLowercaseTailBrandCandidates(compactName));
+
   const trailingMatch = compactWithoutCountry.match(
-    /(?:^|[\s,(])([A-Z][A-Za-z0-9.&'’`/\-]+(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]+|[a-z][A-Za-z0-9.&'’`/\-]+)){0,3})$/u,
+    /(?:^|[\s,(])([A-Z][A-Za-z0-9.&'’`/\-]*(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]*|[a-z][A-Za-z0-9.&'’`/\-]*)){0,3})$/u,
   );
 
   if (trailingMatch?.[1] && isPotentialBrandCandidate(trailingMatch[1])) {
@@ -204,15 +317,23 @@ function buildBrandCandidates(rawName) {
   }
 
   const leadingMatch = compactWithoutCountry.match(
-    /^([A-Z][A-Za-z0-9.&'’`/\-]+(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]+|[a-z][A-Za-z0-9.&'’`/\-]+)){0,3})(?=\s)/u,
+    /^([A-Z][A-Za-z0-9.&'’`/\-]*(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]*|[a-z][A-Za-z0-9.&'’`/\-]*)){0,3})(?=\s)/u,
   );
 
   if (leadingMatch?.[1] && isPotentialBrandCandidate(leadingMatch[1])) {
     candidates.push(leadingMatch[1]);
   }
 
+  const lowerCaseLeadingMatch = compactWithoutCountry.match(
+    /^([a-z][a-z0-9.&'’`/\-]{3,}(?:\s+[a-z][a-z0-9.&'’`/\-]{3,}){0,2})(?=\s)/u,
+  );
+
+  if (lowerCaseLeadingMatch?.[1] && isPotentialBrandCandidate(lowerCaseLeadingMatch[1])) {
+    candidates.push(lowerCaseLeadingMatch[1]);
+  }
+
   const embeddedMatches = compactWithoutCountry.matchAll(
-    /(?:^|[\s,(])([A-Z][A-Za-z0-9.&'’`/\-]+(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]+|[a-z][A-Za-z0-9.&'’`/\-]+)){0,3})(?=[\s,)]|$)/gu,
+    /(?:^|[\s,(])([A-Z][A-Za-z0-9.&'’`/\-]*(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]*|[a-z][A-Za-z0-9.&'’`/\-]*)){0,3})(?=[\s,)]|$)/gu,
   );
 
   for (const match of embeddedMatches) {
@@ -222,6 +343,66 @@ function buildBrandCandidates(rawName) {
   }
 
   return dedupeCandidates(candidates);
+}
+
+function selectPreferredBrandCandidate(rawName, candidates) {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  const candidatesWithoutDigits = candidates.filter((candidate) => !/\d/.test(candidate));
+  const pool = candidatesWithoutDigits.length > 0 ? candidatesWithoutDigits : candidates;
+  const commaParts = splitNameBySemanticCommas(rawName);
+  const tail = commaParts[commaParts.length - 1] ?? "";
+  const quotedTailMatch = rawName.match(
+    /"[^"]+"\s+([A-Z][A-Za-z0-9.&'’`/\-]*(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]*|[a-z][A-Za-z0-9.&'’`/\-]*)){0,3})(?=,?\s*(?:ж\/б\s*)?\d+(?:[.,]\d+)?\s*(?:кг|г|гр|л|л\.|мл|шт)\b)/u,
+  );
+
+  if (quotedTailMatch?.[1]) {
+    const exactPostQuoted = pool.find(
+      (candidate) => normalizeComparableText(candidate) === normalizeComparableText(quotedTailMatch[1]),
+    );
+
+    if (exactPostQuoted) {
+      return exactPostQuoted;
+    }
+  }
+
+  const trailingMatches = pool.filter((candidate) => normalizeComparableText(tail).includes(normalizeComparableText(candidate)));
+
+  if (trailingMatches.length === 1) {
+    return trailingMatches[0];
+  }
+
+  if (trailingMatches.length > 1) {
+    return trailingMatches.sort((left, right) => right.length - left.length)[0];
+  }
+
+  const afterMeasureTailMatch = rawName.match(
+    /(?:кг|г|гр|л|л\.|мл|шт)\s+([A-Z][A-Za-z0-9.&'’`/\-]*(?:\s+(?:[A-Z][A-Za-z0-9.&'’`/\-]*|[a-z][A-Za-z0-9.&'’`/\-]*)){0,3}|[a-z][a-z0-9.&'’`/\-]{3,}(?:\s+[a-z][a-z0-9.&'’`/\-]{3,}){0,2})$/u,
+  );
+
+  if (afterMeasureTailMatch?.[1]) {
+    const exactAfterMeasureTail = pool.find(
+      (candidate) => normalizeComparableText(candidate) === normalizeComparableText(afterMeasureTailMatch[1]),
+    );
+
+    if (exactAfterMeasureTail) {
+      return exactAfterMeasureTail;
+    }
+  }
+
+  const longCandidates = pool.filter((candidate) => countWords(candidate) > 1);
+
+  if (longCandidates.length === 1) {
+    return longCandidates[0];
+  }
+
+  return pool.sort((left, right) => right.length - left.length)[0];
 }
 
 function stripBrandFromName(name, brand) {
@@ -448,6 +629,15 @@ export async function refineParsedProductIdentity(input) {
   if (!nextBrand && brandCandidates.length === 1) {
     nextBrand = brandCandidates[0];
     nextName = stripBrandFromName(nextName, nextBrand);
+  }
+
+  if (!nextBrand && brandCandidates.length > 1) {
+    const preferredCandidate = selectPreferredBrandCandidate(input.rawName, brandCandidates);
+
+    if (preferredCandidate) {
+      nextBrand = preferredCandidate;
+      nextName = stripBrandFromName(nextName, nextBrand);
+    }
   }
 
   if (shouldRequestAi(input, brandCandidates)) {

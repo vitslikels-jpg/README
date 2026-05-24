@@ -49,6 +49,33 @@ const cases = [
     expectedBrand: "Kati",
     expectedCountry: "ВЬЕТНАМ",
   },
+  {
+    rawName: "Дамплинги для жарки с чапче \"Bibigo\", 250 г",
+    rawCountry: "Южная Корея",
+    expectedBrand: "Bibigo",
+    expectedCountry: "ЮЖНАЯ КОРЕЯ",
+  },
+  {
+    rawName: "Рисовая лапша 10 мм \"Aroy-D\", 454 гр",
+    rawCountry: "Тайланд",
+    expectedBrand: "Aroy-D",
+    expectedCountry: "ТАИЛАНД",
+  },
+  {
+    rawName: "Китайская яичная лапша Mai A Yi, 1 кг",
+    rawCountry: "Китай",
+    expectedBrand: "Mai A Yi",
+    expectedCountry: "КИТАЙ",
+  },
+  {
+    rawName: "Лапша Le Ramen Meow со вкусом острой говядины, 68 г, КНР",
+    expectedBrand: "Le Ramen Meow",
+    expectedCountry: "КИТАЙ",
+  },
+  {
+    rawName: "Закуска японская FUKUJINZUKE Ассорти овощей, маринованных в соевом соусе, 300 г KOUSYO",
+    expectedBrand: "KOUSYO",
+  },
 ];
 
 const outputs = [];
@@ -78,7 +105,7 @@ for (const item of cases) {
     throw new Error(`Unexpected brand for "${item.rawName}": expected "${item.expectedBrand}", got "${result.brand ?? "null"}"`);
   }
 
-  if (result.country !== item.expectedCountry) {
+  if ("expectedCountry" in item && result.country !== item.expectedCountry) {
     throw new Error(`Unexpected country for "${item.rawName}": expected "${item.expectedCountry}", got "${result.country ?? "null"}"`);
   }
 }

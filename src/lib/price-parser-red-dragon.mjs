@@ -1,11 +1,13 @@
 import { Prisma } from "@prisma/client";
+import { refineParsedProductIdentity } from "./product-identity-refiner.mjs";
 
 export const RED_DRAGON_SUPPLIER_PROFILE_ID = "red-dragon";
 
 const NAME_HEADER = "\u041d\u043e\u043c\u0435\u043d\u043a\u043b\u0430\u0442\u0443\u0440\u0430";
 const ARTICLE_HEADER = "\u0410\u0440\u0442\u0438\u043a\u0443\u043b";
 const UNITS_PER_PACK_HEADER = "\u0428\u0442\u0443\u043a \u0432 \u043a\u043e\u0440\u043e\u0431\u043a\u0435";
-const PRICE_HEADER = "\u0426\u0435\u043d\u0430 \u0437\u0430 \u0448\u0442\u0443\u043a\u0443";
+const PRICE_HEADERS = ["\u0426\u0435\u043d\u0430 \u0437\u0430 \u0448\u0442\u0443\u043a\u0443", "\u0426\u0435\u043d\u0430"];
+const COUNTRY_HEADERS = ["\u041f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c"];
 const RED_DRAGON_NAME = "\u043a\u0440\u0430\u0441\u043d\u044b\u0439 \u0434\u0440\u0430\u043a\u043e\u043d";
 
 const IGNORED_HEADERS = new Set([
@@ -18,7 +20,7 @@ const REQUIRED_HEADERS = {
   name: NAME_HEADER,
   article: ARTICLE_HEADER,
   unitsPerPack: UNITS_PER_PACK_HEADER,
-  price: PRICE_HEADER,
+  price: PRICE_HEADERS,
 };
 
 const MAX_RED_DRAGON_AI_ROWS = 25;
@@ -126,15 +128,22 @@ function detectHeaderRow(rows) {
       headers.forEach((header, columnIndex) => {
         const normalized = normalizeHeader(header);
 
-        for (const [field, expectedHeader] of Object.entries(REQUIRED_HEADERS)) {
+        for (const [field, expectedHeaders] of Object.entries(REQUIRED_HEADERS)) {
           if (fieldIndexes[field] !== undefined) {
             continue;
           }
 
-          if (normalized === normalizeHeader(expectedHeader)) {
+          const headersToMatch = Array.isArray(expectedHeaders) ? expectedHeaders : [expectedHeaders];
+
+          if (headersToMatch.some((expectedHeader) => normalized === normalizeHeader(expectedHeader))) {
             fieldIndexes[field] = columnIndex;
             score += field === "name" || field === "price" ? 3 : 2;
           }
+        }
+
+        if (fieldIndexes.country === undefined && COUNTRY_HEADERS.some((header) => normalized === normalizeHeader(header))) {
+          fieldIndexes.country = columnIndex;
+          score += 1;
         }
       });
 
@@ -312,6 +321,8 @@ export async function parseRedDragonSheetRows(rows) {
   const products = [];
   let skippedCount = 0;
   let aiRowsUsed = 0;
+  let identityAiRowsUsed = 0;
+  const maxIdentityAiRows = 40;
 
   for (let rowIndex = headerMatch.headerRowIndex + headerMatch.headerRowSpan; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex] ?? [];
@@ -324,6 +335,7 @@ export async function parseRedDragonSheetRows(rows) {
     const article = normalizeCellValue(row[headerMatch.fieldIndexes.article]);
     const unitsPerPackRaw = normalizeCellValue(row[headerMatch.fieldIndexes.unitsPerPack]);
     const priceRaw = normalizeCellValue(row[headerMatch.fieldIndexes.price]);
+    const countryRaw = normalizeCellValue(row[headerMatch.fieldIndexes.country]);
 
     if (!name || normalizeHeader(name) === normalizeHeader(NAME_HEADER)) {
       skippedCount += 1;
@@ -404,11 +416,30 @@ export async function parseRedDragonSheetRows(rows) {
       continue;
     }
 
+    const refinedIdentity = await refineParsedProductIdentity({
+      rawName: name,
+      parsedName: name,
+      brand: null,
+      country: null,
+      rawBrand: null,
+      rawCountry: countryRaw || null,
+      supplierName: "\u041a\u0440\u0430\u0441\u043d\u044b\u0439 \u0434\u0440\u0430\u043a\u043e\u043d",
+      disableAi: identityAiRowsUsed >= maxIdentityAiRows,
+    });
+
+    if (refinedIdentity.usedAi) {
+      identityAiRowsUsed += 1;
+    }
+
+    rawData.identityRefinerSource = refinedIdentity.source;
+    rawData.identityRefinerConfidence = refinedIdentity.confidence?.toString() ?? "";
+    rawData.identityRefinerExplanation = refinedIdentity.explanation ?? "";
+
     products.push({
       name,
       article: article || null,
-      brand: null,
-      country: null,
+      brand: refinedIdentity.brand,
+      country: refinedIdentity.country,
       unit: "\u0448\u0442",
       unitsPerPack,
       minOrderQuantity: null,

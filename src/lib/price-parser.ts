@@ -2061,7 +2061,7 @@ export async function parsePriceDocument(documentId: string): Promise<ParseDocum
           price: product.price?.toString() ?? null,
           stock: product.stock?.toString() ?? null,
           sourceRow: product.sourceRow,
-          rawData: product.rawData,
+          rawData: product.rawData as Prisma.InputJsonValue,
         })),
       });
 
