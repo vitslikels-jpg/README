@@ -365,6 +365,61 @@ function getSemanticScoreAdjustment(searchTokens: string[], productTokens: Set<s
   return score;
 }
 
+function getProductFallbackScoreAdjustment(searchText: string | null | undefined, product: ProductCandidate) {
+  const normalizedQuery = normalizeSearchText(searchText);
+  const normalizedName = normalizeSearchText(product.name);
+
+  if (!normalizedQuery) {
+    return 0;
+  }
+
+  let score = 0;
+
+  if (normalizedQuery === "сахар") {
+    if (normalizedName.includes("сахар песок")) {
+      score += 180;
+    }
+
+    if (/\b(1|5|10|25)\s*кг\b/u.test(normalizedName)) {
+      score += 70;
+    }
+
+    if (normalizedName.includes("порцион")) {
+      score -= 180;
+    }
+
+    if (normalizedName.includes("стик")) {
+      score -= 180;
+    }
+
+    if (normalizedName.includes("рафинад")) {
+      score -= 130;
+    }
+
+    if (normalizedName.includes("тростников")) {
+      score -= 140;
+    }
+
+    if (normalizedName.includes("ванильн")) {
+      score -= 160;
+    }
+
+    if (normalizedName.includes("пудр")) {
+      score -= 160;
+    }
+
+    if (normalizedName.includes("соус")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("с сахаром")) {
+      score -= 220;
+    }
+  }
+
+  return score;
+}
+
 function getCatalogPhraseScoreAdjustment(params: {
   normalizedQuery: string;
   queryWordRoots: string[];
@@ -877,6 +932,7 @@ function getCandidateFit(
       scoreProduct(item, product) +
       (matchedTokens.length > 0 ? matchedTokens.length * 8 : 0) +
       getSemanticScoreAdjustment(itemTokens, productTokens) +
+      getProductFallbackScoreAdjustment(searchText, product) +
       (normalizedItemName && productText.includes(normalizedItemName) ? 12 : 0) +
       (manualSelectionProductIds?.has(product.id) && product.price ? PRODUCT_FALLBACK_MANUAL_SELECTION_BOOST : 0),
     matchedTokensCount: matchedTokens.length,
