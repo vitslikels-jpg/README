@@ -175,6 +175,7 @@ const MAX_PRODUCTS_TO_SCORE = 400;
 const MAX_RESULTS_PER_ITEM = 8;
 const SEARCH_RESULTS_PER_REQUEST = 24;
 const SEARCH_RESULTS_PER_SUPPLIER = 4;
+const PRODUCT_FALLBACK_MANUAL_SELECTION_BOOST = 500;
 const SAFE_CATALOG_PRIMARY_QUERIES = new Set([
   "бекон",
   "сливки",
@@ -830,10 +831,31 @@ function scoreProduct(item: OrderOptimizationItem, product: ProductCandidate) {
   return matchedTokens.length * 20 + unitScore + supplierScore + priceScore + coverageScore;
 }
 
+async function getManualSelectionBoostedProductIds(enterpriseId: string, searchText: string | null | undefined) {
+  const normalizedParsedName = normalizeSearchText(searchText);
+
+  if (!normalizedParsedName) {
+    return new Set<string>();
+  }
+
+  const manualSelections = await prisma.smartOrderManualSelection.findMany({
+    where: {
+      enterpriseId,
+      normalizedParsedName,
+    },
+    select: {
+      selectedProductId: true,
+    },
+  });
+
+  return new Set(manualSelections.map((selection) => selection.selectedProductId));
+}
+
 function getCandidateFit(
   item: OrderOptimizationItem,
   product: ProductCandidate,
   searchText: string | null | undefined = item.parsedName,
+  manualSelectionProductIds?: Set<string>,
 ): ScoredProductCandidate {
   const itemTokens = getSearchTokens(searchText);
   const productText = normalizeSearchText(`${product.name} ${product.brand ?? ""} ${product.article ?? ""}`);
@@ -853,7 +875,8 @@ function getCandidateFit(
       scoreProduct(item, product) +
       (matchedTokens.length > 0 ? matchedTokens.length * 8 : 0) +
       getSemanticScoreAdjustment(itemTokens, productTokens) +
-      (normalizedItemName && productText.includes(normalizedItemName) ? 12 : 0),
+      (normalizedItemName && productText.includes(normalizedItemName) ? 12 : 0) +
+      (manualSelectionProductIds?.has(product.id) && product.price ? PRODUCT_FALLBACK_MANUAL_SELECTION_BOOST : 0),
     matchedTokensCount: matchedTokens.length,
     totalTokensCount: itemTokens.length,
     matchedRatio: itemTokens.length > 0 ? matchedTokens.length / itemTokens.length : 0,
@@ -965,6 +988,8 @@ async function findCandidateProducts(
     return [];
   }
 
+  const manualSelectionProductIds = await getManualSelectionBoostedProductIds(enterpriseId, searchText);
+
   const products = await prisma.product.findMany({
     where: {
       enterpriseId,
@@ -1008,7 +1033,7 @@ async function findCandidateProducts(
   });
 
   const scoredCandidates = products
-    .map((product) => getCandidateFit(item, product, searchText))
+    .map((product) => getCandidateFit(item, product, searchText, manualSelectionProductIds))
     .filter((candidate) => candidate.score > 0)
     .sort(compareScoredCandidates);
 
