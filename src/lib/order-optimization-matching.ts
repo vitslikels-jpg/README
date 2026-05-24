@@ -70,6 +70,7 @@ type ScoredProductCandidate = {
   supplierMatched: boolean;
   hasUnitSupport: boolean;
   exactPhraseMatch: boolean;
+  manualSelectionMatched?: boolean;
   catalogSelection?: {
     supplierOfferId: string;
     productMasterId: string | null;
@@ -164,6 +165,7 @@ type ItemCandidatePlan = {
     supplierMatched: boolean;
     hasUnitSupport: boolean;
     exactPhraseMatch: boolean;
+    manualSelectionMatched?: boolean;
   }>;
   matchStatus: "review" | "not_found";
   autoSelectedIndex: number | null;
@@ -884,6 +886,7 @@ function getCandidateFit(
     supplierMatched: Boolean(requestedSupplier) ? supplierName.includes(requestedSupplier) : true,
     hasUnitSupport: Boolean(itemUnit && (productUnit === itemUnit || packSize)),
     exactPhraseMatch: Boolean(normalizedItemName && productText.includes(normalizedItemName)),
+    manualSelectionMatched: Boolean(manualSelectionProductIds?.has(product.id) && product.price),
   };
 }
 
@@ -1590,6 +1593,7 @@ function buildCandidateRows(
         supplierMatched: candidate.supplierMatched,
         hasUnitSupport: candidate.hasUnitSupport,
         exactPhraseMatch: candidate.exactPhraseMatch,
+        manualSelectionMatched: candidate.manualSelectionMatched,
       });
 
       if (rows.length >= maxRows) {
@@ -1671,6 +1675,7 @@ function buildCandidateRows(
         supplierMatched: candidate.supplierMatched,
         hasUnitSupport: candidate.hasUnitSupport,
         exactPhraseMatch: candidate.exactPhraseMatch,
+        manualSelectionMatched: candidate.manualSelectionMatched,
       });
 
       if (rows.length >= maxRows) {
@@ -1791,6 +1796,39 @@ function isStrongAutoCandidate(
 function chooseAutoSelectedIndex(rows: ItemCandidatePlan["rows"]) {
   if (rows.length === 0) {
     return null;
+  }
+
+  const manualSelectionRows = rows
+    .map((row, index) => ({ row, index }))
+    .filter(
+      ({ row }) =>
+        Boolean(row.manualSelectionMatched) && Boolean(row.data.selectedProduct?.connect.id) && Boolean(row.data.optimizedUnitPrice),
+    )
+    .sort((left, right) => {
+      const byCandidate = compareCandidateRows(
+        {
+          mode: (left.row.data.coverageMode as CoverageMode | null) ?? null,
+          shortage: (left.row.data.shortage as Prisma.Decimal | null) ?? null,
+          overage: (left.row.data.overage as Prisma.Decimal | null) ?? null,
+          optimizedLineTotal: (left.row.data.optimizedLineTotal as Prisma.Decimal | null) ?? null,
+        },
+        {
+          mode: (right.row.data.coverageMode as CoverageMode | null) ?? null,
+          shortage: (right.row.data.shortage as Prisma.Decimal | null) ?? null,
+          overage: (right.row.data.overage as Prisma.Decimal | null) ?? null,
+          optimizedLineTotal: (right.row.data.optimizedLineTotal as Prisma.Decimal | null) ?? null,
+        },
+      );
+
+      if (byCandidate !== 0) {
+        return byCandidate;
+      }
+
+      return right.row.score - left.row.score;
+    });
+
+  if (manualSelectionRows.length > 0) {
+    return manualSelectionRows[0].index;
   }
 
   const sorted = rows
