@@ -14,6 +14,7 @@ type RouteContext = {
 type ManualLearningCandidate = {
   id: string;
   selectedProductId: string | null;
+  selectedSupplierId: string | null;
   selectedSupplierOfferId: string | null;
   selectedProductMasterId: string | null;
   selectedPriceSnapshotId: string | null;
@@ -47,6 +48,15 @@ function buildFallbackManualLearningNote(item: ManualLearningItem, candidate: Ma
 
   noteLines.push(`[manual-learning] ${JSON.stringify(payload)}`);
   return noteLines.join("\n");
+}
+
+function normalizeManualSelectionName(value: string | null | undefined) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -103,6 +113,7 @@ export async function POST(request: Request, context: RouteContext) {
       select: {
         id: true,
         selectedProductId: true,
+        selectedSupplierId: true,
         selectedSupplierOfferId: true,
         selectedProductMasterId: true,
         selectedPriceSnapshotId: true,
@@ -119,7 +130,33 @@ export async function POST(request: Request, context: RouteContext) {
         productMasterId: candidate.selectedProductMasterId,
       });
     } else {
-      // TODO: add a dedicated SmartOrderManualSelection model for cross-order learning from Product fallback selections.
+      const normalizedParsedName = normalizeManualSelectionName(item.parsedName);
+
+      if (candidate.selectedProductId && normalizedParsedName) {
+        await prisma.smartOrderManualSelection.upsert({
+          where: {
+            enterpriseId_normalizedParsedName_selectedProductId: {
+              enterpriseId,
+              normalizedParsedName,
+              selectedProductId: candidate.selectedProductId,
+            },
+          },
+          update: {
+            sourceLine: item.sourceLine,
+            parsedName: item.parsedName ?? item.sourceLine,
+            selectedSupplierId: candidate.selectedSupplierId,
+          },
+          create: {
+            enterpriseId,
+            sourceLine: item.sourceLine,
+            parsedName: item.parsedName ?? item.sourceLine,
+            normalizedParsedName,
+            selectedProductId: candidate.selectedProductId,
+            selectedSupplierId: candidate.selectedSupplierId,
+          },
+        });
+      }
+
       await prisma.orderOptimizationItem.update({
         where: {
           id: itemId,

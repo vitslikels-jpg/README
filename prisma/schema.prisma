@@ -82,6 +82,7 @@ model Enterprise {
   supplierOffers     SupplierOffer[]
   priceSnapshots     PriceSnapshot[]
   productMappings    ProductMapping[]
+  smartOrderManualSelections SmartOrderManualSelection[]
   orders             Order[]
   orderOptimizations OrderOptimization[]
   createdAt          DateTime            @default(now())
@@ -105,6 +106,7 @@ model Supplier {
   priceSnapshots      PriceSnapshot[]
   orders              Order[]
   optimizationResults OrderOptimizationResult[]
+  smartOrderManualSelections SmartOrderManualSelection[]
   createdAt           DateTime                  @default(now())
   updatedAt           DateTime                  @updatedAt
 
@@ -195,6 +197,7 @@ model Product {
   orderItems           OrderItem[]
   priceSnapshots       PriceSnapshot[]
   optimizationResults OrderOptimizationResult[]
+  smartOrderManualSelections SmartOrderManualSelection[]
 
   @@index([enterpriseId])
   @@index([supplierId])
@@ -331,6 +334,25 @@ model ProductMapping {
   @@index([enterpriseId])
   @@index([supplierOfferId])
   @@index([productMasterId])
+}
+
+model SmartOrderManualSelection {
+  id                   String      @id @default(cuid())
+  enterpriseId         String
+  sourceLine           String?
+  parsedName           String
+  normalizedParsedName String
+  selectedProductId    String
+  selectedSupplierId   String?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  enterprise           Enterprise  @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  selectedProduct      Product     @relation(fields: [selectedProductId], references: [id], onDelete: Cascade)
+  selectedSupplier     Supplier?   @relation(fields: [selectedSupplierId], references: [id], onDelete: SetNull)
+
+  @@index([enterpriseId, normalizedParsedName])
+  @@index([selectedProductId])
+  @@unique([enterpriseId, normalizedParsedName, selectedProductId])
 }
 
 model Order {
