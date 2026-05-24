@@ -1,4 +1,4 @@
-import { Prisma, type OrderOptimizationItem, type Product, type Supplier } from "@prisma/client";
+import { Prisma, type Document, type OrderOptimizationItem, type Product, type Supplier } from "@prisma/client";
 import { getOrderOptimizationWithDetails, normalizeOrderOptimizationUnit } from "@/lib/order-optimizations";
 import { prisma } from "@/lib/prisma";
 
@@ -26,6 +26,7 @@ type ProductCandidate = Pick<
   | "updatedAt"
 > & {
   supplier: Pick<Supplier, "id" | "name" | "archivedAt">;
+  document: Pick<Document, "id" | "uploadedAt" | "createdAt" | "updatedAt" | "isCurrent">;
 };
 
 type ProductForPack = Pick<Product, "unit" | "unitsPerPack" | "minOrderQuantity" | "orderStep" | "rawData">;
@@ -71,6 +72,7 @@ type ScoredProductCandidate = {
   hasUnitSupport: boolean;
   exactPhraseMatch: boolean;
   manualSelectionMatched?: boolean;
+  freshnessRank: number;
   catalogSelection?: {
     supplierOfferId: string;
     productMasterId: string | null;
@@ -107,6 +109,8 @@ type CatalogCandidate = {
     id: string;
     price: Prisma.Decimal | null;
     rawData: unknown;
+    capturedAt: Date;
+    createdAt: Date;
     legacyProductId: string | null;
     legacyProduct: ProductCandidate | null;
   } | null;
@@ -1061,6 +1065,7 @@ function getCandidateFit(
     hasUnitSupport: Boolean(itemUnit && (productUnit === itemUnit || packSize)),
     exactPhraseMatch: Boolean(normalizedItemName && productText.includes(normalizedItemName)),
     manualSelectionMatched: Boolean(manualSelectionProductIds?.has(product.id) && product.price),
+    freshnessRank: product.document.uploadedAt.getTime(),
   };
 }
 
@@ -1089,6 +1094,68 @@ function compareScoredCandidates(left: ScoredProductCandidate, right: ScoredProd
   const rightPrice = right.product.price ? Number(right.product.price.toString()) : Number.POSITIVE_INFINITY;
 
   return leftPrice - rightPrice;
+}
+
+function isBetterDuplicateCandidate(left: ScoredProductCandidate, right: ScoredProductCandidate) {
+  if (left.score !== right.score) {
+    return left.score > right.score;
+  }
+
+  const leftPrice = left.product.price ? Number(left.product.price.toString()) : Number.POSITIVE_INFINITY;
+  const rightPrice = right.product.price ? Number(right.product.price.toString()) : Number.POSITIVE_INFINITY;
+
+  if (leftPrice !== rightPrice) {
+    return leftPrice < rightPrice;
+  }
+
+  if (left.freshnessRank !== right.freshnessRank) {
+    return left.freshnessRank > right.freshnessRank;
+  }
+
+  return compareScoredCandidates(left, right) < 0;
+}
+
+function buildCandidateDedupKey(
+  item: Pick<OrderOptimizationItem, "parsedUnit">,
+  candidate: ScoredProductCandidate,
+) {
+  const packSize = getPackSize(candidate.product, item);
+  const normalizedName = normalizeSearchText(candidate.product.name);
+  const normalizedUnit = normalizeOrderOptimizationUnit(candidate.product.unit) ?? normalizeSearchText(candidate.product.unit);
+  const packSignature = decimalToString(
+    packSize ?? candidate.product.unitsPerPack ?? candidate.product.orderStep ?? candidate.product.minOrderQuantity,
+  );
+
+  return [normalizedName, candidate.product.supplierId, normalizedUnit ?? "", packSignature ?? ""].join("::");
+}
+
+function dedupeScoredCandidates(
+  item: Pick<OrderOptimizationItem, "parsedUnit">,
+  candidates: ScoredProductCandidate[],
+) {
+  const deduped = new Map<string, ScoredProductCandidate>();
+  let removedCount = 0;
+
+  for (const candidate of candidates) {
+    const key = buildCandidateDedupKey(item, candidate);
+    const existing = deduped.get(key);
+
+    if (!existing) {
+      deduped.set(key, candidate);
+      continue;
+    }
+
+    removedCount += 1;
+
+    if (isBetterDuplicateCandidate(candidate, existing)) {
+      deduped.set(key, candidate);
+    }
+  }
+
+  return {
+    candidates: Array.from(deduped.values()).sort(compareScoredCandidates),
+    removedCount,
+  };
 }
 
 function diversifyCandidates(candidates: ScoredProductCandidate[], maxResults: number, maxPerSupplier: number) {
@@ -1205,6 +1272,15 @@ async function findCandidateProducts(
           archivedAt: true,
         },
       },
+      document: {
+        select: {
+          id: true,
+          uploadedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          isCurrent: true,
+        },
+      },
     },
     take: MAX_PRODUCTS_TO_SCORE,
   });
@@ -1214,8 +1290,18 @@ async function findCandidateProducts(
     .filter((candidate) => candidate.score > 0)
     .sort(compareScoredCandidates);
 
+  const dedupedCandidates = dedupeScoredCandidates(item, scoredCandidates);
+
+  console.info(
+    "[smart-order] candidateDedup source=product_fallback query=%s before=%d after=%d removed=%d",
+    normalizeSearchText(searchText),
+    scoredCandidates.length,
+    dedupedCandidates.candidates.length,
+    dedupedCandidates.removedCount,
+  );
+
   return diversifyCandidates(
-    scoredCandidates,
+    dedupedCandidates.candidates,
     options?.maxProducts ?? Math.max(4, Math.ceil(MAX_RESULTS_PER_ITEM / 2)),
     options?.maxPerSupplier ?? 2,
   );
@@ -1402,6 +1488,8 @@ async function findCatalogCandidateProductsWithScores(
           id: true,
           price: true,
           rawData: true,
+          capturedAt: true,
+          createdAt: true,
           legacyProductId: true,
           legacyProduct: {
             select: {
@@ -1425,6 +1513,15 @@ async function findCatalogCandidateProductsWithScores(
               rawData: true,
               createdAt: true,
               updatedAt: true,
+              document: {
+                select: {
+                  id: true,
+                  uploadedAt: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  isCurrent: true,
+                },
+              },
             },
           },
         },
@@ -1476,6 +1573,8 @@ async function findCatalogCandidateProductsWithScores(
             id: currentPriceSnapshot.id,
             price: currentPriceSnapshot.price,
             rawData: currentPriceSnapshot.rawData,
+            capturedAt: currentPriceSnapshot.capturedAt,
+            createdAt: currentPriceSnapshot.createdAt,
             legacyProductId: currentPriceSnapshot.legacyProductId,
             legacyProduct: currentPriceSnapshot.legacyProduct
               ? {
@@ -1646,6 +1745,10 @@ export async function findPreferredSmartOrderProductCandidates(
             supplierMatched: true,
             hasUnitSupport: true,
             exactPhraseMatch: candidate.exactPhraseMatch,
+            freshnessRank:
+              candidate.candidate.currentPriceSnapshot?.capturedAt.getTime() ??
+              candidate.candidate.currentPriceSnapshot?.createdAt.getTime() ??
+              legacyProduct.document.uploadedAt.getTime(),
             catalogSelection: {
               supplierOfferId: candidate.candidate.supplierOfferId,
               productMasterId: candidate.candidate.productMaster?.id ?? candidate.candidate.mapping?.productMasterId ?? null,
@@ -1657,12 +1760,22 @@ export async function findPreferredSmartOrderProductCandidates(
         })
         .filter((candidate): candidate is ScoredProductCandidate => Boolean(candidate));
 
-      if (mappedCandidates.length >= 3) {
-        console.info("[smart-order] candidateSource=catalog query=%s count=%d", normalizedQuery, mappedCandidates.length);
+      const dedupedCandidates = dedupeScoredCandidates(item, mappedCandidates);
+
+      console.info(
+        "[smart-order] candidateDedup source=catalog query=%s before=%d after=%d removed=%d",
+        normalizedQuery,
+        mappedCandidates.length,
+        dedupedCandidates.candidates.length,
+        dedupedCandidates.removedCount,
+      );
+
+      if (dedupedCandidates.candidates.length >= 3) {
+        console.info("[smart-order] candidateSource=catalog query=%s count=%d", normalizedQuery, dedupedCandidates.candidates.length);
 
         return {
           candidateSource: "catalog",
-          candidates: mappedCandidates.slice(0, options?.maxProducts ?? mappedCandidates.length),
+          candidates: dedupedCandidates.candidates.slice(0, options?.maxProducts ?? dedupedCandidates.candidates.length),
         };
       }
     }
