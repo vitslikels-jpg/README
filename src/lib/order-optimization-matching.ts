@@ -417,6 +417,54 @@ function getProductFallbackScoreAdjustment(searchText: string | null | undefined
     }
   }
 
+  if (normalizedQuery === "картофель") {
+    if (normalizedName.startsWith("картофель ") && !normalizedName.includes("фри")) {
+      score += 200;
+    }
+
+    if (
+      normalizedName.includes("свеж") ||
+      normalizedName.includes("мыт") ||
+      normalizedName.includes("очищ") ||
+      normalizedName.includes("вес") ||
+      /\b\d+(?:[.,]\d+)?\s*кг\b/u.test(normalizedName)
+    ) {
+      score += 80;
+    }
+
+    if (normalizedName.includes("фри")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("картофель фри") || normalizedName.includes("картофель-фри")) {
+      score -= 260;
+    }
+
+    if (normalizedName.includes("дольки")) {
+      score -= 160;
+    }
+
+    if (normalizedName.includes("по деревенски")) {
+      score -= 180;
+    }
+
+    if (normalizedName.includes("крахмал")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("ньокки")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("специи")) {
+      score -= 220;
+    }
+
+    if (normalizedName.includes("чипсы")) {
+      score -= 220;
+    }
+  }
+
   return score;
 }
 
