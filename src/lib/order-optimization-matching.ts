@@ -340,6 +340,14 @@ function getCatalogPhraseScoreAdjustment(params: {
     score += 36;
   }
 
+  if (normalizedQuery === "сыр" && candidateName.startsWith("сыр")) {
+    score += 220;
+  }
+
+  if (normalizedQuery === "масло сливочное" && candidateName.startsWith("масло сливочное")) {
+    score += 260;
+  }
+
   if (productMasterName.startsWith(normalizedQuery)) {
     score += 28;
   }
@@ -371,6 +379,8 @@ function getCatalogNegativeScoreAdjustment(params: {
   const singleQueryWord = queryWords.length === 1 ? queryWords[0] : null;
   const singleQueryRoot = queryWordRoots.length === 1 ? queryWordRoots[0] : null;
   const queryLooksLikeOil = queryWordRoots.some((token) => token.startsWith("\u043c\u0430\u0441"));
+  const isCheeseQuery = normalizedQuery === "сыр";
+  const isButterQuery = normalizedQuery === "масло сливочное";
 
   if (CATALOG_NEGATIVE_LEAD_WORDS.includes(firstCandidateWord as (typeof CATALOG_NEGATIVE_LEAD_WORDS)[number])) {
     penalty -= 75;
@@ -387,6 +397,58 @@ function getCatalogNegativeScoreAdjustment(params: {
 
   if (candidateName.includes("\u0441\u044b\u0440\u043e\u0432\u044f\u043b\u0435\u043d")) {
     penalty -= 95;
+  }
+
+  if (isCheeseQuery) {
+    if (!candidateWords[0]?.startsWith("сыр")) {
+      penalty -= 140;
+    }
+
+    if (candidateName.includes("сыровялен")) {
+      penalty -= 240;
+    }
+
+    const cheeseIndex = candidateWords.findIndex((word) => word.startsWith("сыр"));
+
+    if (cheeseIndex > 0) {
+      const previousWord = candidateWords[cheeseIndex - 1] ?? "";
+
+      if (["с", "со", "фаршированный", "начинка", "вкус"].includes(previousWord)) {
+        penalty -= 260;
+      } else {
+        penalty -= 120;
+      }
+    }
+  }
+
+  if (isButterQuery) {
+    if (candidateName.startsWith("масло сливочное")) {
+      penalty += 0;
+    } else {
+      if (!candidateWords.includes("сливочное")) {
+        penalty -= 320;
+      }
+
+      if (candidateName.includes("в масле")) {
+        penalty -= 260;
+      }
+
+      if (candidateName.includes("подсолнечном масле")) {
+        penalty -= 280;
+      }
+
+      if (candidateName.includes("оливковом масле")) {
+        penalty -= 280;
+      }
+
+      if (candidateName.includes("томаты вяленые в масле")) {
+        penalty -= 320;
+      }
+
+      if (candidateName.includes("каперсы в масле")) {
+        penalty -= 320;
+      }
+    }
   }
 
   for (let index = 0; index < candidateWordRoots.length; index += 1) {
