@@ -52,6 +52,22 @@ const RED_DRAGON_IDENTITY_OVERRIDES = new Map([
   ["10911oz", { brand: "MENTOS" }],
   ["13952", { brand: "SUNTORY", country: "ЯПОНИЯ" }],
   ["14064", { brand: "Марукомэ", country: "ЯПОНИЯ" }],
+  ["6678oz", { brand: "BG" }],
+  ["3189oz", { brand: "CHAOKOH" }],
+  ["13333oz", { brand: "KEKESHI" }],
+  ["13098oz", { brand: "Pulmuone" }],
+  ["5642oz", { brand: "Coca-Cola" }],
+  ["8263oz", { brand: "Dr. Pepper" }],
+  ["13964", { brand: "Monster Energy" }],
+  ["13875", { brand: "Toxic Waste" }],
+  ["3455oz", { brand: "Pepero" }],
+  ["13941", { brand: "Oreo" }],
+  ["13873", { brand: "Coris" }],
+  ["13860", { brand: "Coris" }],
+  ["13872", { brand: "Tirol" }],
+  ["13736", { brand: "KitKat" }],
+  ["11637oz", { brand: "KitKat" }],
+  ["11638oz", { brand: "KitKat" }],
 ]);
 
 function normalizeComparableText(value) {
