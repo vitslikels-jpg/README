@@ -519,7 +519,6 @@ export function ProductsPage() {
 
         const preferredSupplierId =
           (supplierIdFromUrl && data.some((supplier) => supplier.id === supplierIdFromUrl) && supplierIdFromUrl) ||
-          data[0]?.id ||
           null;
 
         setExpandedSupplierId(preferredSupplierId);
