@@ -47,7 +47,6 @@ const RED_DRAGON_IDENTITY_OVERRIDES = new Map([
   ["12236кд", { brand: "ICD" }],
   ["10942oz", { brand: "Alpenliebe 2 Chew" }],
   ["12119", { brand: "Alpenliebe 2 Chew" }],
-  ["12170oz", { brand: "LOTTE", country: "ЯПОНИЯ" }],
   ["10939oz", { brand: "Mentos" }],
   ["12107oz", { brand: "Mentos" }],
   ["10911oz", { brand: "MENTOS" }],
