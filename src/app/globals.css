@@ -54,8 +54,8 @@ a {
   top: 0;
   display: flex;
   flex-direction: column;
-  width: 196px;
-  min-width: 196px;
+  width: var(--sidebar-width, 196px);
+  min-width: var(--sidebar-width, 196px);
   height: 100vh;
   height: 100dvh;
   padding: 12px 10px 14px;
@@ -65,6 +65,7 @@ a {
   background: rgba(255, 255, 255, 0.9);
   border-right: 1px solid rgba(216, 224, 234, 0.76);
   backdrop-filter: blur(16px);
+  transition: width 0.14s ease, min-width 0.14s ease;
 }
 
 .sidebarBrand {
@@ -99,7 +100,7 @@ a {
 
 .sidebarBrand h1 {
   margin: 0;
-  font-size: 0.94rem;
+  font-size: var(--sidebar-brand-size, 0.94rem);
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
@@ -119,8 +120,8 @@ a {
 .navItem {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 38px;
+  gap: var(--sidebar-item-gap, 8px);
+  min-height: var(--sidebar-item-height, 38px);
   padding: 6px 10px;
   border: 1px solid transparent;
   border-radius: 12px;
@@ -143,14 +144,14 @@ a {
 }
 
 .navItemIcon svg {
-  width: 17px;
-  height: 17px;
+  width: var(--sidebar-icon-size, 17px);
+  height: var(--sidebar-icon-size, 17px);
 }
 
 .navItemLabel {
   min-width: 0;
   color: #334155;
-  font-size: 0.83rem;
+  font-size: var(--sidebar-label-size, 0.83rem);
   font-weight: 500;
   line-height: 1.2;
 }
@@ -196,14 +197,57 @@ a {
 }
 
 .sidebarHelpCard strong {
-  font-size: 0.88rem;
+  font-size: var(--sidebar-help-title-size, 0.88rem);
   line-height: 1.2;
 }
 
 .sidebarHelpCard p {
   color: var(--text-muted);
-  font-size: 0.78rem;
+  font-size: var(--sidebar-help-text-size, 0.78rem);
   line-height: 1.55;
+}
+
+.sidebarResizeHandle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebarResizeHandle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 3px;
+  height: 72px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.42);
+  transform: translateY(-50%);
+  opacity: var(--sidebar-handle-opacity, 0);
+  transition: opacity 0.18s ease, background 0.18s ease;
+}
+
+.sidebar:hover .sidebarResizeHandle::before,
+.sidebarResizeHandle:hover::before,
+.sidebarResizeHandle:focus-visible::before {
+  opacity: 1;
+}
+
+.sidebarResizeHandle:focus-visible {
+  outline: none;
+}
+
+body.sidebarResizing,
+body.sidebarResizing * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 .appContent {
@@ -2701,6 +2745,11 @@ a {
     min-width: 100%;
     height: auto;
     overflow: visible;
+    transition: none;
+  }
+
+  .sidebarResizeHandle {
+    display: none;
   }
 
   .topbar {
