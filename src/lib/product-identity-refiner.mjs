@@ -452,17 +452,27 @@ function joinApiUrl(baseUrl, path) {
   return `${baseUrl.replace(/\/+$/u, "")}/${path.replace(/^\/+/u, "")}`;
 }
 
-function getRemoteAiProvider() {
+function getPolzaProviderForModel(model) {
   const polzaApiKey = process.env.POLZA_AI_API_KEY?.trim();
 
-  if (polzaApiKey) {
-    return {
-      source: "polza",
-      apiKey: polzaApiKey,
-      model: process.env.POLZA_AI_MODEL?.trim() || "qwen/qwen3.6-flash",
-      completionsUrl: joinApiUrl(process.env.POLZA_AI_BASE_URL?.trim() || "https://polza.ai/api/v1", "chat/completions"),
-      headers: {},
-    };
+  if (!polzaApiKey) {
+    return null;
+  }
+
+  return {
+    source: "polza",
+    apiKey: polzaApiKey,
+    model: model?.trim() || process.env.POLZA_AI_MODEL?.trim() || "google/gemini-3.1-flash-lite",
+    completionsUrl: joinApiUrl(process.env.POLZA_AI_BASE_URL?.trim() || "https://polza.ai/api/v1", "chat/completions"),
+    headers: {},
+  };
+}
+
+function getRemoteAiProvider() {
+  const polzaProvider = getPolzaProviderForModel(process.env.POLZA_AI_MODEL?.trim());
+
+  if (polzaProvider) {
+    return polzaProvider;
   }
 
   const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim();
@@ -505,6 +515,19 @@ function normalizeAiSuggestion(value) {
   };
 }
 
+function buildIdentityPromptPayload(input, brandCandidates) {
+  return {
+    supplierName: input.supplierName,
+    rawName: input.rawName,
+    currentParsedName: input.parsedName,
+    currentBrand: input.brand,
+    currentCountry: input.country,
+    rawBrandColumn: input.rawBrand,
+    rawCountryColumn: input.rawCountry,
+    localBrandCandidates: brandCandidates,
+  };
+}
+
 function shouldRequestAi(input, brandCandidates) {
   if (!normalizeOptionalText(input.rawName) || input.disableAi) {
     return false;
@@ -533,9 +556,7 @@ function shouldRequestAi(input, brandCandidates) {
   return false;
 }
 
-async function requestAiRefinement(input, brandCandidates) {
-  const provider = getRemoteAiProvider();
-
+async function requestAiRefinementWithProvider(provider, input, brandCandidates) {
   if (!provider) {
     return null;
   }
@@ -559,16 +580,7 @@ async function requestAiRefinement(input, brandCandidates) {
           },
           {
             role: "user",
-            content: JSON.stringify({
-              supplierName: input.supplierName,
-              rawName: input.rawName,
-              currentParsedName: input.parsedName,
-              currentBrand: input.brand,
-              currentCountry: input.country,
-              rawBrandColumn: input.rawBrand,
-              rawCountryColumn: input.rawCountry,
-              localBrandCandidates: brandCandidates,
-            }),
+            content: JSON.stringify(buildIdentityPromptPayload(input, brandCandidates)),
           },
         ],
       }),
@@ -594,10 +606,46 @@ async function requestAiRefinement(input, brandCandidates) {
     return {
       ...suggestion,
       source: provider.source,
+      model: provider.model,
     };
   } catch {
     return null;
   }
+}
+
+async function requestAiRefinement(input, brandCandidates) {
+  const provider = getRemoteAiProvider();
+  return requestAiRefinementWithProvider(provider, input, brandCandidates);
+}
+
+export async function compareProductIdentityModels(input, models) {
+  const brandCandidates = buildBrandCandidates(input.rawName);
+  const uniqueModels = dedupeCandidates(models ?? []);
+  const results = [];
+
+  for (const model of uniqueModels) {
+    const provider = getPolzaProviderForModel(model);
+    const startedAt = Date.now();
+    const suggestion = await requestAiRefinementWithProvider(provider, input, brandCandidates);
+
+    results.push({
+      model,
+      elapsedMs: Date.now() - startedAt,
+      brandCandidates,
+      result: suggestion
+        ? {
+            parsedName: suggestion.parsedName,
+            brand: suggestion.brand,
+            country: suggestion.country,
+            confidence: suggestion.confidence,
+            explanation: suggestion.explanation,
+            source: suggestion.source,
+          }
+        : null,
+    });
+  }
+
+  return results;
 }
 
 export async function refineParsedProductIdentity(input) {

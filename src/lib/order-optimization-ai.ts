@@ -34,7 +34,7 @@ function getRemoteAiProvider(): RemoteAiProvider | null {
     return {
       source: "polza",
       apiKey: polzaApiKey,
-      model: process.env.POLZA_AI_MODEL?.trim() || "qwen/qwen3.6-flash",
+      model: process.env.POLZA_AI_MODEL?.trim() || "google/gemini-3.1-flash-lite",
       completionsUrl: joinApiUrl(process.env.POLZA_AI_BASE_URL?.trim() || "https://polza.ai/api/v1", "chat/completions"),
     };
   }

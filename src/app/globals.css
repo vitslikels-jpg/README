@@ -488,6 +488,44 @@ a {
   font-size: 0.9rem;
 }
 
+.settingsComparisonCard {
+  display: grid;
+  gap: 1rem;
+}
+
+.settingsComparisonActions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.settingsComparisonGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.settingsComparisonResult {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 20px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.settingsComparisonResult p {
+  margin: 0;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.settingsComparisonResultHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .successText {
   color: #0f766e;
   font-size: 0.9rem;

@@ -1,10 +1,5 @@
-import { PagePlaceholder } from "@/components/ui/page-placeholder";
+import { AiModelComparisonTool } from "@/features/settings/components/ai-model-comparison-tool";
 
 export default function SettingsPage() {
-  return (
-    <PagePlaceholder
-      title="Настройки"
-      description="Каркас раздела для системных параметров и общих настроек."
-    />
-  );
+  return <AiModelComparisonTool defaultModel={process.env.POLZA_AI_MODEL?.trim() || "google/gemini-3.1-flash-lite"} />;
 }
