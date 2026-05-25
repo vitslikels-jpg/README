@@ -19,14 +19,21 @@ const rows = XLSX.utils.sheet_to_json(firstSheet, {
   raw: false,
 });
 
+rows.push(
+  ["Жевательные конфеты Alpenliebe 2 Chew с клубничной начинкой, 32 г", "10942OZ", "", "", "24", "119", ""],
+  ['Взрывная карамель со вкусом колы "Pokemon" ICD, 15 г', "12236КД", "", "", "30", "45", ""],
+  ['Жевательный мармелад со вкусом винограда "Kuromi" SEOJU, 43 г', "12266КД", "", "", "20", "139", ""],
+  ["Напиток безалкогольный виноградный, 350 мл, SUNTORY", "13952", "", "", "24", "169", ""],
+);
+
 const { products, skippedCount } = await parseRedDragonSheetRows(rows);
 
 if (skippedCount !== 0) {
   throw new Error(`Expected skippedCount=0, got ${skippedCount}`);
 }
 
-if (products.length !== 3) {
-  throw new Error(`Expected 3 products, got ${products.length}`);
+if (products.length !== 7) {
+  throw new Error(`Expected 7 products, got ${products.length}`);
 }
 
 if (products[0]?.name !== "Соус Чили Pearl River Bridge 500 г") {
@@ -55,6 +62,32 @@ if (products[2]?.rawData?._warningUnitsPerPack !== "true") {
 
 if (products[2]?.unitsPerPack !== null) {
   throw new Error(`Expected null unitsPerPack on third product, got ${products[2]?.unitsPerPack?.toString() ?? "null"}`);
+}
+
+const productsByArticle = new Map(products.map((product) => [product.article, product]));
+
+if (productsByArticle.get("10942OZ")?.brand !== "Alpenliebe 2 Chew") {
+  throw new Error(`Unexpected brand for 10942OZ: ${productsByArticle.get("10942OZ")?.brand ?? "null"}`);
+}
+
+if (productsByArticle.get("12236КД")?.brand !== "ICD") {
+  throw new Error(`Unexpected brand for 12236КД: ${productsByArticle.get("12236КД")?.brand ?? "null"}`);
+}
+
+if (productsByArticle.get("12266КД")?.brand !== "SEOJU") {
+  throw new Error(`Unexpected brand for 12266КД: ${productsByArticle.get("12266КД")?.brand ?? "null"}`);
+}
+
+if (productsByArticle.get("12266КД")?.country !== "ЮЖНАЯ КОРЕЯ") {
+  throw new Error(`Unexpected country for 12266КД: ${productsByArticle.get("12266КД")?.country ?? "null"}`);
+}
+
+if (productsByArticle.get("13952")?.brand !== "SUNTORY") {
+  throw new Error(`Unexpected brand for 13952: ${productsByArticle.get("13952")?.brand ?? "null"}`);
+}
+
+if (productsByArticle.get("13952")?.country !== "ЯПОНИЯ") {
+  throw new Error(`Unexpected country for 13952: ${productsByArticle.get("13952")?.country ?? "null"}`);
 }
 
 console.log(

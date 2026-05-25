@@ -24,6 +24,36 @@ const REQUIRED_HEADERS = {
 };
 
 const MAX_RED_DRAGON_AI_ROWS = 25;
+const RED_DRAGON_IDENTITY_OVERRIDES = new Map([
+  ["4803oz", { brand: "Doldori" }],
+  ["5714oz", { brand: "Doldori" }],
+  ["1522", { brand: "Spring Home" }],
+  ["11811oz", { brand: "zaizai" }],
+  ["11807oz", { brand: "zaizai" }],
+  ["13865", { brand: "Lotte" }],
+  ["1483oz", { brand: "Chugong" }],
+  ["11621oz", { brand: "WOOMTREE" }],
+  ["11076oz", { brand: "Оттоги" }],
+  ["1852oz", { brand: "Haday" }],
+  ["3853oz", { brand: "Lotte" }],
+  ["10200oz", { brand: "Spearmint Lotte" }],
+  ["6925oz", { brand: "Dr. Pepper" }],
+  ["12411oz", { brand: "Dr. Pepper" }],
+  ["13202кд", { brand: "KOUSYO", country: "ЯПОНИЯ" }],
+  ["13212кд", { brand: "KOUSYO", country: "ЯПОНИЯ" }],
+  ["8932oz", { brand: "LOTTE", country: "ЮЖНАЯ КОРЕЯ" }],
+  ["12266кд", { brand: "SEOJU", country: "ЮЖНАЯ КОРЕЯ" }],
+  ["9597oz", { brand: "Arizona", country: "США" }],
+  ["12236кд", { brand: "ICD" }],
+  ["10942oz", { brand: "Alpenliebe 2 Chew" }],
+  ["12119", { brand: "Alpenliebe 2 Chew" }],
+  ["12170oz", { brand: "LOTTE", country: "ЯПОНИЯ" }],
+  ["10939oz", { brand: "Mentos" }],
+  ["12107oz", { brand: "Mentos" }],
+  ["10911oz", { brand: "MENTOS" }],
+  ["13952", { brand: "SUNTORY", country: "ЯПОНИЯ" }],
+  ["14064", { brand: "Марукомэ", country: "ЯПОНИЯ" }],
+]);
 
 function normalizeComparableText(value) {
   return String(value ?? "")
@@ -308,6 +338,23 @@ export function isRedDragonSupplierName(value) {
   return normalizeComparableText(value) === RED_DRAGON_NAME;
 }
 
+function applyRedDragonIdentityOverride(article, identity) {
+  const override = RED_DRAGON_IDENTITY_OVERRIDES.get(normalizeComparableText(article));
+
+  if (!override) {
+    return identity;
+  }
+
+  return {
+    ...identity,
+    brand: override.brand ?? identity.brand,
+    country: override.country ?? identity.country,
+    source: "red_dragon_override",
+    confidence: 1,
+    explanation: "Подтвержденное правило для поставщика Красный дракон.",
+  };
+}
+
 export async function parseRedDragonSheetRows(rows) {
   const headerMatch = detectHeaderRow(rows);
 
@@ -426,20 +473,21 @@ export async function parseRedDragonSheetRows(rows) {
       supplierName: "\u041a\u0440\u0430\u0441\u043d\u044b\u0439 \u0434\u0440\u0430\u043a\u043e\u043d",
       disableAi: identityAiRowsUsed >= maxIdentityAiRows,
     });
+    const finalIdentity = applyRedDragonIdentityOverride(article, refinedIdentity);
 
     if (refinedIdentity.usedAi) {
       identityAiRowsUsed += 1;
     }
 
-    rawData.identityRefinerSource = refinedIdentity.source;
-    rawData.identityRefinerConfidence = refinedIdentity.confidence?.toString() ?? "";
-    rawData.identityRefinerExplanation = refinedIdentity.explanation ?? "";
+    rawData.identityRefinerSource = finalIdentity.source;
+    rawData.identityRefinerConfidence = finalIdentity.confidence?.toString() ?? "";
+    rawData.identityRefinerExplanation = finalIdentity.explanation ?? "";
 
     products.push({
       name,
       article: article || null,
-      brand: refinedIdentity.brand,
-      country: refinedIdentity.country,
+      brand: finalIdentity.brand,
+      country: finalIdentity.country,
       unit: "\u0448\u0442",
       unitsPerPack,
       minOrderQuantity: null,
