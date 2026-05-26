@@ -15,7 +15,7 @@ type OrderOptimizationWithDetails = OrderOptimization & {
     OrderOptimizationItem & {
       results: Array<
         OrderOptimizationResult & {
-          selectedSupplier: Pick<Supplier, "id" | "name"> | null;
+          selectedSupplier: Pick<Supplier, "id" | "name" | "minOrderAmount"> | null;
           selectedProduct: Pick<
             Product,
             "id" | "name" | "article" | "brand" | "unit" | "unitsPerPack" | "minOrderQuantity" | "orderStep"
@@ -26,7 +26,7 @@ type OrderOptimizationWithDetails = OrderOptimization & {
   >;
   results: Array<
     OrderOptimizationResult & {
-      selectedSupplier: Pick<Supplier, "id" | "name"> | null;
+      selectedSupplier: Pick<Supplier, "id" | "name" | "minOrderAmount"> | null;
       selectedProduct: Pick<
         Product,
         "id" | "name" | "article" | "brand" | "unit" | "unitsPerPack" | "minOrderQuantity" | "orderStep"
@@ -54,6 +54,26 @@ export type SmartOrderSelectedProductDto = {
   unitsPerPack: string | null;
   minOrderQuantity: string | null;
   orderStep: string | null;
+};
+
+export type SmartOrderSupplierBasketItemDto = {
+  itemId: string;
+  parsedName: string | null;
+  selectedProductName: string | null;
+  quantity: string | null;
+  unit: string | null;
+  optimizedLineTotal: string | null;
+};
+
+export type SmartOrderSupplierBasketDto = {
+  supplierId: string | null;
+  supplierName: string;
+  items: SmartOrderSupplierBasketItemDto[];
+  itemsCount: number;
+  total: string;
+  minOrderAmount: string | null;
+  meetsMinOrder: boolean;
+  missingAmount: string;
 };
 
 export const parsedOrderUnits = ["шт", "кг", "г", "л", "мл", "уп", "пач", "кор", "бут"] as const;
@@ -87,6 +107,10 @@ function decimalToString(value: { toString: () => string } | null | undefined) {
   return value ? value.toString() : null;
 }
 
+function decimalToMoneyString(value: Prisma.Decimal) {
+  return value.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toString();
+}
+
 function buildSmartOrderSelectedProductDto(
   product:
     | Pick<Product, "id" | "name" | "article" | "brand" | "unit" | "unitsPerPack" | "minOrderQuantity" | "orderStep">
@@ -108,6 +132,86 @@ function buildSmartOrderSelectedProductDto(
     minOrderQuantity: decimalToString(product.minOrderQuantity),
     orderStep: decimalToString(product.orderStep),
   };
+}
+
+function buildSmartOrderSupplierBaskets(
+  items: Array<
+    OrderOptimizationItem & {
+      results: Array<
+        OrderOptimizationResult & {
+          selectedSupplier: Pick<Supplier, "id" | "name" | "minOrderAmount"> | null;
+          selectedProduct: Pick<
+            Product,
+            "id" | "name" | "article" | "brand" | "unit" | "unitsPerPack" | "minOrderQuantity" | "orderStep"
+          > | null;
+        }
+      >;
+    }
+  >,
+): SmartOrderSupplierBasketDto[] {
+  const baskets = new Map<
+    string,
+    {
+      supplierId: string | null;
+      supplierName: string;
+      items: SmartOrderSupplierBasketItemDto[];
+      total: Prisma.Decimal;
+      minOrderAmount: Prisma.Decimal | null;
+    }
+  >();
+
+  for (const item of items) {
+    if (!item.selectedCandidateId) {
+      continue;
+    }
+
+    const selectedResult = item.results.find((result) => result.id === item.selectedCandidateId);
+
+    if (!selectedResult?.selectedSupplierId || !selectedResult.selectedSupplier?.name) {
+      continue;
+    }
+
+    const basketKey = selectedResult.selectedSupplierId;
+    const currentBasket = baskets.get(basketKey) ?? {
+      supplierId: selectedResult.selectedSupplierId,
+      supplierName: selectedResult.selectedSupplier.name,
+      items: [],
+      total: new Prisma.Decimal(0),
+      minOrderAmount: selectedResult.selectedSupplier.minOrderAmount ?? null,
+    };
+
+    currentBasket.items.push({
+      itemId: item.id,
+      parsedName: item.parsedName,
+      selectedProductName: selectedResult.selectedProduct?.name ?? null,
+      quantity: decimalToString(item.parsedQuantity),
+      unit: item.parsedUnit,
+      optimizedLineTotal: decimalToString(selectedResult.optimizedLineTotal),
+    });
+
+    if (selectedResult.optimizedLineTotal) {
+      currentBasket.total = currentBasket.total.add(selectedResult.optimizedLineTotal);
+    }
+
+    baskets.set(basketKey, currentBasket);
+  }
+
+  return Array.from(baskets.values()).map((basket) => {
+    const minOrderAmount = basket.minOrderAmount;
+    const meetsMinOrder = !minOrderAmount || basket.total.gte(minOrderAmount);
+    const missingAmount = !minOrderAmount || meetsMinOrder ? new Prisma.Decimal(0) : minOrderAmount.sub(basket.total);
+
+    return {
+      supplierId: basket.supplierId,
+      supplierName: basket.supplierName,
+      items: basket.items,
+      itemsCount: basket.items.length,
+      total: decimalToMoneyString(basket.total),
+      minOrderAmount: decimalToString(minOrderAmount),
+      meetsMinOrder,
+      missingAmount: decimalToMoneyString(missingAmount),
+    };
+  });
 }
 
 function hasUsefulName(value: string | null | undefined) {
@@ -339,6 +443,7 @@ export async function rebuildOrderOptimizationItems(optimizationId: string, ente
 
 export function serializeOrderOptimization(optimization: OrderOptimizationWithDetails | OrderOptimization) {
   const maybeDetails = optimization as Partial<OrderOptimizationWithDetails>;
+  const baskets = maybeDetails.items ? buildSmartOrderSupplierBaskets(maybeDetails.items) : [];
 
   return {
     id: optimization.id,
@@ -375,6 +480,7 @@ export function serializeOrderOptimization(optimization: OrderOptimizationWithDe
         results: item.results.map(serializeOrderOptimizationResult),
       })) ?? [],
     results: maybeDetails.results?.map(serializeOrderOptimizationResult) ?? [],
+    baskets,
   };
 }
 
@@ -433,6 +539,7 @@ export function getOrderOptimizationWithDetails(optimizationId: string, enterpri
                 select: {
                   id: true,
                   name: true,
+                  minOrderAmount: true,
                 },
               },
               selectedProduct: {
@@ -459,6 +566,7 @@ export function getOrderOptimizationWithDetails(optimizationId: string, enterpri
             select: {
               id: true,
               name: true,
+              minOrderAmount: true,
             },
           },
           selectedProduct: {

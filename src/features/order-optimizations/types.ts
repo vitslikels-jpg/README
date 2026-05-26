@@ -16,6 +16,7 @@ export type OrderOptimizationListItem = {
   updatedAt: string;
   items: OrderOptimizationItem[];
   results: OrderOptimizationResult[];
+  baskets: OrderOptimizationSupplierBasket[];
 };
 
 export type OrderOptimizationItem = {
@@ -86,4 +87,24 @@ export type OrderOptimizationResult = {
     minOrderQuantity: string | null;
     orderStep: string | null;
   } | null;
+};
+
+export type OrderOptimizationSupplierBasketItem = {
+  itemId: string;
+  parsedName: string | null;
+  selectedProductName: string | null;
+  quantity: string | null;
+  unit: string | null;
+  optimizedLineTotal: string | null;
+};
+
+export type OrderOptimizationSupplierBasket = {
+  supplierId: string | null;
+  supplierName: string;
+  items: OrderOptimizationSupplierBasketItem[];
+  itemsCount: number;
+  total: string;
+  minOrderAmount: string | null;
+  meetsMinOrder: boolean;
+  missingAmount: string;
 };

@@ -297,6 +297,14 @@ export function OrderOptimizationPage() {
     return formatMoney(total);
   }, [smartOrderGroups]);
 
+  useEffect(() => {
+    if (!selectedOptimization?.baskets.length) {
+      return;
+    }
+
+    console.log("[smart-order] supplier baskets", selectedOptimization.baskets);
+  }, [selectedOptimization]);
+
   const pickerItem = useMemo(() => {
     if (!picker || !selectedOptimization) {
       return null;
@@ -616,6 +624,13 @@ export function OrderOptimizationPage() {
                 <span>Итого</span>
                 <strong>{overallTotal ?? "—"}</strong>
               </div>
+
+              {selectedOptimization?.baskets.length ? (
+                <details className="smartOrderDebugBlock">
+                  <summary>Debug baskets</summary>
+                  <pre>{JSON.stringify(selectedOptimization.baskets, null, 2)}</pre>
+                </details>
+              ) : null}
             </>
           )}
         </section>
