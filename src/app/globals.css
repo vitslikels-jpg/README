@@ -408,6 +408,474 @@ body.sidebarResizing * {
   gap: 20px;
 }
 
+.homeDashboard {
+  gap: 22px;
+}
+
+.homeHero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 30px;
+}
+
+.homeHeroCopy {
+  max-width: 720px;
+}
+
+.homeHeroTitle {
+  margin-top: 8px;
+  font-size: clamp(1.9rem, 2.8vw, 2.45rem);
+  line-height: 1.08;
+}
+
+.homeHero .pageDescription {
+  max-width: 560px;
+}
+
+.homeHeroEnterprise {
+  display: flex;
+  flex: 0 0 320px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px;
+  border: 1px solid rgba(216, 224, 234, 0.95);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(250, 252, 255, 0.98) 0%, rgba(243, 247, 253, 0.95) 100%);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+.homeHeroEnterpriseLabel,
+.homeSummaryLabel,
+.homeSummaryDetail,
+.homeEventTime {
+  color: var(--text-muted);
+}
+
+.homeHeroEnterprise strong {
+  font-size: 1.02rem;
+  line-height: 1.35;
+}
+
+.homeHeroEnterprise span {
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.homeDashboardGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.8fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.homeDashboardMain,
+.homeDashboardAside {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.homePanel {
+  padding: 24px;
+}
+
+.homeSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.homeSectionHeader .sectionTitle {
+  margin-top: 0;
+  font-size: 1.42rem;
+}
+
+.homeSectionHeader .panelText {
+  margin-top: 8px;
+}
+
+.homeActionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.homeActionCard,
+.homeQuickActionCard,
+.homeFocusCard {
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.homeActionCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-height: 132px;
+  padding: 20px;
+  border: 1px solid rgba(216, 224, 234, 0.95);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 253, 0.94) 100%);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.04);
+}
+
+.homeActionCard:hover,
+.homeQuickActionCard:hover,
+.homeFocusCard:hover {
+  transform: translateY(-2px);
+  border-color: rgba(147, 197, 253, 0.55);
+  box-shadow: 0 18px 34px rgba(37, 99, 235, 0.08);
+}
+
+.homeActionIcon,
+.homeQuickActionIcon,
+.homeSummaryIcon,
+.homeFocusIcon,
+.homeEventIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.homeActionIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: #edf4ff;
+  color: #2563eb;
+}
+
+.homeActionBody,
+.homeQuickActionBody,
+.homeFocusBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.homeActionBody strong,
+.homeQuickActionBody strong,
+.homeFocusBody strong {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.homeActionBody p,
+.homeQuickActionBody p,
+.homeFocusBody p,
+.homeEventBody p {
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.homeFocusList,
+.homeQuickActions,
+.homeEventsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.homeFocusCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid rgba(216, 224, 234, 0.95);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.homeFocusIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+}
+
+.homeFocusIcon-danger,
+.homeEventIcon-danger {
+  background: rgba(254, 226, 226, 0.95);
+  color: #ef4444;
+}
+
+.homeFocusIcon-warning,
+.homeEventIcon-warning {
+  background: rgba(255, 237, 213, 0.96);
+  color: #f97316;
+}
+
+.homeFocusIcon-success,
+.homeEventIcon-success {
+  background: rgba(220, 252, 231, 0.96);
+  color: #16a34a;
+}
+
+.homeFocusIcon-accent,
+.homeEventIcon-accent {
+  background: rgba(224, 231, 255, 0.96);
+  color: #4f46e5;
+}
+
+.homeEventIcon-neutral {
+  background: rgba(219, 234, 254, 0.96);
+  color: #2563eb;
+}
+
+.homeFocusBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.homeFocusBadge-danger {
+  background: rgba(254, 226, 226, 0.96);
+  color: #dc2626;
+}
+
+.homeFocusBadge-warning {
+  background: rgba(255, 237, 213, 0.96);
+  color: #ea580c;
+}
+
+.homeFocusBadge-success {
+  background: rgba(220, 252, 231, 0.96);
+  color: #16a34a;
+}
+
+.homeFocusBadge-accent {
+  background: rgba(219, 234, 254, 0.98);
+  color: #2563eb;
+}
+
+.homeFocusArrow {
+  color: #7c8ca3;
+}
+
+.homeEventsList {
+  position: relative;
+}
+
+.homeEventItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.homeEventTimeline {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  width: 28px;
+  padding-top: 2px;
+}
+
+.homeEventTimeline::after {
+  content: "";
+  position: absolute;
+  top: 34px;
+  bottom: -14px;
+  left: 50%;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(216, 224, 234, 0.95) 0%, rgba(216, 224, 234, 0.3) 100%);
+  transform: translateX(-50%);
+}
+
+.homeEventItem:last-child .homeEventTimeline::after {
+  display: none;
+}
+
+.homeEventIcon {
+  position: relative;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  border: 4px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.homeEventBody p {
+  margin: 1px 0 0;
+}
+
+.homeEventTime {
+  padding-top: 3px;
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.homeInlineLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.homeQuickActionCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(216, 224, 234, 0.9);
+}
+
+.homeQuickActionCard:first-child {
+  padding-top: 2px;
+}
+
+.homeQuickActionCard:last-child {
+  padding-bottom: 2px;
+  border-bottom: none;
+}
+
+.homeQuickActionIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: rgba(239, 246, 255, 0.95);
+  color: #2563eb;
+}
+
+.homeSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.homeSummaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid rgba(216, 224, 234, 0.95);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(249, 251, 254, 0.96) 100%);
+}
+
+.homeSummaryTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.homeSummaryIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+}
+
+.homeSummaryIcon-accent {
+  background: rgba(219, 234, 254, 0.96);
+  color: #2563eb;
+}
+
+.homeSummaryIcon-success {
+  background: rgba(220, 252, 231, 0.96);
+  color: #16a34a;
+}
+
+.homeSummaryIcon-violet {
+  background: rgba(237, 233, 254, 0.98);
+  color: #7c3aed;
+}
+
+.homeSummaryIcon-warning {
+  background: rgba(255, 237, 213, 0.98);
+  color: #ea580c;
+}
+
+.homeSummaryTrend {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.homeSummaryTrend-accent {
+  background: rgba(219, 234, 254, 0.96);
+  color: #2563eb;
+}
+
+.homeSummaryTrend-success {
+  background: rgba(220, 252, 231, 0.96);
+  color: #16a34a;
+}
+
+.homeSummaryTrend-violet {
+  background: rgba(237, 233, 254, 0.98);
+  color: #7c3aed;
+}
+
+.homeSummaryTrend-warning {
+  background: rgba(255, 237, 213, 0.98);
+  color: #ea580c;
+}
+
+.homeSummaryValue {
+  font-size: 1.55rem;
+  line-height: 1.1;
+}
+
+.homeSummaryDetail {
+  font-size: 0.88rem;
+}
+
+.homeEnterpriseDetails {
+  border: 1px solid rgba(216, 224, 234, 0.95);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow);
+}
+
+.homeEnterpriseDetails summary {
+  padding: 20px 24px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 700;
+  list-style: none;
+}
+
+.homeEnterpriseDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.homeEnterpriseDetails[open] summary {
+  border-bottom: 1px solid rgba(216, 224, 234, 0.92);
+}
+
+.homeEnterpriseDetailsBody {
+  padding: 24px;
+}
+
+.homeFooterNote {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
 .heroCard,
 .card {
   background: rgba(255, 255, 255, 0.92);
@@ -2728,6 +3196,12 @@ body.sidebarResizing * {
     grid-template-columns: 1fr;
   }
 
+  .homeDashboardGrid,
+  .homeActionGrid,
+  .homeSummaryGrid {
+    grid-template-columns: 1fr;
+  }
+
   .ordersWorkspace {
     grid-template-columns: 1fr;
   }
@@ -2740,6 +3214,22 @@ body.sidebarResizing * {
 @media (max-width: 900px) {
   .appShell {
     flex-direction: column;
+  }
+
+  .homeHero,
+  .homeDashboardGrid,
+  .homeFocusCard {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .homeHeroEnterprise {
+    flex-basis: auto;
+    width: 100%;
+  }
+
+  .homeFocusCard {
+    align-items: flex-start;
   }
 
   .sidebar {
@@ -2762,7 +3252,8 @@ body.sidebarResizing * {
   .topbarInner,
   .enterpriseSwitcher,
   .topbarMeta,
-  .topbarActions {
+  .topbarActions,
+  .homeSectionHeader {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -2773,6 +3264,21 @@ body.sidebarResizing * {
 
   .supplierRow {
     grid-template-columns: 1fr;
+  }
+
+  .homeEventItem,
+  .homeQuickActionCard {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .homeEventTime,
+  .homeQuickActionCard > svg:last-child,
+  .homeFocusArrow {
+    display: none;
+  }
+
+  .homeFocusBadge {
+    margin-left: 64px;
   }
 
   .documentsHeader {
@@ -2899,8 +3405,21 @@ body.sidebarResizing * {
   .heroCard,
   .card,
   .enterpriseSwitcher,
-  .sidebarBrand {
+  .sidebarBrand,
+  .homeEnterpriseDetails {
     border-radius: 18px;
+  }
+
+  .homeHero,
+  .homePanel,
+  .homeEnterpriseDetailsBody {
+    padding: 18px;
+  }
+
+  .homeActionCard,
+  .homeFocusCard,
+  .homeSummaryCard {
+    padding: 16px;
   }
 }
 
