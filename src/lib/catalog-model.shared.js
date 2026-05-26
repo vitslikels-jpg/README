@@ -8,7 +8,23 @@ export const BASIC_UNITS = [
     kind: "count",
     baseUnitCode: "pcs",
     multiplier: "1",
-    aliases: ["pcs", "pc", "piece", "pieces", "шт", "шт.", "штука", "штуки", "штук"],
+    aliases: [
+      "pcs",
+      "pc",
+      "piece",
+      "pieces",
+      "\u0448\u0442",
+      "\u0448\u0442.",
+      "\u0448\u0442\u0443\u043a\u0430",
+      "\u0448\u0442\u0443\u043a\u0438",
+      "\u0448\u0442\u0443\u043a",
+      "\u0443\u043f",
+      "\u0443\u043f.",
+      "\u0443\u043f\u0430\u043a",
+      "\u0443\u043f\u0430\u043a.",
+      "\u0443\u043f\u0430\u043a\u043e\u0432\u043a\u0430",
+      "\u0443\u043f\u0430\u043a\u043e\u0432\u043a\u0438",
+    ],
   },
   {
     code: "kg",
@@ -17,7 +33,15 @@ export const BASIC_UNITS = [
     kind: "weight",
     baseUnitCode: "g",
     multiplier: "1000",
-    aliases: ["kg", "кг", "кг.", "килограмм", "килограмма", "килограммов", "килограммы"],
+    aliases: [
+      "kg",
+      "\u043a\u0433",
+      "\u043a\u0433.",
+      "\u043a\u0438\u043b\u043e\u0433\u0440\u0430\u043c\u043c",
+      "\u043a\u0438\u043b\u043e\u0433\u0440\u0430\u043c\u043c\u0430",
+      "\u043a\u0438\u043b\u043e\u0433\u0440\u0430\u043c\u043c\u043e\u0432",
+      "\u043a\u0438\u043b\u043e\u0433\u0440\u0430\u043c\u043c\u044b",
+    ],
   },
   {
     code: "g",
@@ -26,7 +50,18 @@ export const BASIC_UNITS = [
     kind: "weight",
     baseUnitCode: "g",
     multiplier: "1",
-    aliases: ["g", "gr", "гр", "гр.", "г", "г.", "грамм", "грамма", "граммов", "граммы"],
+    aliases: [
+      "g",
+      "gr",
+      "\u0433\u0440",
+      "\u0433\u0440.",
+      "\u0433",
+      "\u0433.",
+      "\u0433\u0440\u0430\u043c\u043c",
+      "\u0433\u0440\u0430\u043c\u043c\u0430",
+      "\u0433\u0440\u0430\u043c\u043c\u043e\u0432",
+      "\u0433\u0440\u0430\u043c\u043c\u044b",
+    ],
   },
   {
     code: "l",
@@ -35,7 +70,16 @@ export const BASIC_UNITS = [
     kind: "volume",
     baseUnitCode: "ml",
     multiplier: "1000",
-    aliases: ["l", "lt", "л", "л.", "литр", "литра", "литров", "литры"],
+    aliases: [
+      "l",
+      "lt",
+      "\u043b",
+      "\u043b.",
+      "\u043b\u0438\u0442\u0440",
+      "\u043b\u0438\u0442\u0440\u0430",
+      "\u043b\u0438\u0442\u0440\u043e\u0432",
+      "\u043b\u0438\u0442\u0440\u044b",
+    ],
   },
   {
     code: "ml",
@@ -44,7 +88,15 @@ export const BASIC_UNITS = [
     kind: "volume",
     baseUnitCode: "ml",
     multiplier: "1",
-    aliases: ["ml", "мл", "мл.", "миллилитр", "миллилитра", "миллилитров", "миллилитры"],
+    aliases: [
+      "ml",
+      "\u043c\u043b",
+      "\u043c\u043b.",
+      "\u043c\u0438\u043b\u043b\u0438\u043b\u0438\u0442\u0440",
+      "\u043c\u0438\u043b\u043b\u0438\u043b\u0438\u0442\u0440\u0430",
+      "\u043c\u0438\u043b\u043b\u0438\u043b\u0438\u0442\u0440\u043e\u0432",
+      "\u043c\u0438\u043b\u043b\u0438\u043b\u0438\u0442\u0440\u044b",
+    ],
   },
 ];
 
@@ -67,7 +119,7 @@ export function normalizeCatalogText(value) {
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/ё/g, "е")
+    .replace(/\u0451/g, "\u0435")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -80,7 +132,17 @@ export function normalizeCatalogUnit(value) {
     return null;
   }
 
-  return unitAliasToCode.get(normalized) ?? null;
+  const mappedUnit = unitAliasToCode.get(normalized);
+
+  if (mappedUnit) {
+    return mappedUnit;
+  }
+
+  if (normalized === "\u0443\u043f" || normalized.startsWith("\u0443\u043f\u0430\u043a")) {
+    return "pcs";
+  }
+
+  return null;
 }
 
 export function buildCatalogDedupeKey(parts) {

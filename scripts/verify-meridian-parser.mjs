@@ -7,12 +7,13 @@ const rows = [
   ["", "906153", "АРТИШОКИ в подсолнечном масле по-римски 1,9/1,2 кг * 2 шт ITALCARCIOFI Италия", "1,317.12 руб.", "шт", "ITALCARCIOFI", "Италия", "2", "1", "", ""],
   ["", "900113", "Артишоки ITALCARCIOFI в подсолнечном масле целые по-крестьянски, 530 г / 300 г * 12 шт", "451.78 руб.", "шт", "ITALCARCIOFI", "Италия", "12", "1", "", ""],
   ["", "900101", "АГАР-АГАР порошок 500 г * 10 шт VAL'DE Россия", "1,856.81 руб.", "шт", "VAL'DE", "РОССИЯ", "10", "1", "", ""],
+  ["", "907103", "Подарок", "1,134.00 руб.", "шт", "", "", "", "1", "", ""],
 ];
 
 const { products, skippedCount } = await parseMeridianSheetRows(rows);
 
-if (skippedCount !== 0) {
-  throw new Error(`Expected skippedCount=0, got ${skippedCount}`);
+if (skippedCount !== 1) {
+  throw new Error(`Expected skippedCount=1, got ${skippedCount}`);
 }
 
 if (products.length !== 4) {

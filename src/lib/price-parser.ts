@@ -1870,6 +1870,16 @@ function findRawFieldValueByHeaders(rawData: Record<string, string>, headers: st
   return entry?.[1] ?? "";
 }
 
+function normalizePreOrderStatus(value: string | null | undefined) {
+  const trimmed = String(value ?? "").trim();
+
+  return trimmed ? trimmed : null;
+}
+
+function isPreOrderStatus(value: string | null | undefined) {
+  return normalizeComparableText(String(value ?? "")) === normalizeComparableText("РџРѕРґ Р·Р°РєР°Р·");
+}
+
 function findRawNameValue(rawData: Record<string, string>, profile?: SupplierProfile | null) {
   if (profile?.exactFieldHeaders?.name?.length) {
     const exactValue = findRawFieldValueByHeaders(rawData, profile.exactFieldHeaders.name);
@@ -1944,6 +1954,8 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
         : normalizeCellValue(row[headerMatch.fieldIndexes.shipByBoxesOnly]);
     const priceValue = headerMatch.fieldIndexes.price === undefined ? "" : normalizeCellValue(row[headerMatch.fieldIndexes.price]);
     const stockValue = headerMatch.fieldIndexes.stock === undefined ? "" : normalizeCellValue(row[headerMatch.fieldIndexes.stock]);
+    const preOrderValue =
+      headerMatch.fieldIndexes.preOrder === undefined ? "" : normalizeCellValue(row[headerMatch.fieldIndexes.preOrder]);
 
     const rawNameValue = findRawNameValue(rawData, supplierProfile);
     const resolvedName =
@@ -1957,6 +1969,7 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
       inferredUnitsPerPackFromName;
     const minOrderQuantity =
       parseDecimal(minOrderValue) ?? parseDecimal(findRawFieldValue(rawData, "minOrderQuantity", supplierProfile));
+    const preOrderStatus = normalizePreOrderStatus(preOrderValue || findRawFieldValue(rawData, "preOrder", supplierProfile));
     const shipUnitValue =
       supplierProfile?.rawHeaderAliases?.shipByBoxesOnly?.length
         ? findRawFieldValueByHeaders(rawData, supplierProfile.rawHeaderAliases.shipByBoxesOnly)
@@ -2049,6 +2062,8 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
         orderStep: product.orderStep?.toString() ?? "",
         allowFractionalOrder: product.allowFractionalOrder ? "true" : "false",
         shipByBoxesOnly: product.shipByBoxesOnly ? "true" : "",
+        preOrderStatus: preOrderStatus ?? "",
+        isPreOrder: isPreOrderStatus(preOrderStatus) ? "true" : "",
         identityRefinerSource: refinedIdentity.source,
         identityRefinerConfidence: refinedIdentity.confidence?.toString() ?? "",
         identityRefinerExplanation: refinedIdentity.explanation ?? "",

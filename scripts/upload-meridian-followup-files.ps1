@@ -4,10 +4,6 @@ Import-Module Posh-SSH
 
 $files = @(
   @{
-    Local = (Join-Path $PSScriptRoot "..\src\lib\price-parser.ts")
-    Remote = "/srv/prices-1.1/src/lib/price-parser.ts"
-  },
-  @{
     Local = (Join-Path $PSScriptRoot "..\src\lib\price-parser-meridian.mjs")
     Remote = "/srv/prices-1.1/src/lib/price-parser-meridian.mjs"
   },
@@ -20,25 +16,33 @@ $files = @(
 $sec = ConvertTo-SecureString 'MEBDy0WhH1eD' -AsPlainText -Force
 $cred = New-Object System.Management.Automation.PSCredential('root', $sec)
 $ssh = New-SSHSession -ComputerName '89.169.34.218' -Credential $cred -AcceptKey -ConnectionTimeout 120
-$sftp = New-SFTPSession -ComputerName '89.169.34.218' -Credential $cred -AcceptKey -ConnectionTimeout 120
 
 try {
   foreach ($file in $files) {
+    $bytes = [System.IO.File]::ReadAllBytes($file.Local)
+    $base64 = [Convert]::ToBase64String($bytes)
     $remoteDir = Split-Path -Path $file.Remote -Parent
-    $uploadCommand = "mkdir -p '$remoteDir' && chown deploy:deploy '$remoteDir'"
+    $remoteB64 = "$($file.Remote).b64"
 
-    $uploadResult = Invoke-SSHCommand -SessionId $ssh.SessionId -Command $uploadCommand -TimeOut 600000
-    $uploadResult.Output
+    $cmd = @"
+mkdir -p '$remoteDir'
+cat > '$remoteB64' <<'EOF'
+$base64
+EOF
+base64 -d '$remoteB64' > '$($file.Remote)'
+rm -f '$remoteB64'
+chown deploy:deploy '$($file.Remote)'
+"@
 
-    if ($uploadResult.ExitStatus -ne 0) {
-      throw "Upload failed for $($file.Remote): $($uploadResult.Error -join [Environment]::NewLine)"
+    $result = Invoke-SSHCommand -SessionId $ssh.SessionId -Command $cmd -TimeOut 600000
+    $result.Output
+
+    if ($result.Error) {
+      $result.Error
     }
 
-    Set-SFTPItem -SessionId $sftp.SessionId -Path $file.Local -Destination $remoteDir -Force
-    $chownResult = Invoke-SSHCommand -SessionId $ssh.SessionId -Command "chown deploy:deploy '$($file.Remote)'" -TimeOut 600000
-
-    if ($chownResult.ExitStatus -ne 0) {
-      throw "chown failed for $($file.Remote): $($chownResult.Error -join [Environment]::NewLine)"
+    if ($result.ExitStatus -ne 0) {
+      throw "Upload failed for $($file.Remote)"
     }
   }
 
@@ -63,9 +67,6 @@ systemctl is-active prices-app.service
     throw "Remote build/restart failed."
   }
 } finally {
-  if ($sftp) {
-    Remove-SFTPSession -SessionId $sftp.SessionId | Out-Null
-  }
   if ($ssh) {
     Remove-SSHSession -SessionId $ssh.SessionId | Out-Null
   }

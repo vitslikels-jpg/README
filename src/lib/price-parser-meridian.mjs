@@ -29,6 +29,8 @@ const COUNTRY_ALIASES = new Map([
   ["соединенные штаты", "Соединенные Штаты"],
   ["соединенное королевство великобритании", "Соединенное Королевство Великобритании"],
 ]);
+const MERIDIAN_EXCLUDED_NAMES = new Set(["подарок"]);
+const MERIDIAN_EXCLUDED_ARTICLES = new Set(["907103"]);
 
 function normalizeComparableText(value) {
   return String(value ?? "")
@@ -256,6 +258,10 @@ function looksLikeSectionRow(name, article, price, unit) {
   return compactName.split(/\s+/u).length <= 4;
 }
 
+function shouldSkipMeridianProduct(name, article) {
+  return MERIDIAN_EXCLUDED_NAMES.has(normalizeComparableText(name)) || MERIDIAN_EXCLUDED_ARTICLES.has(normalizeCellValue(article));
+}
+
 function toRawData(headers, row) {
   const rawData = {};
 
@@ -296,7 +302,7 @@ export async function parseMeridianSheetRows(rows) {
     const rawMinOrderQuantity = normalizeCellValue(row[headerMatch.fieldIndexes.minOrderQuantity]);
     const rawShipByBoxesOnly = normalizeCellValue(row[headerMatch.fieldIndexes.shipByBoxesOnly]);
 
-    if (looksLikeSectionRow(rawName, articleValue, priceValue, unitValue)) {
+    if (looksLikeSectionRow(rawName, articleValue, priceValue, unitValue) || shouldSkipMeridianProduct(rawName, articleValue)) {
       skippedCount += 1;
       continue;
     }
