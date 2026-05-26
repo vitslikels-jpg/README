@@ -1,23 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import {
-  ArrowRight,
-  BadgePercent,
-  BarChart3,
-  Building2,
-  ChevronRight,
-  FileSpreadsheet,
-  Package,
-  ReceiptText,
-  ShoppingCart,
-  TriangleAlert,
-  TrendingUp,
-  Upload,
-} from "lucide-react";
+import { ArrowRight, BadgePercent, Building2, ChevronRight, FileSpreadsheet, Package, ReceiptText, ShoppingCart, TriangleAlert, TrendingUp, Upload } from "lucide-react";
 import { EnterpriseManager } from "@/features/enterprises/components/enterprise-manager";
 import { useEnterprise } from "@/features/enterprises/components/enterprise-context";
+import type {
+  HomeIconName,
+  HomeOverviewPayload,
+  HomeOverviewRecentEvent,
+  HomeOverviewSummaryCard,
+} from "@/features/home/types";
 
 type HomeAction = {
   title: string;
@@ -26,207 +20,186 @@ type HomeAction = {
   icon: LucideIcon;
 };
 
-type FocusItem = {
-  title: string;
-  description: string;
-  badge: string;
-  href: string;
-  tone: "danger" | "warning" | "success" | "accent";
-  icon: LucideIcon;
-};
-
-type RecentEvent = {
-  title: string;
-  time: string;
-  tone: "danger" | "warning" | "success" | "accent" | "neutral";
-  icon: LucideIcon;
-};
-
-type SummaryCard = {
-  label: string;
-  value: string;
-  detail: string;
-  trend: string;
-  tone: "accent" | "success" | "violet" | "warning";
-  icon: LucideIcon;
+const iconMap: Record<HomeIconName, LucideIcon> = {
+  upload: Upload,
+  badgePercent: BadgePercent,
+  building2: Building2,
+  fileSpreadsheet: FileSpreadsheet,
+  package: Package,
+  receiptText: ReceiptText,
+  shoppingCart: ShoppingCart,
+  triangleAlert: TriangleAlert,
+  trendingUp: TrendingUp,
 };
 
 const todayActions: HomeAction[] = [
   {
-    title: "Загрузить накладную",
-    description: "Добавьте новые поставки и разберите их по товарам.",
+    title: "Разобрать новый прайс",
+    description: "Загрузка и разбор",
     href: "/invoice-upload",
     icon: Upload,
   },
   {
-    title: "Создать заказ",
-    description: "Соберите заказ поставщику по текущим потребностям.",
-    href: "/smart-order",
-    icon: ShoppingCart,
-  },
-  {
-    title: "Перейти к отчётам",
-    description: "Откройте аналитику и посмотрите изменения по закупкам.",
-    href: "/reports",
-    icon: BarChart3,
-  },
-];
-
-const focusItems: FocusItem[] = [
-  {
-    title: "Подорожали товары",
-    description: "Сегодня зафиксирован рост цен у 7 товаров от 2 поставщиков",
-    badge: "+7 позиций",
-    href: "/reports",
-    tone: "danger",
-    icon: TrendingUp,
-  },
-  {
-    title: "Заканчиваются остатки",
-    description: "У 5 товаров остаток меньше минимального",
-    badge: "5 товаров",
-    href: "/products",
-    tone: "warning",
-    icon: TriangleAlert,
-  },
-  {
-    title: "Нашли дешевле",
-    description: "По 3 товарам можно сэкономить до 15%",
-    badge: "3 возможности",
+    title: "Посмотреть все цены",
+    description: "Каталог и сравнение",
     href: "/catalog",
-    tone: "success",
-    icon: BadgePercent,
-  },
-  {
-    title: "Не загружены накладные",
-    description: "У вас 2 непринятые накладные",
-    badge: "Загрузить",
-    href: "/invoice-upload",
-    tone: "accent",
-    icon: ReceiptText,
-  },
-];
-
-const recentEvents: RecentEvent[] = [
-  {
-    title: "Продстар поднял цены на курицу",
-    time: "10:30",
-    tone: "danger",
-    icon: TrendingUp,
-  },
-  {
-    title: "У Молокопродукта закончились сливки 20%",
-    time: "09:45",
-    tone: "warning",
-    icon: TriangleAlert,
-  },
-  {
-    title: "Найден товар дешевле у другого поставщика",
-    time: "09:20",
-    tone: "success",
-    icon: BadgePercent,
-  },
-  {
-    title: "Не заказан сыр моцарелла",
-    time: "09:15",
-    tone: "accent",
-    icon: Package,
-  },
-  {
-    title: "Загружена накладная от ООО \"Мясной дом\"",
-    time: "Вчера, 18:30",
-    tone: "neutral",
-    icon: Upload,
-  },
-];
-
-const quickActions: HomeAction[] = [
-  {
-    title: "Создать заказ поставщику",
-    description: "Перейти в умный сценарий заказа.",
-    href: "/smart-order",
-    icon: ShoppingCart,
-  },
-  {
-    title: "Добавить товар в каталог",
-    description: "Открыть каталог и связки товаров.",
-    href: "/catalog",
-    icon: Package,
-  },
-  {
-    title: "Добавить поставщика",
-    description: "Перейти в управление поставщиками.",
-    href: "/suppliers",
-    icon: Building2,
-  },
-  {
-    title: "Импортировать товары",
-    description: "Загрузить новый прайс или накладную.",
-    href: "/invoice-upload",
     icon: FileSpreadsheet,
   },
-];
-
-const summaryCards: SummaryCard[] = [
   {
-    label: "Заказы за месяц",
-    value: "128",
-    detail: "к прошлому месяцу",
-    trend: "+12%",
-    tone: "accent",
-    icon: ShoppingCart,
-  },
-  {
-    label: "Сумма заказов",
-    value: "2 450 000 ₽",
-    detail: "к прошлому месяцу",
-    trend: "+8%",
-    tone: "success",
-    icon: ReceiptText,
-  },
-  {
-    label: "Поставщики",
-    value: "24",
-    detail: "активных",
-    trend: "+2",
-    tone: "violet",
-    icon: Building2,
-  },
-  {
-    label: "Товары в каталоге",
-    value: "3 456",
-    detail: "уникальных товаров",
-    trend: "+156",
-    tone: "warning",
+    title: "Товары по поставщикам",
+    description: "Текущие позиции",
+    href: "/products",
     icon: Package,
   },
 ];
 
+const emptyOverview: HomeOverviewPayload = {
+  summaryCards: [],
+  focusItems: [],
+  recentEvents: [],
+};
+
+function HomeSummaryCard({ item }: { item: HomeOverviewSummaryCard }) {
+  const Icon = iconMap[item.icon];
+
+  return (
+    <article className="homeSummaryCard">
+      <div className="homeSummaryTop">
+        <span className={`homeSummaryIcon homeSummaryIcon-${item.tone}`}>
+          <Icon size={20} strokeWidth={2} />
+        </span>
+      </div>
+      <span className="homeSummaryLabel">{item.label}</span>
+      <strong className="homeSummaryValue">{item.value}</strong>
+      <span className="homeSummaryDetail">{item.detail}</span>
+    </article>
+  );
+}
+
+function HomeEvents({ recentEvents }: { recentEvents: HomeOverviewRecentEvent[] }) {
+  if (recentEvents.length === 0) {
+    return (
+      <div className="emptyState">
+        <p className="emptyStateTitle">Событий пока нет</p>
+        <p className="emptyStateText">Загрузите хотя бы один прайс, и здесь появятся свежие изменения.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="homeEventsList">
+      {recentEvents.map((item) => {
+        const Icon = iconMap[item.icon];
+
+        return (
+          <article key={`${item.title}-${item.time}`} className="homeEventItem">
+            <div className="homeEventTimeline">
+              <span className={`homeEventIcon homeEventIcon-${item.tone}`}>
+                <Icon size={16} strokeWidth={2.1} />
+              </span>
+            </div>
+            <div className="homeEventBody">
+              <p>{item.title}</p>
+            </div>
+            <time className="homeEventTime">{item.time}</time>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
 export function HomeDashboard() {
-  const { activeEnterprise, enterprises } = useEnterprise();
+  const { activeEnterprise, activeEnterpriseId, enterprises } = useEnterprise();
+  const [overview, setOverview] = useState<HomeOverviewPayload>(emptyOverview);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (!activeEnterpriseId) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const loadOverview = async () => {
+      setIsLoading(true);
+      setErrorMessage("");
+
+      try {
+        const response = await fetch(`/api/home/overview?enterpriseId=${encodeURIComponent(activeEnterpriseId)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Не удалось получить сводку по прайсам.");
+        }
+
+        const data = (await response.json()) as HomeOverviewPayload;
+        setOverview(data);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setErrorMessage(error instanceof Error ? error.message : "Не удалось загрузить главную страницу.");
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadOverview();
+
+    return () => controller.abort();
+  }, [activeEnterpriseId]);
+
+  const visibleOverview = activeEnterpriseId ? overview : emptyOverview;
 
   return (
     <div className="pageStack homeDashboard">
       <section className="heroCard homeHero">
         <div className="homeHeroCopy">
           <p className="panelEyebrow">Главная</p>
-          <h1 className="homeHeroTitle">Добро пожаловать</h1>
-          <p className="pageDescription">
-            Я проанализировал данные и собрал главное на сегодня.
-          </p>
+          <h1 className="homeHeroTitle">Прайсы и сравнение цен</h1>
+          <div className="homeHeroEnterpriseInline">
+            <span className="homeHeroEnterpriseLabel">Активное предприятие</span>
+            <strong>{activeEnterprise?.name ?? "Предприятие не выбрано"}</strong>
+            <span className="homeHeroEnterpriseMeta">
+              {activeEnterprise
+                ? `${activeEnterprise.address} • ${activeEnterprise.phone}`
+                : enterprises.length === 0
+                  ? "Сначала добавьте предприятие в систему."
+                  : "Выберите предприятие в верхней панели."}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {errorMessage ? <p className="errorText">{errorMessage}</p> : null}
+
+      <section className="card homePanel">
+        <div className="homeSectionHeader">
+          <div>
+            <h2 className="sectionTitle">Сводка по прайсам</h2>
+            <p className="panelText">Только текущие прайсы, позиции и реальные ценовые разницы.</p>
+          </div>
+          <span className="statusPill">{isLoading ? "Обновляю..." : "Актуально"}</span>
         </div>
 
-        <div className="homeHeroEnterprise">
-          <span className="homeHeroEnterpriseLabel">Активное предприятие</span>
-          <strong>{activeEnterprise?.name ?? "Предприятие не выбрано"}</strong>
-          <span>
-            {activeEnterprise
-              ? `${activeEnterprise.address} • ${activeEnterprise.phone}`
-              : enterprises.length === 0
-                ? "Сначала добавьте предприятие в систему."
-                : "Выберите предприятие в верхней панели."}
-          </span>
-        </div>
+        {visibleOverview.summaryCards.length === 0 && !isLoading ? (
+          <div className="emptyState">
+            <p className="emptyStateTitle">Пока мало данных</p>
+            <p className="emptyStateText">Загрузите хотя бы два прайса от разных поставщиков, чтобы увидеть сравнение цен.</p>
+          </div>
+        ) : (
+          <div className="homeSummaryGrid">
+            {visibleOverview.summaryCards.map((item) => (
+              <HomeSummaryCard key={item.label} item={item} />
+            ))}
+          </div>
+        )}
       </section>
 
       <div className="homeDashboardGrid">
@@ -234,8 +207,7 @@ export function HomeDashboard() {
           <section className="card homePanel">
             <div className="homeSectionHeader">
               <div>
-                <h2 className="sectionTitle">Что нужно сделать сегодня?</h2>
-                <p className="panelText">Вот приоритетные задачи, чтобы всё было под контролем.</p>
+                <h2 className="sectionTitle">Быстрые действия</h2>
               </div>
             </div>
 
@@ -261,65 +233,43 @@ export function HomeDashboard() {
           <section className="card homePanel">
             <div className="homeSectionHeader">
               <div>
-                <h2 className="sectionTitle">Сегодня в фокусе</h2>
-                <p className="panelText">Ключевые события и рекомендации на основе ваших данных.</p>
+                <h2 className="sectionTitle">Где сейчас лучшая цена</h2>
+                <p className="panelText">Только те позиции, где уже есть хотя бы два актуальных предложения.</p>
               </div>
             </div>
 
-            <div className="homeFocusList">
-              {focusItems.map((item) => {
-                const Icon = item.icon;
-
-                return (
-                  <Link
-                    key={item.title}
-                    href={item.href}
-                    className={`homeFocusCard homeFocusCard-${item.tone}`}
-                  >
-                    <span className={`homeFocusIcon homeFocusIcon-${item.tone}`}>
-                      <Icon size={22} strokeWidth={2} />
-                    </span>
-                    <div className="homeFocusBody">
-                      <strong>{item.title}</strong>
-                      <p>{item.description}</p>
-                    </div>
-                    <span className={`homeFocusBadge homeFocusBadge-${item.tone}`}>{item.badge}</span>
-                    <span className="homeFocusArrow" aria-hidden="true">
-                      <ChevronRight size={18} strokeWidth={2.2} />
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="card homePanel">
-            <div className="homeSectionHeader">
-              <div>
-                <h2 className="sectionTitle">Краткая сводка</h2>
-                <p className="panelText">Быстрый срез по заказам, поставщикам и каталогу.</p>
+            {visibleOverview.focusItems.length === 0 && !isLoading ? (
+              <div className="emptyState">
+                <p className="emptyStateTitle">Сравнивать пока нечего</p>
+                <p className="emptyStateText">Нужно минимум два текущих прайса с уже сопоставленными товарами.</p>
               </div>
-            </div>
+            ) : (
+              <div className="homeFocusList">
+                {visibleOverview.focusItems.map((item) => {
+                  const Icon = iconMap[item.icon];
 
-            <div className="homeSummaryGrid">
-              {summaryCards.map((item) => {
-                const Icon = item.icon;
-
-                return (
-                  <article key={item.label} className="homeSummaryCard">
-                    <div className="homeSummaryTop">
-                      <span className={`homeSummaryIcon homeSummaryIcon-${item.tone}`}>
-                        <Icon size={20} strokeWidth={2} />
+                  return (
+                    <Link
+                      key={`${item.title}-${item.badge}`}
+                      href={item.href}
+                      className={`homeFocusCard homeFocusCard-${item.tone}`}
+                    >
+                      <span className={`homeFocusIcon homeFocusIcon-${item.tone}`}>
+                        <Icon size={22} strokeWidth={2} />
                       </span>
-                      <span className={`homeSummaryTrend homeSummaryTrend-${item.tone}`}>{item.trend}</span>
-                    </div>
-                    <span className="homeSummaryLabel">{item.label}</span>
-                    <strong className="homeSummaryValue">{item.value}</strong>
-                    <span className="homeSummaryDetail">{item.detail}</span>
-                  </article>
-                );
-              })}
-            </div>
+                      <div className="homeFocusBody">
+                        <strong>{item.title}</strong>
+                        <p>{item.description}</p>
+                      </div>
+                      <span className={`homeFocusBadge homeFocusBadge-${item.tone}`}>{item.badge}</span>
+                      <span className="homeFocusArrow" aria-hidden="true">
+                        <ChevronRight size={18} strokeWidth={2.2} />
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <details className="homeEnterpriseDetails">
@@ -334,68 +284,22 @@ export function HomeDashboard() {
           <section className="card homePanel">
             <div className="homeSectionHeader">
               <div>
-                <h2 className="sectionTitle">Последние события</h2>
-                <p className="panelText">Что произошло в системе за последнее время.</p>
+                <h2 className="sectionTitle">Последние изменения</h2>
+                <p className="panelText">Загрузки прайсов, предупреждения и заметные изменения по ценам.</p>
               </div>
             </div>
 
-            <div className="homeEventsList">
-              {recentEvents.map((item) => {
-                const Icon = item.icon;
+            <HomeEvents recentEvents={visibleOverview.recentEvents} />
 
-                return (
-                  <article key={`${item.title}-${item.time}`} className="homeEventItem">
-                    <div className="homeEventTimeline">
-                      <span className={`homeEventIcon homeEventIcon-${item.tone}`}>
-                        <Icon size={16} strokeWidth={2.1} />
-                      </span>
-                    </div>
-                    <div className="homeEventBody">
-                      <p>{item.title}</p>
-                    </div>
-                    <time className="homeEventTime">{item.time}</time>
-                  </article>
-                );
-              })}
-            </div>
-
-            <Link href="/reports" className="homeInlineLink">
-              Все события
+            <Link href="/suppliers" className="homeInlineLink">
+              Открыть прайсы поставщиков
               <ArrowRight size={16} strokeWidth={2.2} />
             </Link>
-          </section>
-
-          <section className="card homePanel">
-            <div className="homeSectionHeader">
-              <div>
-                <h2 className="sectionTitle">Быстрые действия</h2>
-                <p className="panelText">Переходы в те места, где чаще всего что-то делается.</p>
-              </div>
-            </div>
-
-            <div className="homeQuickActions">
-              {quickActions.map((item) => {
-                const Icon = item.icon;
-
-                return (
-                  <Link key={item.title} href={item.href} className="homeQuickActionCard">
-                    <span className="homeQuickActionIcon">
-                      <Icon size={18} strokeWidth={2} />
-                    </span>
-                    <div className="homeQuickActionBody">
-                      <strong>{item.title}</strong>
-                      <p>{item.description}</p>
-                    </div>
-                    <ChevronRight size={18} strokeWidth={2.2} />
-                  </Link>
-                );
-              })}
-            </div>
           </section>
         </div>
       </div>
 
-      <div className="homeFooterNote">© 2026 Умный заказ. Все права защищены.</div>
+      <div className="homeFooterNote">© 2026 Умный заказ. Главная страница показывает только реальные данные по прайсам.</div>
     </div>
   );
 }
