@@ -68,7 +68,14 @@ const RED_DRAGON_IDENTITY_OVERRIDES = new Map([
   ["13736", { brand: "KitKat" }],
   ["11637oz", { brand: "KitKat" }],
   ["11638oz", { brand: "KitKat" }],
+  ["11627oz", { brand: "KAMINARY" }],
 ]);
+const RED_DRAGON_NAME_OVERRIDES = [
+  {
+    match: "соус соевый kaminary original, 1000 мл",
+    override: { brand: "KAMINARY" },
+  },
+];
 
 function normalizeComparableText(value) {
   return String(value ?? "")
@@ -357,7 +364,22 @@ function applyRedDragonIdentityOverride(article, identity) {
   const override = RED_DRAGON_IDENTITY_OVERRIDES.get(normalizeComparableText(article));
 
   if (!override) {
-    return identity;
+    const byName = RED_DRAGON_NAME_OVERRIDES.find(
+      (item) => normalizeComparableText(identity.name) === item.match,
+    );
+
+    if (!byName) {
+      return identity;
+    }
+
+    return {
+      ...identity,
+      brand: byName.override.brand ?? identity.brand,
+      country: byName.override.country ?? identity.country,
+      source: "red_dragon_override",
+      confidence: 1,
+      explanation: "Подтвержденное правило для поставщика Красный дракон.",
+    };
   }
 
   return {
