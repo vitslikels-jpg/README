@@ -1456,10 +1456,15 @@ function looksLikeSectionName(value: string) {
 }
 
 function inferUnitFromPackaging(value: string) {
-  const normalized = normalizeHeader(value);
+  const source = String(value ?? "").trim();
+  const normalized = normalizeHeader(source);
 
   if (!normalized) {
     return null;
+  }
+
+  if (/\b\d+(?:[.,]\d+)?\s*(?:\u043a\u0433|kg|\u0433\u0440|\u0433|\u043b|l|\u043c\u043b|ml|\u0448\u0442)\b/iu.test(source)) {
+    return "С€С‚";
   }
 
   if (
@@ -1961,7 +1966,17 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
     const resolvedName =
       !nameValue || nameValue === articleValue || looksLikeOnlyDigits(nameValue) ? rawNameValue || nameValue : nameValue;
     const inferredUnitFromPackaging = inferUnitFromPackaging(packagingValue || findRawFieldValue(rawData, "packaging", supplierProfile));
-    const unit = normalizeUnitValue(unitValue || findRawFieldValue(rawData, "unit", supplierProfile)) ?? inferredUnitFromPackaging;
+    const inferredUnitFromName = inferUnitFromPackaging(rawNameValue || resolvedName);
+    const inferredUnitFromPei = normalizeCellValue(
+      shipByBoxesOnlyValue || findRawFieldValue(rawData, "shipByBoxesOnly", supplierProfile),
+    )
+      ? normalizeUnitValue("\u0428\u0422")
+      : null;
+    const unit =
+      normalizeUnitValue(unitValue || findRawFieldValue(rawData, "unit", supplierProfile)) ??
+      inferredUnitFromPackaging ??
+      inferredUnitFromName ??
+      inferredUnitFromPei;
     const inferredUnitsPerPackFromName = inferUnitsPerPackFromName(resolvedName);
     const unitsPerPack =
       parseDecimal(unitsPerPackValue) ??
