@@ -30,6 +30,12 @@ type SmartOrderGroup = {
   totalNumber: number | null;
 };
 
+type SmartOrderProblemItem = {
+  item: OrderOptimizationItem;
+  candidate: OrderOptimizationResult | null;
+  reasons: string[];
+};
+
 const SEARCH_DEBOUNCE_MS = 250;
 
 function isApiErrorResponse(value: unknown): value is { message?: string } {
@@ -148,6 +154,39 @@ function buildBasketCopyText(basket: OrderOptimizationSupplierBasket) {
   });
 
   return [`Поставщик: ${basket.supplierName}`, ...lines].join("\n");
+}
+
+function buildProblemItems(items: OrderOptimizationItem[]) {
+  return items.reduce<SmartOrderProblemItem[]>((acc, item) => {
+    const candidate = getSelectedCandidate(item);
+    const reasons: string[] = [];
+
+    if (item.matchStatus === "not_found" || item.status === "not_found" || !candidate?.selectedProductId) {
+      reasons.push("Не найден товар");
+    }
+
+    if (!item.selectedCandidateId) {
+      reasons.push("Нет selectedCandidateId");
+    }
+
+    if (item.selectedCandidateId && !candidate?.selectedSupplierId) {
+      reasons.push("Нет поставщика");
+    }
+
+    if (item.selectedCandidateId && (!candidate?.optimizedUnitPrice || !candidate.optimizedLineTotal)) {
+      reasons.push("Нет цены");
+    }
+
+    if (item.status === "review" || item.matchStatus === "review") {
+      reasons.push("Нужно ручное подтверждение");
+    }
+
+    if (reasons.length > 0) {
+      acc.push({ item, candidate, reasons });
+    }
+
+    return acc;
+  }, []);
 }
 
 async function copyTextToClipboard(text: string) {
@@ -321,6 +360,11 @@ export function OrderOptimizationPage() {
 
     return formatMoney(total);
   }, [smartOrderGroups]);
+
+  const problemItems = useMemo(
+    () => buildProblemItems(selectedOptimization?.items ?? []),
+    [selectedOptimization?.items],
+  );
 
   const pickerItem = useMemo(() => {
     if (!picker || !selectedOptimization) {
@@ -749,6 +793,53 @@ export function OrderOptimizationPage() {
             </>
           )}
         </section>
+
+        {problemItems.length > 0 ? (
+          <section className="card smartOrderProblemsCard">
+            <div className="smartOrderCardHeader smartOrderCardHeaderSimple">
+              <div>
+                <h2 className="sectionTitle">Проблемные позиции</h2>
+              </div>
+              <span className="statusPill">{problemItems.length}</span>
+            </div>
+
+            <div className="smartOrderProblemList">
+              {problemItems.map(({ item, candidate, reasons }) => (
+                <section key={item.id} className="smartOrderProblemCard">
+                  <div className="smartOrderProblemHeader">
+                    <div className="smartOrderProblemMain">
+                      <h3>{item.parsedName?.trim() || item.sourceLine}</h3>
+                      <p>{formatAmount(item.parsedQuantity, item.parsedUnit)}</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="smartOrderEditButton"
+                      onClick={() => openPicker(item)}
+                    >
+                      <PencilLine size={14} />
+                      <span>Изменить</span>
+                    </button>
+                  </div>
+
+                  <div className="smartOrderProblemReasons">
+                    {reasons.map((reason) => (
+                      <span key={`${item.id}-${reason}`} className="statusPill smartOrderProblemReason">
+                        {reason}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="smartOrderProblemMeta">
+                    <span>Товар: {candidate?.selectedProduct?.name ?? "не выбран"}</span>
+                    <span>Поставщик: {candidate?.selectedSupplier?.name ?? "не выбран"}</span>
+                    <span>Цена: {formatMoney(candidate?.optimizedLineTotal) ?? "не рассчитана"}</span>
+                  </div>
+                </section>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="smartOrderBenefits">
           <article className="card smartOrderBenefitCard">

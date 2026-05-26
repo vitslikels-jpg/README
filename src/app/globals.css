@@ -2659,6 +2659,72 @@ body.sidebarResizing * {
   padding-top: 4px;
 }
 
+.smartOrderProblemsCard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.smartOrderProblemList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.smartOrderProblemCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(217, 119, 6, 0.22);
+  border-radius: 16px;
+  background: #fffaf3;
+}
+
+.smartOrderProblemHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.smartOrderProblemMain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.smartOrderProblemMain h3 {
+  font-size: 0.98rem;
+  line-height: 1.35;
+}
+
+.smartOrderProblemMain p,
+.smartOrderProblemMeta {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.smartOrderProblemReasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.smartOrderProblemReason {
+  border-color: rgba(217, 119, 6, 0.2);
+  background: rgba(217, 119, 6, 0.1);
+  color: #92400e;
+}
+
+.smartOrderProblemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
 .smartOrderBasketHeader {
   display: flex;
   flex-direction: column;
@@ -3426,7 +3492,8 @@ body.sidebarResizing * {
   }
 
   .smartOrderSupplierTop,
-  .smartOrderBasketActions {
+  .smartOrderBasketActions,
+  .smartOrderProblemHeader {
     align-items: flex-start;
   }
 
