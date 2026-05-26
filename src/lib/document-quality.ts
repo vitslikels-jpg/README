@@ -11,6 +11,7 @@ const LOW_CONFIDENCE_WARNING_THRESHOLD = 0.75;
 const buildWarningMessage = (params: {
   rowsWithoutPrice: number;
   rowsWithoutUnit: number;
+  rowsWithMissingUnitsPerPack: number;
   rowsWithInvalidUnitsPerPack: number;
   unmappedOffersCount: number;
   lowConfidenceMappingsCount: number;
@@ -23,6 +24,10 @@ const buildWarningMessage = (params: {
 
   if (params.rowsWithoutUnit > 0) {
     messages.push(`Нет единицы измерения у ${params.rowsWithoutUnit} строк`);
+  }
+
+  if (params.rowsWithMissingUnitsPerPack > 0) {
+    messages.push(`Не заполнено "Штук в коробке" у ${params.rowsWithMissingUnitsPerPack} строк`);
   }
 
   if (params.rowsWithInvalidUnitsPerPack > 0) {
@@ -68,6 +73,7 @@ const resolveQualityStatus = (params: {
   totalRows: number;
   rowsWithoutPrice: number;
   rowsWithoutUnit: number;
+  rowsWithMissingUnitsPerPack: number;
   rowsWithInvalidUnitsPerPack: number;
   unmappedOffersCount: number;
   lowConfidenceMappingsCount: number;
@@ -173,6 +179,7 @@ export const upsertDocumentQualityReport = async (documentId: string) => {
     totalRows: productMetrics.totalRows,
     rowsWithoutPrice: productMetrics.rowsWithoutPrice,
     rowsWithoutUnit: productMetrics.rowsWithoutUnit,
+    rowsWithMissingUnitsPerPack: productMetrics.rowsWithMissingUnitsPerPack,
     rowsWithInvalidUnitsPerPack: productMetrics.rowsWithInvalidUnitsPerPack,
     unmappedOffersCount,
     lowConfidenceMappingsCount,
@@ -181,6 +188,7 @@ export const upsertDocumentQualityReport = async (documentId: string) => {
   const warningMessage = buildWarningMessage({
     rowsWithoutPrice: productMetrics.rowsWithoutPrice,
     rowsWithoutUnit: productMetrics.rowsWithoutUnit,
+    rowsWithMissingUnitsPerPack: productMetrics.rowsWithMissingUnitsPerPack,
     rowsWithInvalidUnitsPerPack: productMetrics.rowsWithInvalidUnitsPerPack,
     unmappedOffersCount,
     lowConfidenceMappingsCount,
@@ -252,6 +260,13 @@ export const buildParsedProductMetrics = async (documentId: string) => {
   const rowsWithoutUnit = products.filter((product) => !product.unit?.trim()).length;
   const rowsWithoutName = products.filter((product) => !product.name.trim()).length;
   const rowsWithoutArticle = products.filter((product) => !product.article?.trim()).length;
+  const rowsWithMissingUnitsPerPack = products.filter((product) => {
+    if (!product.rawData || typeof product.rawData !== "object" || Array.isArray(product.rawData)) {
+      return false;
+    }
+
+    return (product.rawData as Record<string, unknown>)._missingUnitsPerPack === "true";
+  }).length;
   const rowsWithInvalidUnitsPerPack = products.filter((product) => {
     if (!product.rawData || typeof product.rawData !== "object" || Array.isArray(product.rawData)) {
       return false;
@@ -267,6 +282,7 @@ export const buildParsedProductMetrics = async (documentId: string) => {
     rowsWithoutUnit,
     rowsWithoutName,
     rowsWithoutArticle,
+    rowsWithMissingUnitsPerPack,
     rowsWithInvalidUnitsPerPack,
   };
 };

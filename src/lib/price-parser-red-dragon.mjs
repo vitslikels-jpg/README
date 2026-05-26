@@ -481,7 +481,9 @@ export async function parseRedDragonSheetRows(rows) {
       }
     }
 
-    if (!unitsPerPack) {
+    if (!unitsPerPack && !unitsPerPackRaw.trim()) {
+      rawData._missingUnitsPerPack = "true";
+    } else if (!unitsPerPack) {
       rawData._warningUnitsPerPack = "true";
     }
 
