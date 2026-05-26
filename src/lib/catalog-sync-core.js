@@ -170,6 +170,15 @@ function createCounters(syncSource) {
   };
 }
 
+function shouldAllowWeakSelfMapping({ normalizedName, unitCode, hasCurrentSnapshot, groupSize }) {
+  if (!hasCurrentSnapshot || !unitCode || unitCode !== "pcs" || groupSize !== 1) {
+    return false;
+  }
+
+  const tokenCount = normalizedName ? normalizedName.split(" ").filter(Boolean).length : 0;
+  return tokenCount >= 4 || (normalizedName?.length ?? 0) >= 24;
+}
+
 export async function syncCatalogForLegacyProducts({
   prisma,
   legacyProducts,
@@ -332,8 +341,15 @@ export async function syncCatalogForLegacyProducts({
       groupSize: sortedProducts.length,
       hasCurrentSnapshot: shouldMarkCurrent,
     });
+    const allowWeakSelfMapping = shouldAllowWeakSelfMapping({
+      normalizedName: group.normalizedName,
+      unitCode: group.unitCode,
+      hasCurrentSnapshot: shouldMarkCurrent,
+      groupSize: sortedProducts.length,
+    });
+    const effectiveConfidence = allowWeakSelfMapping ? 0.9 : confidence;
 
-    if (confidence < AUTO_MAPPING_THRESHOLD) {
+    if (effectiveConfidence < AUTO_MAPPING_THRESHOLD) {
       counters.productMappingsSkipped += 1;
       continue;
     }
@@ -375,7 +391,7 @@ export async function syncCatalogForLegacyProducts({
       supplierOffer,
       productMaster,
       enterpriseId: representative.enterpriseId,
-      confidence,
+      confidence: effectiveConfidence,
       matchKey: masterPayload.dedupeKey,
       syncSource,
       counters,
