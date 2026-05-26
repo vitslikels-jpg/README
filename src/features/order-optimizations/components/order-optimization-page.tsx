@@ -7,6 +7,7 @@ import type {
   OrderOptimizationItem,
   OrderOptimizationListItem,
   OrderOptimizationResult,
+  OrderOptimizationSupplierBasket,
 } from "@/features/order-optimizations/types";
 
 type PickerState = {
@@ -124,6 +125,29 @@ function buildCopyText(groups: SmartOrderGroup[]) {
       return `${group.supplierName}\n${lines.join("\n")}`;
     })
     .join("\n\n");
+}
+
+function getBasketStatusText(basket: OrderOptimizationSupplierBasket) {
+  if (!basket.minOrderAmount) {
+    return "Минималка не задана";
+  }
+
+  if (basket.meetsMinOrder) {
+    return "Минималка выполнена";
+  }
+
+  return `Не хватает ${formatMoney(basket.missingAmount) ?? basket.missingAmount}`;
+}
+
+function buildBasketCopyText(basket: OrderOptimizationSupplierBasket) {
+  const lines = basket.items.map((item, index) => {
+    const quantityText = [item.quantity, item.unit].filter(Boolean).join(" ").trim();
+    return `${index + 1}. ${item.selectedProductName || item.parsedName || "Товар"}${
+      quantityText ? ` — ${quantityText}` : ""
+    }`;
+  });
+
+  return [`Поставщик: ${basket.supplierName}`, ...lines].join("\n");
 }
 
 async function copyTextToClipboard(text: string) {
@@ -248,6 +272,7 @@ export function OrderOptimizationPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isMatching, setIsMatching] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
+  const [copyingBasketSupplierName, setCopyingBasketSupplierName] = useState<string | null>(null);
   const [selectingCandidateId, setSelectingCandidateId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -296,14 +321,6 @@ export function OrderOptimizationPage() {
 
     return formatMoney(total);
   }, [smartOrderGroups]);
-
-  useEffect(() => {
-    if (!selectedOptimization?.baskets.length) {
-      return;
-    }
-
-    console.log("[smart-order] supplier baskets", selectedOptimization.baskets);
-  }, [selectedOptimization]);
 
   const pickerItem = useMemo(() => {
     if (!picker || !selectedOptimization) {
@@ -446,6 +463,31 @@ export function OrderOptimizationPage() {
       setErrorMessage("Не удалось скопировать заказ.");
     } finally {
       setIsCopying(false);
+    }
+  }
+
+  async function handleCopyBasket(basket: OrderOptimizationSupplierBasket) {
+    const text = buildBasketCopyText(basket);
+
+    if (!text) {
+      return;
+    }
+
+    setCopyingBasketSupplierName(basket.supplierName);
+    setErrorMessage("");
+
+    try {
+      const copied = await copyTextToClipboard(text);
+
+      if (!copied) {
+        throw new Error("copy failed");
+      }
+
+      setSuccessMessage(`Заказ поставщику "${basket.supplierName}" скопирован.`);
+    } catch {
+      setErrorMessage(`Не удалось скопировать заказ поставщику "${basket.supplierName}".`);
+    } finally {
+      setCopyingBasketSupplierName(null);
     }
   }
 
@@ -626,10 +668,83 @@ export function OrderOptimizationPage() {
               </div>
 
               {selectedOptimization?.baskets.length ? (
-                <details className="smartOrderDebugBlock">
-                  <summary>Debug baskets</summary>
-                  <pre>{JSON.stringify(selectedOptimization.baskets, null, 2)}</pre>
-                </details>
+                <section className="smartOrderBasketsSection">
+                  <div className="smartOrderCardHeader smartOrderCardHeaderSimple">
+                    <div>
+                      <h3 className="sectionTitle">Корзины поставщиков</h3>
+                    </div>
+                  </div>
+
+                  <div className="smartOrderSupplierList">
+                    {selectedOptimization.baskets.map((basket) => (
+                      <section
+                        key={`${basket.supplierId ?? "supplier"}-${basket.supplierName}`}
+                        className="smartOrderSupplierBlock"
+                      >
+                        <div className="smartOrderSupplierTop">
+                          <div className="smartOrderBasketHeader">
+                            <h3>{basket.supplierName}</h3>
+                            <div className="smartOrderBasketMeta">
+                              <span>{basket.itemsCount} поз.</span>
+                              <span>Сумма: {formatMoney(basket.total) ?? basket.total}</span>
+                              <span>
+                                Минималка:{" "}
+                                {basket.minOrderAmount ? formatMoney(basket.minOrderAmount) : "не задана"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="smartOrderBasketActions">
+                            <span
+                              className={`statusPill smartOrderBasketStatus ${
+                                !basket.minOrderAmount
+                                  ? "smartOrderBasketStatusNeutral"
+                                  : basket.meetsMinOrder
+                                    ? "smartOrderBasketStatusOk"
+                                    : "smartOrderBasketStatusWarning"
+                              }`}
+                            >
+                              {getBasketStatusText(basket)}
+                            </span>
+
+                            <button
+                              type="button"
+                              className="secondaryButton compactButton"
+                              disabled={copyingBasketSupplierName === basket.supplierName}
+                              onClick={() => void handleCopyBasket(basket)}
+                            >
+                              <Copy size={15} />
+                              <span>
+                                {copyingBasketSupplierName === basket.supplierName
+                                  ? "Копируем..."
+                                  : "Скопировать заказ"}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="smartOrderSupplierRows">
+                          {basket.items.map((item) => (
+                            <div key={item.itemId} className="smartOrderRow">
+                              <div className="smartOrderRowMain">
+                                <span className="smartOrderRowName">
+                                  {item.selectedProductName || item.parsedName || "Товар"}
+                                </span>
+                                {item.selectedProductName && item.parsedName ? (
+                                  <span className="smartOrderBasketParsedName">{item.parsedName}</span>
+                                ) : null}
+                              </div>
+                              <span className="smartOrderRowMeta">{formatAmount(item.quantity, item.unit)}</span>
+                              <span className="smartOrderRowTotal">
+                                {formatMoney(item.optimizedLineTotal) ?? "—"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                </section>
               ) : null}
             </>
           )}

@@ -2652,6 +2652,67 @@ body.sidebarResizing * {
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.72) 0%, rgba(255, 255, 255, 0.95) 100%);
 }
 
+.smartOrderBasketsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.smartOrderBasketHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.smartOrderBasketMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
+.smartOrderBasketActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.smartOrderBasketStatus {
+  min-height: 30px;
+  padding-inline: 10px;
+  font-size: 0.78rem;
+}
+
+.smartOrderBasketStatusOk {
+  border-color: rgba(15, 118, 110, 0.2);
+  background: rgba(15, 118, 110, 0.08);
+  color: #0f766e;
+}
+
+.smartOrderBasketStatusWarning {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: rgba(217, 119, 6, 0.1);
+  color: #92400e;
+}
+
+.smartOrderBasketStatusNeutral {
+  border-color: rgba(100, 116, 139, 0.2);
+  background: rgba(148, 163, 184, 0.12);
+  color: #475569;
+}
+
+.smartOrderBasketParsedName {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .smartOrderBenefits {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3361,6 +3422,11 @@ body.sidebarResizing * {
   .smartOrderModalHeader,
   .smartOrderCandidateHead {
     flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .smartOrderSupplierTop,
+  .smartOrderBasketActions {
     align-items: flex-start;
   }
 
