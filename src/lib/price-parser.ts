@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { syncCatalogForDocument } from "@/lib/catalog-sync-core.js";
 import { upsertDocumentQualityReport } from "@/lib/document-quality";
+import { isMeridianSupplierName, parseMeridianSheetRows } from "@/lib/price-parser-meridian.mjs";
 import { refineParsedProductIdentity } from "@/lib/product-identity-refiner.mjs";
 import { isRedDragonSupplierName, parseRedDragonSheetRows } from "@/lib/price-parser-red-dragon.mjs";
 import { prisma } from "@/lib/prisma";
@@ -201,6 +202,8 @@ const countryAliases = new Map<string, string>([
   ["корея южная", "ЮЖНАЯ КОРЕЯ"],
   ["south korea", "ЮЖНАЯ КОРЕЯ"],
   ["republic of korea", "ЮЖНАЯ КОРЕЯ"],
+  ["\u0444\u0430\u0440\u0435\u0440\u0441\u043a\u0438\u0435 \u043e\u0441\u0442\u0440\u043e\u0432\u0430", "\u0424\u0410\u0420\u0415\u0420\u0421\u041a\u0418\u0415 \u041e\u0421\u0422\u0420\u041e\u0412\u0410"],
+  ["faroe islands", "\u0424\u0410\u0420\u0415\u0420\u0421\u041a\u0418\u0415 \u041e\u0421\u0422\u0420\u041e\u0412\u0410"],
   ["эквадор", "ЭКВАДОР"],
   ["ecuador", "ЭКВАДОР"],
   ["аргентина", "АРГЕНТИНА"],
@@ -322,6 +325,7 @@ function looksLikeLatinTitleCaseBrand(value: string) {
   }
 
   const words = trimmed.split(/\s+/u).filter(Boolean);
+  const allowedLowercaseWords = new Set(["??", "??", "????", "????", "??????", "??", "??????", "????", "????", "????", "??????"]);
 
   if (words.length === 0 || words.length > 3) {
     return false;
@@ -730,7 +734,7 @@ function extractEmbeddedCountryBeforeMeasure(name: string, currentCountry: strin
   }
 
   const compactName = name.trim();
-  const measureMatch = compactName.match(/\b\d+(?:[.,]\d+)?\s*(?:%|л|л\.|мл|гр|г|кг|шт)\b|\(\s*\d+\s*шт\s*\)/iu);
+  const measureMatch = compactName.match(/\b\d+(?:[.,]\d+)?\s*(?:%|\u043b|\u043b\.|\u043c\u043b|\u0433\u0440|\u0433|\u043a\u0433|\u0448\u0442)\b|\(\s*\d+\s*\u0448\u0442\s*\)/iu);
 
   if (!measureMatch || measureMatch.index === undefined || measureMatch.index <= 0) {
     return {
@@ -1105,9 +1109,36 @@ function normalizePdfNameSpacing(value: string) {
     .trim();
 }
 
+function cleanupPdfCountryRemoval(value: string) {
+  return normalizePdfNameSpacing(
+    value
+      .replace(/\s+,/gu, ",")
+      .replace(/\(\s*\)/gu, " ")
+      .replace(/\s{2,}/gu, " ")
+      .trim(),
+  );
+}
+
+function isPdfFlavorChiliContext(name: string, matchIndex: number, matchLength: number) {
+  const before = name.slice(0, matchIndex).trim();
+  const after = name.slice(matchIndex + matchLength).trim();
+  const beforeWords = before.split(/\s+/u).filter(Boolean);
+  const previousWord = normalizeComparableText(beforeWords[beforeWords.length - 1] ?? "");
+  const nextWord = normalizeComparableText(after.split(/\s+/u).filter(Boolean)[0] ?? "");
+
+  if (!previousWord) {
+    return false;
+  }
+
+  const flavorLeadWords = new Set(["\u0441\u043e\u0443\u0441", "\u043a\u0435\u0442\u0447\u0443\u043f", "\u043c\u0430\u0439\u043e\u043d\u0435\u0437", "\u043c\u0430\u0440\u0438\u043d\u0430\u0434", "\u043f\u0440\u0438\u043f\u0440\u0430\u0432\u0430"]);
+  const flavorDescriptorWords = new Set(["\u0441\u043b\u0430\u0434\u043a\u0438\u0439", "\u043e\u0441\u0442\u0440\u044b\u0439", "\u043a\u0440\u0430\u0441\u043d\u044b\u0439", "\u0437\u0435\u043b\u0435\u043d\u044b\u0439"]);
+
+  return flavorLeadWords.has(previousWord) || flavorDescriptorWords.has(nextWord);
+}
+
 function extractPdfAnalysisSegments(name: string) {
   const normalizedName = normalizePdfNameSpacing(name);
-  const match = normalizedName.match(/^(.*?)(\s+(?:короб(?:ка)?\.?|монолит|в\/у|уп\.?|кор\.?).*)$/iu);
+  const match = normalizedName.match(/^(.*?)(\s+(?:\u043a\u043e\u0440\u043e\u0431(?:\u043a\u0430)?\.?|\u043c\u043e\u043d\u043e\u043b\u0438\u0442|\u0431\u043b\u043e\u043a|\u0432\/\u0443|\u0443\u043f\.?|\u043a\u043e\u0440\.?).*)$/iu);
 
   if (!match) {
     return {
@@ -1157,6 +1188,9 @@ function extractPdfCountryAndCleanup(name: string) {
     const patterns = [
       new RegExp(`(?:^|\\s)(${escapedAlias})(?:(?:\\s*\\([^)]*\\))|(?:[).,;:!?*]+))?\\s*$`, "iu"),
       new RegExp(`(?:^|\\s)(${escapedAlias})(?:\\s+[A-Z0-9/-]+){1,3}\\s*$`, "iu"),
+      new RegExp(`\(\s*(${escapedAlias})\s*\)`, "iu"),
+      new RegExp(`(?:^|\s)(${escapedAlias})(?=\s*\([^)]*\))`, "iu"),
+      new RegExp(`(?:^|\s)(${escapedAlias})(?=\s+\d+(?:[.,]\d+)?\s*(?:%|\u043b|\u043b\.|\u043c\u043b|\u0433\u0440|\u0433|\u043a\u0433|\u0448\u0442)\b)`, "iu"),
     ];
     const match = patterns.map((pattern) => nextName.match(pattern)).find(Boolean);
 
@@ -1164,8 +1198,19 @@ function extractPdfCountryAndCleanup(name: string) {
       continue;
     }
 
+    if (
+      normalizeComparableText(match[1]) === "\u0447\u0438\u043b\u0438" &&
+      match.index !== undefined &&
+      isPdfFlavorChiliContext(nextName, match.index, match[0].length)
+    ) {
+      continue;
+    }
+
     country = toDisplayCountry(match[1]);
-    nextName = normalizePdfNameSpacing(nextName.slice(0, match.index).trim());
+    nextName =
+      match.index !== undefined
+        ? cleanupPdfCountryRemoval(`${nextName.slice(0, match.index)} ${nextName.slice(match.index + match[0].length)}`)
+        : cleanupPdfCountryRemoval(nextName);
     break;
   }
 
@@ -1224,6 +1269,40 @@ function normalizePdfExtractedBrand(name: string, brand: string | null) {
   };
 }
 
+function extractCountryFromPdfBrand(brand: string | null, currentCountry: string | null) {
+  if (!brand || currentCountry) {
+    return {
+      brand,
+      country: currentCountry,
+    };
+  }
+
+  for (const alias of countryAliases.keys()) {
+    const escapedAlias = alias.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const match = brand.match(new RegExp(`^(${escapedAlias})\s+(.+)$`, "iu"));
+
+    if (!match) {
+      continue;
+    }
+
+    const nextBrand = sanitizeLooseBrandCandidate(match[2]);
+
+    if (!nextBrand) {
+      continue;
+    }
+
+    return {
+      brand: nextBrand,
+      country: toDisplayCountry(match[1]),
+    };
+  }
+
+  return {
+    brand,
+    country: currentCountry,
+  };
+}
+
 function splitPdfNameBrandCountry(rawName: string) {
   const normalizedName = normalizePdfNameSpacing(rawName);
   const wholeLineParts = splitNameBrandCountry(normalizedName, null, null);
@@ -1242,13 +1321,14 @@ function splitPdfNameBrandCountry(rawName: string) {
   const extractedCountry = extractPdfCountryAndCleanup(analysisPart);
   const extractedBrand = extractPdfTrailingBrand(extractedCountry.name);
   const normalizedBrand = normalizePdfExtractedBrand(extractedBrand.name, extractedBrand.brand);
-  const embeddedBrand = extractEmbeddedBrandBeforeMeasure(normalizedBrand.name, normalizedBrand.brand);
+  const brandCountrySplit = extractCountryFromPdfBrand(normalizedBrand.brand, extractedCountry.country);
+  const embeddedBrand = extractEmbeddedBrandBeforeMeasure(normalizedBrand.name, brandCountrySplit.brand);
   const mergedName = normalizePdfNameSpacing([(embeddedBrand?.name ?? normalizedBrand.name), suffixPart].filter(Boolean).join(" "));
 
   return finalizeParsedNameParts({
     name: mergedName,
-    brand: embeddedBrand?.brand ?? normalizedBrand.brand,
-    country: embeddedBrand?.country ?? extractedCountry.country,
+    brand: embeddedBrand?.brand ?? brandCountrySplit.brand,
+    country: embeddedBrand?.country ?? brandCountrySplit.country,
   });
 }
 
@@ -1664,9 +1744,14 @@ function isPdfHeaderLine(value: string) {
 
 function isPdfSectionLine(value: string) {
   const trimmed = value.trim();
+  const normalized = normalizeComparableText(trimmed);
 
   if (!trimmed || isPdfHeaderLine(trimmed) || /\d/u.test(trimmed)) {
     return false;
+  }
+
+  if (normalized === "\u0440\u044b\u0431\u0430 \u0432 \u0438\u043d\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043b\u044c\u043d\u043e\u0439 \u0443\u043f\u0430\u043a\u043e\u0432\u043a\u0435") {
+    return true;
   }
 
   if (trimmed === trimmed.toUpperCase()) {
@@ -1674,7 +1759,14 @@ function isPdfSectionLine(value: string) {
   }
 
   const words = trimmed.split(/\s+/u).filter(Boolean);
-  return words.length <= 6 && words.every((word) => /^[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё"-]*$/u.test(word));
+  const allowedLowercaseWords = new Set(["\u0438", "\u0432", "\u043d\u0430", "\u043f\u043e", "\u0434\u043b\u044f", "\u0441", "\u0431\u0435\u0437", "\u0438\u0437", "\u043e\u0442", "\u0434\u043e", "\u043f\u043e\u0434"]);
+  return (
+    words.length <= 6 &&
+    words.every(
+      (word) =>
+        /^[A-Z\u0410-\u042f\u0401][A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u0451"-]*$/u.test(word) || allowedLowercaseWords.has(normalizeComparableText(word)),
+    )
+  );
 }
 
 function parsePdfRows(pdfText: string): { products: ParsedProductRow[]; skippedCount: number } {
@@ -2008,6 +2100,8 @@ export async function parsePriceDocument(documentId: string): Promise<ParseDocum
     const { products, skippedCount } =
       document.sourceFormat === "pdf"
         ? parsePdfRows(await extractPdfLayoutText(absolutePath))
+        : isMeridianSupplierName(document.supplier?.name)
+          ? await parseMeridianSheetRows(await parseWorkbookRows(absolutePath))
         : isRedDragonSupplierName(document.supplier?.name)
           ? await parseRedDragonSheetRows(await parseWorkbookRows(absolutePath))
           : await parseRows(await parseWorkbookRows(absolutePath), {

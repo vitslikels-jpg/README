@@ -11,6 +11,7 @@
     "prisma:migrate": "prisma migrate dev",
     "catalog:seed-units": "node scripts/seed-units.mjs",
     "catalog:backfill": "node scripts/backfill-catalog-model.mjs",
+    "verify:meridian": "node scripts/verify-meridian-parser.mjs",
     "verify:red-dragon": "node scripts/verify-red-dragon-parser.mjs",
     "verify:identity": "node scripts/verify-product-identity.mjs"
   },
