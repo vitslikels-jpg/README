@@ -123,7 +123,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const validated = validateSmartOrderAiParseResponse(parsedJson);
+    const validated = validateSmartOrderAiParseResponse(parsedJson, { sourceText });
 
     return jsonUtf8({
       source: "polza",

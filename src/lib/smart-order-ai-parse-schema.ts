@@ -34,6 +34,10 @@ export type SmartOrderAiParseResponse = {
   items: SmartOrderAiParsedItem[];
 };
 
+type SmartOrderAiParseValidationOptions = {
+  sourceText?: string | null;
+};
+
 export const smartOrderAiParseJsonSchema = {
   type: "object",
   additionalProperties: false,
@@ -170,6 +174,67 @@ function extractTrailingQuantityAndUnit(originalLine: string) {
   };
 }
 
+function buildOriginalLineFallbacks(sourceText: string) {
+  const lines = sourceText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const fallbacks: string[] = [];
+
+  for (const line of lines) {
+    const supplierMatch = line.match(/^([^:]+):\s*(.+)$/u);
+
+    if (supplierMatch) {
+      const itemsText = supplierMatch[2] ?? "";
+      const items = itemsText
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      if (items.length > 1) {
+        for (const item of items) {
+          fallbacks.push(item);
+        }
+
+        continue;
+      }
+    }
+
+    const commaItems = line
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (commaItems.length > 1) {
+      for (const item of commaItems) {
+        fallbacks.push(item);
+      }
+
+      continue;
+    }
+
+    fallbacks.push(line);
+  }
+
+  return fallbacks;
+}
+
+function buildFallbackConfidence(item: Pick<SmartOrderAiParsedItem, "parsedName" | "quantity" | "unit" | "needsReview">) {
+  let confidence = 0.5;
+
+  if (item.parsedName && item.quantity && item.unit) {
+    confidence = 0.9;
+  } else if (item.parsedName) {
+    confidence = 0.75;
+  }
+
+  if (item.needsReview) {
+    return Math.min(confidence, 0.75);
+  }
+
+  return confidence;
+}
+
 function normalizeParsedItem(value: unknown): SmartOrderAiParsedItem {
   const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const originalLine = String(source.originalLine ?? "").trim();
@@ -292,12 +357,31 @@ function normalizeParsedItem(value: unknown): SmartOrderAiParsedItem {
   };
 }
 
-export function validateSmartOrderAiParseResponse(value: unknown): SmartOrderAiParseResponse {
+export function validateSmartOrderAiParseResponse(
+  value: unknown,
+  options: SmartOrderAiParseValidationOptions = {},
+): SmartOrderAiParseResponse {
   const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const items = Array.isArray(source.items) ? source.items : [];
+  const originalLineFallbacks = options.sourceText ? buildOriginalLineFallbacks(options.sourceText) : [];
 
   return {
-    items: items.map(normalizeParsedItem),
+    items: items.map((item, index) => {
+      const normalized = normalizeParsedItem(item);
+      const restoredOriginalLine = normalized.originalLine || originalLineFallbacks[index] || options.sourceText?.trim() || "";
+      const confidence =
+        normalized.confidence > 0
+          ? normalized.needsReview
+            ? Math.min(normalized.confidence, 0.75)
+            : normalized.confidence
+          : buildFallbackConfidence(normalized);
+
+      return {
+        ...normalized,
+        originalLine: restoredOriginalLine,
+        confidence,
+      };
+    }),
   };
 }
 
