@@ -26,7 +26,6 @@ async function getEnterprises() {
 function DashboardShell({
   children,
   enterprises,
-  databaseWarning,
 }: {
   children: ReactNode;
   enterprises: Awaited<ReturnType<typeof getEnterprises>>;
@@ -40,20 +39,6 @@ function DashboardShell({
         <div className="appContent">
           <Topbar />
           <main className="mainContent">
-            {databaseWarning ? (
-              <section className="card pagePlaceholder">
-                <p className="panelEyebrow">Preview mode</p>
-                <h2 className="pageTitle">База сейчас недоступна</h2>
-                <p className="pageDescription">{databaseWarning}</p>
-                <div className="placeholderBox">
-                  <p className="placeholderTitle">Что это значит</p>
-                  <p className="placeholderText">
-                    Интерфейс открыт в режиме предпросмотра. Как только PostgreSQL снова поднимется, главная сама
-                    начнёт показывать живые данные.
-                  </p>
-                </div>
-              </section>
-            ) : null}
             {children}
           </main>
         </div>
@@ -99,12 +84,9 @@ export default async function DashboardLayout({
     const enterprises = await getEnterprises();
 
     return <DashboardShell enterprises={enterprises}>{children}</DashboardShell>;
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Не удалось подключиться к базе. Проверьте PostgreSQL на 127.0.0.1:5432.";
-
+  } catch {
     return (
-      <DashboardShell enterprises={[]} databaseWarning={message}>
+      <DashboardShell enterprises={[]}>
         {children}
       </DashboardShell>
     );

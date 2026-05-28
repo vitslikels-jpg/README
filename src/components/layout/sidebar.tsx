@@ -7,7 +7,6 @@ import { usePathname } from "next/navigation";
 import {
   Archive,
   BarChart3,
-  CircleHelp,
   Home,
   Layers3,
   Package,
@@ -19,9 +18,9 @@ import {
 import { navigationItems, type NavigationItem } from "@/lib/navigation";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "citadel-sidebar-width";
-const SIDEBAR_MIN_WIDTH = 196;
+const SIDEBAR_MIN_WIDTH = 260;
 const SIDEBAR_MAX_WIDTH = 340;
-const SIDEBAR_DEFAULT_WIDTH = 196;
+const SIDEBAR_DEFAULT_WIDTH = 260;
 
 function clampSidebarWidth(value: number) {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, value));
@@ -35,11 +34,13 @@ function NavigationIcon({ icon }: { icon: NavigationItem["icon"] }) {
       return <ReceiptText size={16} strokeWidth={1.9} />;
     case "smart":
       return (
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.9">
-          <path d="M6.5 8.5h9a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2Z" />
-          <path d="M9 8.5V7a3 3 0 0 1 5.2-2" />
-          <path d="m9.4 13 1.8 1.8 3.6-3.6" />
-          <path d="M16.9 5.1c.6-1.2 1.7-2 3.1-2.1-.1 1.5-.8 2.8-2.1 3.5" />
+        <svg className="smartNavIcon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.9">
+          <rect x="5.5" y="6.5" width="12" height="14" rx="2.4" />
+          <path d="M9 6.5V5.7a2.5 2.5 0 0 1 5 0v.8" />
+          <path d="M8.7 12.2h2.8" />
+          <path d="M8.7 15.5h2.8" />
+          <path d="m13.1 14.8 1.3 1.3 2.5-3" />
+          <path d="M15.8 4.3c.7-1.2 1.9-2 3.4-2.1-.1 1.6-.9 2.8-2.2 3.5" />
         </svg>
       );
     case "suppliers":
@@ -114,13 +115,13 @@ export function Sidebar() {
   const sidebarStyle = useMemo(() => {
     return {
       "--sidebar-width": `${sidebarWidth}px`,
-      "--sidebar-brand-size": `${(0.94 + sidebarScale * 0.22).toFixed(3)}rem`,
-      "--sidebar-label-size": `${(0.83 + sidebarScale * 0.24).toFixed(3)}rem`,
+      "--sidebar-brand-size": `${(1.08 + sidebarScale * 0.12).toFixed(3)}rem`,
+      "--sidebar-label-size": `${(0.98 + sidebarScale * 0.14).toFixed(3)}rem`,
       "--sidebar-help-title-size": `${(0.88 + sidebarScale * 0.16).toFixed(3)}rem`,
       "--sidebar-help-text-size": `${(0.78 + sidebarScale * 0.12).toFixed(3)}rem`,
-      "--sidebar-item-gap": `${Math.round(8 + sidebarScale * 6)}px`,
-      "--sidebar-item-height": `${Math.round(38 + sidebarScale * 8)}px`,
-      "--sidebar-icon-size": `${Math.round(17 + sidebarScale * 2)}px`,
+      "--sidebar-item-gap": `${Math.round(14 + sidebarScale * 2)}px`,
+      "--sidebar-item-height": `${Math.round(48 + sidebarScale * 4)}px`,
+      "--sidebar-icon-size": `${Math.round(24 + sidebarScale * 2)}px`,
       "--sidebar-handle-opacity": isResizing ? 1 : 0,
     } as CSSProperties;
   }, [isResizing, sidebarScale, sidebarWidth]);
@@ -139,7 +140,16 @@ export function Sidebar() {
     <aside className="sidebar" style={sidebarStyle}>
       <div className="sidebarBrand">
         <span className="sidebarBrandMark" aria-hidden="true">
-          <img src="/smart-order-mark.png" alt="" />
+          <svg viewBox="0 0 64 64" role="img">
+            <path className="logoLeaf" d="M23 10c-7 1-11 6-12 13 7-.2 12-4 14-10" />
+            <path className="logoLeaf" d="M38 7c-6 2-9 6-9 12 7-.4 11-4 12-10" />
+            <rect className="logoBoard" x="14" y="18" width="36" height="38" rx="7" />
+            <path className="logoClip" d="M24 18v-2a8 8 0 0 1 16 0v2" />
+            <path className="logoLine" d="M23 30h7" />
+            <path className="logoLine" d="M23 39h7" />
+            <path className="logoCheck" d="m35 39 4 4 8-10" />
+            <path className="logoSide" d="M9 29h5M9 39h5M50 29h5M50 39h5" />
+          </svg>
         </span>
         <div className="sidebarBrandText">
           <h1>Умный заказ</h1>
@@ -164,14 +174,6 @@ export function Sidebar() {
           );
         })}
       </nav>
-
-      <div className="sidebarHelpCard">
-        <span className="sidebarHelpIcon" aria-hidden="true">
-          <CircleHelp size={15} strokeWidth={2} />
-        </span>
-        <strong>Нужна помощь?</strong>
-        <p>Напишите нам, если возникли вопросы по работе с умным заказом.</p>
-      </div>
 
       <button
         type="button"

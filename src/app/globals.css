@@ -4695,6 +4695,415 @@ body.sidebarResizing * {
   background: var(--surface);
 }
 
+/* Approved home dashboard visual pass */
+:root {
+  --accent: #08772e;
+}
+
+body {
+  background: #f7faf8;
+}
+
+.appContent {
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(247, 250, 248, 0.96) 100%),
+    repeating-linear-gradient(0deg, rgba(9, 119, 46, 0.035) 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(90deg, rgba(9, 119, 46, 0.035) 0 1px, transparent 1px 28px);
+}
+
+.appContent::before,
+.appContent::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.appContent::before {
+  right: -70px;
+  top: 74px;
+  width: 430px;
+  height: 720px;
+  background:
+    linear-gradient(135deg, rgba(225, 238, 229, 0.66), rgba(225, 238, 229, 0) 54%),
+    linear-gradient(45deg, rgba(9, 119, 46, 0.055), transparent 58%);
+  clip-path: polygon(36% 0, 100% 0, 100% 100%, 50% 100%, 86% 74%, 54% 47%, 82% 16%);
+}
+
+.appContent::after {
+  right: 0;
+  top: 88px;
+  width: 260px;
+  height: 260px;
+  background:
+    radial-gradient(circle, rgba(9, 119, 46, 0.12) 1.4px, transparent 1.6px);
+  background-size: 22px 22px;
+  opacity: 0.28;
+}
+
+.topbar,
+.mainContent {
+  position: relative;
+  z-index: 1;
+}
+
+.topbar {
+  min-height: 88px;
+  padding: 22px 28px 16px;
+  border-bottom: 1px solid rgba(216, 224, 234, 0.95);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(12px);
+}
+
+.topbarInnerDashboard {
+  margin: 0;
+  align-items: center;
+}
+
+.topbarControls,
+.topbarMetaDashboard {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.topbarSelectWrap,
+.topbarPeriodButton,
+.topbarIconButton,
+.topbarUserWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(216, 224, 234, 0.95);
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
+}
+
+.topbarSelectWrap {
+  gap: 12px;
+  min-width: 248px;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 10px;
+}
+
+.topbarPeriodButton {
+  min-width: 206px;
+  cursor: default;
+  font-weight: 600;
+}
+
+.topbarSelect {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #111827;
+  font: inherit;
+  font-weight: 600;
+  appearance: none;
+}
+
+.topbarIikoStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  color: #111827;
+  font-size: 0.98rem;
+}
+
+.topbarStatusDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #08772e;
+}
+
+.topbarIconButton,
+.topbarUserWrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+}
+
+.topbarIconButton {
+  border-color: transparent;
+  background: transparent;
+  cursor: pointer;
+}
+
+.topbarMetaDashboard .topbarActions {
+  display: none;
+}
+
+.mainContent {
+  padding: 18px 28px 24px;
+}
+
+.sidebar {
+  padding: 22px 18px 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(239, 247, 242, 0.96) 100%);
+  border-right: 1px solid rgba(199, 217, 205, 0.92);
+  scrollbar-width: none;
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.sidebar::before,
+.sidebar::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.sidebar::before {
+  left: -72px;
+  bottom: -54px;
+  width: 330px;
+  height: 470px;
+  background:
+    linear-gradient(135deg, rgba(225, 238, 229, 0.88), rgba(225, 238, 229, 0.06) 62%),
+    repeating-linear-gradient(0deg, rgba(9, 119, 46, 0.045) 0 1px, transparent 1px 22px),
+    repeating-linear-gradient(90deg, rgba(9, 119, 46, 0.045) 0 1px, transparent 1px 22px);
+  clip-path: polygon(0 36%, 58% 0, 100% 42%, 50% 100%, 0 74%);
+}
+
+.sidebar::after {
+  left: 120px;
+  bottom: 300px;
+  width: 118px;
+  height: 118px;
+  background: radial-gradient(circle, rgba(9, 119, 46, 0.11) 1.3px, transparent 1.5px);
+  background-size: 18px 18px;
+  opacity: 0.22;
+}
+
+.sidebarBrand,
+.sidebarNav,
+.sidebarResizeHandle {
+  position: relative;
+  z-index: 1;
+}
+
+.sidebarBrand {
+  gap: 12px;
+  padding: 0 0 28px;
+  margin: 0;
+}
+
+.sidebarBrandMark {
+  width: 70px;
+  height: 70px;
+}
+
+.sidebarBrandMark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.logoLeaf,
+.logoClip,
+.logoCheck {
+  fill: none;
+  stroke: #08772e;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.logoBoard {
+  fill: #f8fffa;
+  stroke: #111827;
+  stroke-width: 3.2;
+}
+
+.logoLine,
+.logoSide {
+  fill: none;
+  stroke: #111827;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+}
+
+.sidebarBrand h1 {
+  color: #08772e;
+  font-weight: 800;
+}
+
+.sidebarNav {
+  gap: 11px;
+}
+
+.navItem {
+  border-radius: 8px;
+  color: #111827;
+}
+
+.navItemLabel {
+  color: #111827;
+  font-weight: 600;
+}
+
+.navItemIcon {
+  color: #111827;
+}
+
+.navItem:hover {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(9, 119, 46, 0.16);
+}
+
+.navItemActive {
+  border-color: rgba(9, 119, 46, 0.62);
+  background: linear-gradient(135deg, #0b8c39 0%, #05702b 100%);
+  box-shadow: 0 12px 24px rgba(8, 119, 46, 0.2);
+}
+
+.navItemActive .navItemIcon,
+.navItemActive .navItemLabel {
+  color: #ffffff;
+}
+
+.navItemSmart .navItemIcon {
+  color: #08772e;
+}
+
+.navItemSmart.navItemActive {
+  background: linear-gradient(135deg, #0b8c39 0%, #05702b 100%);
+}
+
+.navItemSmart.navItemActive .navItemIcon {
+  color: #ffffff;
+}
+
+.sidebarResizeHandle::before {
+  background: rgba(8, 119, 46, 0.42);
+}
+
+.homeDashboardV2 {
+  gap: 18px;
+  overflow: visible;
+}
+
+.homeDashboardV2::before {
+  top: 430px;
+  left: -290px;
+  width: 520px;
+  height: 520px;
+  background:
+    linear-gradient(135deg, rgba(225, 238, 229, 0.7), rgba(225, 238, 229, 0.04) 60%),
+    repeating-linear-gradient(0deg, rgba(9, 119, 46, 0.05) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(9, 119, 46, 0.05) 0 1px, transparent 1px 24px);
+  clip-path: polygon(0 28%, 62% 0, 100% 44%, 42% 100%, 0 72%);
+}
+
+.homeDashboardV2::after {
+  top: -18px;
+  right: -260px;
+  width: 620px;
+  height: 640px;
+  background:
+    linear-gradient(135deg, rgba(225, 238, 229, 0.72), rgba(225, 238, 229, 0.04) 58%),
+    repeating-linear-gradient(0deg, rgba(9, 119, 46, 0.052) 0 1px, transparent 1px 27px),
+    repeating-linear-gradient(90deg, rgba(9, 119, 46, 0.052) 0 1px, transparent 1px 27px);
+  clip-path: polygon(26% 0, 100% 0, 100% 100%, 52% 100%, 84% 74%, 54% 48%, 84% 18%);
+}
+
+.homePageHead {
+  margin-top: 0;
+}
+
+.homePageTitle {
+  font-size: 2rem;
+  letter-spacing: 0;
+}
+
+.homeMetricGrid {
+  gap: 18px;
+}
+
+.homeMetricCard {
+  min-height: 178px;
+  padding: 20px 20px 18px;
+  border-color: rgba(216, 224, 234, 0.96);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: none;
+}
+
+.homeMetricTop {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 46px;
+}
+
+.homeMetricIcon {
+  width: 46px;
+  height: 46px;
+  margin-bottom: 0;
+}
+
+.homeMetricLabel {
+  color: #111827;
+  font-weight: 800;
+}
+
+.homeMetricValue {
+  margin-top: 22px;
+  font-size: 2rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.homeMetricValue-success,
+.homeMetricValue-accent {
+  color: #08772e;
+}
+
+.homeMetricIcon-success,
+.homeMetricIcon-accent {
+  color: #08772e;
+}
+
+.homePanel {
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: none;
+}
+
+.homeFlowPanel {
+  padding: 18px 20px 18px;
+}
+
+.homeLossPanel {
+  padding: 14px;
+}
+
+.homeLossTable {
+  border-radius: 8px;
+}
+
+.homeLossTableHead,
+.homeLossRow {
+  grid-template-columns: minmax(210px, 1.7fr) minmax(130px, 1.05fr) minmax(130px, 1fr) minmax(130px, 1fr) minmax(90px, 0.75fr) minmax(100px, 0.78fr) 28px;
+}
+
+@media (max-width: 1600px) {
+  .homeMetricValue {
+    font-size: 1.72rem;
+  }
+}
+
 @media (max-width: 1100px) {
   .catalogProductMain,
   .catalogProductOfferRow,
@@ -4712,3 +5121,4 @@ body.sidebarResizing * {
     flex-wrap: wrap;
   }
 }
+

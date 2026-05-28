@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   BadgePercent,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   CircleHelp,
   Info,
@@ -175,10 +176,12 @@ function HomeSummaryCard({ item }: { item: HomeOverviewSummaryCard }) {
 
   return (
     <article className="homeMetricCard">
-      <span className={`homeMetricIcon homeMetricIcon-${item.tone}`}>
-        <Icon size={24} strokeWidth={2} />
-      </span>
-      <span className="homeMetricLabel">{item.label}</span>
+      <div className="homeMetricTop">
+        <span className={`homeMetricIcon homeMetricIcon-${item.tone}`}>
+          <Icon size={24} strokeWidth={2} />
+        </span>
+        <span className="homeMetricLabel">{item.label}</span>
+      </div>
       <strong className={`homeMetricValue homeMetricValue-${item.tone}`}>{item.value}</strong>
       <span className="homeMetricDetail">{item.detail}</span>
     </article>
@@ -268,7 +271,7 @@ function HomeLossTable({ rows }: { rows: HomeOverviewLossRow[] }) {
 
       <button type="button" className="homeShowAllButton">
         Показать все ({Math.max(rows.length, 24)})
-        <ChevronRight size={16} strokeWidth={2.2} />
+        <ChevronDown size={16} strokeWidth={2.2} />
       </button>
     </div>
   );
@@ -293,7 +296,7 @@ function HomeAttentionItemCard({ item }: { item: HomeOverviewAttentionItem }) {
 }
 
 export function HomeDashboard() {
-  const { activeEnterprise, activeEnterpriseId } = useEnterprise();
+  const { activeEnterpriseId } = useEnterprise();
   const [overview, setOverview] = useState<HomeOverviewPayload>(emptyOverview);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -339,9 +342,7 @@ export function HomeDashboard() {
     return () => controller.abort();
   }, [activeEnterpriseId]);
 
-  const visibleOverview = activeEnterpriseId ? overview : previewOverview;
-  const enterpriseName = activeEnterprise?.name ?? "Кафе Цитадель";
-  const periodLabel = visibleOverview.periodLabel || "Текущий месяц";
+  const visibleOverview = activeEnterpriseId && overview.summaryCards.length > 0 ? overview : previewOverview;
 
   return (
     <div className="pageStack homeDashboard homeDashboardV2">
@@ -349,11 +350,6 @@ export function HomeDashboard() {
         <div>
           <h1 className="homePageTitle">Главная</h1>
           <p className="homePageSubtitle">Контроль закупок, экономии и распределения заказов</p>
-        </div>
-        <div className="homeHeadMeta" aria-label="Параметры отчета">
-          <span>{enterpriseName}</span>
-          <span>{periodLabel}</span>
-          <span className="homeIikoStatus">iiko: данные по закупкам</span>
         </div>
       </section>
 
