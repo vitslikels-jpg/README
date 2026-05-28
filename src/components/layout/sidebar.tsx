@@ -141,14 +141,13 @@ export function Sidebar() {
       <div className="sidebarBrand">
         <span className="sidebarBrandMark" aria-hidden="true">
           <svg viewBox="0 0 64 64" role="img">
-            <path className="logoLeaf" d="M23 10c-7 1-11 6-12 13 7-.2 12-4 14-10" />
-            <path className="logoLeaf" d="M38 7c-6 2-9 6-9 12 7-.4 11-4 12-10" />
-            <rect className="logoBoard" x="14" y="18" width="36" height="38" rx="7" />
-            <path className="logoClip" d="M24 18v-2a8 8 0 0 1 16 0v2" />
-            <path className="logoLine" d="M23 30h7" />
-            <path className="logoLine" d="M23 39h7" />
-            <path className="logoCheck" d="m35 39 4 4 8-10" />
-            <path className="logoSide" d="M9 29h5M9 39h5M50 29h5M50 39h5" />
+            <rect className="logoBack" x="5" y="5" width="54" height="54" rx="16" />
+            <path className="logoBasketHandle" d="M22 30c1.8-8.8 7.2-13 10-13s8.2 4.2 10 13" />
+            <path className="logoBasket" d="M17 29h30l-4 20H21z" />
+            <circle className="logoProduct logoProductLight" cx="25" cy="37" r="3.4" />
+            <circle className="logoProduct logoProductDark" cx="33" cy="37" r="3.4" />
+            <circle className="logoProduct logoProductLight" cx="41" cy="37" r="3.4" />
+            <path className="logoCheck" d="m27 46 4.2 4.2L40.5 39" />
           </svg>
         </span>
         <div className="sidebarBrandText">

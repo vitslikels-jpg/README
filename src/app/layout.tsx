@@ -7,9 +7,9 @@ export const metadata: Metadata = {
   applicationName: "Умный заказ",
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: [{ url: "/icon.png", type: "image/png", sizes: "512x512" }],
-    apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
-    shortcut: ["/icon.png"],
+    icon: [{ url: "/icon.png?v=2", type: "image/png", sizes: "512x512" }],
+    apple: [{ url: "/apple-icon.png?v=2", type: "image/png", sizes: "180x180" }],
+    shortcut: ["/icon.png?v=2"],
   },
   appleWebApp: {
     capable: true,

@@ -4910,28 +4910,37 @@ body {
   height: 100%;
 }
 
-.logoLeaf,
-.logoClip,
-.logoCheck {
+.logoBack {
+  fill: #08772e;
+}
+
+.logoBasket,
+.logoBasketHandle {
   fill: none;
-  stroke: #08772e;
+  stroke: #ffffff;
   stroke-width: 3.2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.logoBoard {
-  fill: #f8fffa;
-  stroke: #111827;
-  stroke-width: 3.2;
+.logoBasket {
+  fill: rgba(255, 255, 255, 0.12);
 }
 
-.logoLine,
-.logoSide {
+.logoProductLight {
+  fill: #d9f99d;
+}
+
+.logoProductDark {
+  fill: #22c55e;
+}
+
+.logoCheck {
   fill: none;
-  stroke: #111827;
-  stroke-width: 2.8;
+  stroke: #ffffff;
+  stroke-width: 4.2;
   stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .sidebarBrand h1 {
