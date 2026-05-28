@@ -1,10 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import type {
   HomeIconName,
-  HomeOverviewFocusItem,
+  HomeOverviewAttentionItem,
+  HomeOverviewHeroFact,
+  HomeOverviewLossRow,
   HomeOverviewPayload,
-  HomeOverviewRecentEvent,
   HomeOverviewSummaryCard,
+  HomeOverviewWorkflowStat,
   HomeTone,
 } from "@/features/home/types";
 
@@ -20,69 +22,90 @@ function formatCount(value: number) {
   return new Intl.NumberFormat("ru-RU").format(value);
 }
 
-function formatEventTime(date: Date) {
-  const now = new Date();
-  const sameDay =
-    now.getFullYear() === date.getFullYear() &&
-    now.getMonth() === date.getMonth() &&
-    now.getDate() === date.getDate();
+function formatQuantity(value: number, unit: string | null) {
+  const formatted = new Intl.NumberFormat("ru-RU", {
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 3,
+  }).format(value);
 
-  return sameDay
-    ? date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
-    : date.toLocaleString("ru-RU", {
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+  return unit ? `${formatted} ${unit}` : formatted;
 }
 
-type ComparisonCandidate = {
-  productName: string;
-  bestSupplier: string;
-  worstSupplier: string;
+function getMonthRange() {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const periodLabel = new Intl.DateTimeFormat("ru-RU", {
+    month: "long",
+    year: "numeric",
+  }).format(now);
+
+  return { monthStart, nextMonthStart, periodLabel };
+}
+
+type ComparableProduct = {
+  id: string;
+  title: string;
   bestPrice: number;
+  bestSupplier: string;
   worstPrice: number;
-  savingsAmount: number;
-  savingsPercent: number;
-  capturedAt: Date;
+  offersCount: number;
 };
 
-function buildComparisonTone(percent: number): HomeTone {
-  if (percent >= 20) {
-    return "success";
+type PriceRiseCandidate = {
+  productName: string;
+  supplierName: string;
+  previousPrice: number;
+  currentPrice: number;
+  delta: number;
+  percent: number;
+};
+
+function buildToneByLoss(value: number): HomeTone {
+  if (value >= 1000) {
+    return "danger";
   }
 
-  if (percent >= 8) {
-    return "accent";
+  if (value >= 300) {
+    return "warning";
   }
 
-  return "warning";
+  return "accent";
 }
 
-function buildComparisonIcon(percent: number): HomeIconName {
+function buildToneByPercent(value: number): HomeTone {
+  if (value >= 20) {
+    return "danger";
+  }
+
+  if (value >= 8) {
+    return "warning";
+  }
+
+  return "accent";
+}
+
+function buildPriceRiseIcon(percent: number): HomeIconName {
   if (percent >= 20) {
-    return "badgePercent";
+    return "triangleAlert";
   }
 
   return "trendingUp";
 }
 
 export async function buildHomeOverview(enterpriseId: string): Promise<HomeOverviewPayload> {
-  const [currentDocumentsCount, currentPricePositionsCount, currentDocuments, productMasters] = await Promise.all([
-    prisma.document.count({
+  const { monthStart, nextMonthStart, periodLabel } = getMonthRange();
+
+  const [
+    activeSuppliersCount,
+    currentDocuments,
+    productMasters,
+    submittedOrders,
+    previousPurchaseItems,
+  ] = await Promise.all([
+    prisma.supplier.count({
       where: {
         enterpriseId,
-        isCurrent: true,
-      },
-    }),
-    prisma.priceSnapshot.count({
-      where: {
-        enterpriseId,
-        isCurrent: true,
-        price: {
-          not: null,
-        },
+        archivedAt: null,
       },
     }),
     prisma.document.findMany({
@@ -90,28 +113,14 @@ export async function buildHomeOverview(enterpriseId: string): Promise<HomeOverv
         enterpriseId,
         isCurrent: true,
       },
-      orderBy: {
-        uploadedAt: "desc",
-      },
-      take: 8,
       select: {
         id: true,
-        originalFileName: true,
         status: true,
-        isCurrent: true,
-        uploadedAt: true,
-        supplier: {
-          select: {
-            name: true,
-          },
-        },
         qualityReport: {
           select: {
-            qualityStatus: true,
             usabilityStatus: true,
-            rowsWithoutPrice: true,
             lowConfidenceMappingsCount: true,
-            warningMessage: true,
+            rowsWithoutPrice: true,
           },
         },
       },
@@ -122,23 +131,11 @@ export async function buildHomeOverview(enterpriseId: string): Promise<HomeOverv
         mappings: {
           some: {
             status: "active",
-            supplierOffer: {
-              supplier: {
-                archivedAt: null,
-              },
-              priceSnapshots: {
-                some: {
-                  isCurrent: true,
-                  price: {
-                    not: null,
-                  },
-                },
-              },
-            },
           },
         },
       },
       select: {
+        id: true,
         name: true,
         mappings: {
           where: {
@@ -159,16 +156,17 @@ export async function buildHomeOverview(enterpriseId: string): Promise<HomeOverv
                 },
                 priceSnapshots: {
                   where: {
-                    isCurrent: true,
                     price: {
                       not: null,
                     },
                   },
                   orderBy: [{ capturedAt: "desc" }, { createdAt: "desc" }],
-                  take: 1,
+                  take: 3,
                   select: {
+                    id: true,
                     price: true,
                     capturedAt: true,
+                    isCurrent: true,
                   },
                 },
               },
@@ -177,158 +175,379 @@ export async function buildHomeOverview(enterpriseId: string): Promise<HomeOverv
         },
       },
     }),
+    prisma.order.findMany({
+      where: {
+        enterpriseId,
+        status: "submitted",
+        submittedAt: {
+          gte: monthStart,
+          lt: nextMonthStart,
+        },
+      },
+      orderBy: [{ submittedAt: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        supplierId: true,
+        supplier: {
+          select: {
+            name: true,
+          },
+        },
+        items: {
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+          select: {
+            id: true,
+            productMasterId: true,
+            quantity: true,
+            unit: true,
+            price: true,
+            lineTotal: true,
+            productMaster: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.orderItem.findMany({
+      where: {
+        productMasterId: {
+          not: null,
+        },
+        price: {
+          not: null,
+        },
+        order: {
+          enterpriseId,
+          status: "submitted",
+          submittedAt: {
+            lt: monthStart,
+          },
+        },
+      },
+      orderBy: [{ order: { submittedAt: "desc" } }, { createdAt: "desc" }],
+      select: {
+        productMasterId: true,
+        price: true,
+      },
+    }),
   ]);
 
-  const comparisonCandidates: ComparisonCandidate[] = [];
+  const comparableProducts = new Map<string, ComparableProduct>();
+  const priceRiseCandidates: PriceRiseCandidate[] = [];
 
   for (const productMaster of productMasters) {
-    const offers = productMaster.mappings
+    const currentOffers = productMaster.mappings
       .map((mapping) => {
-        const snapshot = mapping.supplierOffer.priceSnapshots[0];
+        const currentSnapshot =
+          mapping.supplierOffer.priceSnapshots.find((snapshot) => snapshot.isCurrent) ??
+          mapping.supplierOffer.priceSnapshots[0] ??
+          null;
 
-        if (snapshot?.price === null || snapshot?.price === undefined) {
+        if (!currentSnapshot?.price) {
           return null;
+        }
+
+        const previousSnapshot =
+          mapping.supplierOffer.priceSnapshots.find((snapshot) => snapshot.id !== currentSnapshot.id) ?? null;
+
+        const currentPrice = Number(currentSnapshot.price);
+        const previousPrice = previousSnapshot?.price ? Number(previousSnapshot.price) : null;
+
+        if (previousPrice !== null && currentPrice > previousPrice) {
+          const delta = currentPrice - previousPrice;
+          const percent = previousPrice > 0 ? (delta / previousPrice) * 100 : 0;
+
+          priceRiseCandidates.push({
+            productName: productMaster.name,
+            supplierName: mapping.supplierOffer.supplier.name,
+            previousPrice,
+            currentPrice,
+            delta,
+            percent,
+          });
         }
 
         return {
           supplierName: mapping.supplierOffer.supplier.name,
-          price: Number(snapshot.price),
-          capturedAt: snapshot.capturedAt,
+          currentPrice,
         };
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-    if (offers.length < 2) {
+    if (currentOffers.length < 2) {
       continue;
     }
 
-    const sortedOffers = [...offers].sort((left, right) => left.price - right.price);
+    const sortedOffers = [...currentOffers].sort((left, right) => left.currentPrice - right.currentPrice);
     const bestOffer = sortedOffers[0];
     const worstOffer = sortedOffers[sortedOffers.length - 1];
-    const savingsAmount = worstOffer.price - bestOffer.price;
 
-    if (savingsAmount <= 0) {
-      continue;
-    }
-
-    const savingsPercent = worstOffer.price > 0 ? (savingsAmount / worstOffer.price) * 100 : 0;
-
-    comparisonCandidates.push({
-      productName: productMaster.name,
+    comparableProducts.set(productMaster.id, {
+      id: productMaster.id,
+      title: productMaster.name,
+      bestPrice: bestOffer.currentPrice,
       bestSupplier: bestOffer.supplierName,
-      worstSupplier: worstOffer.supplierName,
-      bestPrice: bestOffer.price,
-      worstPrice: worstOffer.price,
-      savingsAmount,
-      savingsPercent,
-      capturedAt: bestOffer.capturedAt > worstOffer.capturedAt ? bestOffer.capturedAt : worstOffer.capturedAt,
+      worstPrice: worstOffer.currentPrice,
+      offersCount: currentOffers.length,
     });
   }
 
-  comparisonCandidates.sort((left, right) => right.savingsAmount - left.savingsAmount);
+  const previousPurchaseByProductMaster = new Map<string, number>();
 
-  const comparableProductsCount = comparisonCandidates.length;
-  const topComparison = comparisonCandidates[0] ?? null;
+  for (const item of previousPurchaseItems) {
+    if (!item.productMasterId || !item.price || previousPurchaseByProductMaster.has(item.productMasterId)) {
+      continue;
+    }
+
+    previousPurchaseByProductMaster.set(item.productMasterId, Number(item.price));
+  }
+
+  let monthlyPurchasesAmount = 0;
+  let orderedPositionsCount = 0;
+  let bestChoiceCount = 0;
+  let notBestChoiceCount = 0;
+  let withoutActualPriceCount = 0;
+  let realizedSavingsAmount = 0;
+  let potentialSavingsAmount = 0;
+  const usedSuppliers = new Set<string>();
+  const lossRowsRaw: Array<{
+    title: string;
+    supplier: string;
+    purchasePrice: number;
+    bestPrice: number;
+    quantity: number;
+    unit: string | null;
+    loss: number;
+  }> = [];
+
+  for (const order of submittedOrders) {
+    usedSuppliers.add(order.supplierId);
+
+    for (const item of order.items) {
+      orderedPositionsCount += 1;
+      monthlyPurchasesAmount += Number(item.lineTotal);
+
+      const quantity = Number(item.quantity);
+      const price = item.price ? Number(item.price) : null;
+      const productMasterId = item.productMasterId;
+
+      if (!price || !productMasterId) {
+        withoutActualPriceCount += 1;
+        continue;
+      }
+
+      const previousPurchasePrice = previousPurchaseByProductMaster.get(productMasterId);
+
+      if (previousPurchasePrice !== undefined && previousPurchasePrice > price) {
+        realizedSavingsAmount += (previousPurchasePrice - price) * quantity;
+      }
+
+      const comparableProduct = comparableProducts.get(productMasterId);
+
+      if (!comparableProduct) {
+        continue;
+      }
+
+      const lossPerUnit = price - comparableProduct.bestPrice;
+
+      if (lossPerUnit > 0.009) {
+        const lossAmount = lossPerUnit * quantity;
+        notBestChoiceCount += 1;
+        potentialSavingsAmount += lossAmount;
+          lossRowsRaw.push({
+            title: item.productMaster?.name ?? comparableProduct.title,
+            supplier: order.supplier.name,
+            purchasePrice: price,
+            bestPrice: comparableProduct.bestPrice,
+            quantity,
+          unit: item.unit,
+          loss: lossAmount,
+        });
+      } else {
+        bestChoiceCount += 1;
+      }
+    }
+  }
+
+  const documentsNeedAttentionCount = currentDocuments.reduce((sum, document) => {
+    if (document.status === "parsed_with_errors") {
+      return sum + 1;
+    }
+
+    if (document.qualityReport?.usabilityStatus === "blocked") {
+      return sum + 1;
+    }
+
+    if ((document.qualityReport?.lowConfidenceMappingsCount ?? 0) > 0) {
+      return sum + 1;
+    }
+
+    return sum;
+  }, 0);
+
+  const productsWithRiseCount = new Set(priceRiseCandidates.map((item) => item.productName)).size;
+  const ordersThisMonthCount = submittedOrders.length;
 
   const summaryCards: HomeOverviewSummaryCard[] = [
     {
-      label: "Текущие прайсы",
-      value: formatCount(currentDocumentsCount),
-      detail: "актуальных файлов",
+      label: "Закупки за месяц",
+      value: formatMoney(monthlyPurchasesAmount),
+      detail: ordersThisMonthCount > 0 ? `${formatCount(ordersThisMonthCount)} заказов проведено` : "Пока нет проведённых заказов",
       tone: "accent",
-      icon: "upload",
+      icon: "receiptText",
     },
     {
-      label: "Позиции с ценой",
-      value: formatCount(currentPricePositionsCount),
-      detail: "в текущих прайсах",
+      label: "Экономия",
+      value: formatMoney(realizedSavingsAmount),
+      detail: "Относительно прошлой закупочной цены",
       tone: "success",
-      icon: "fileSpreadsheet",
-    },
-    {
-      label: "Товаров для сравнения",
-      value: formatCount(comparableProductsCount),
-      detail: "есть у нескольких поставщиков",
-      tone: "violet",
-      icon: "package",
-    },
-    {
-      label: "Лучшая разница",
-      value: topComparison ? formatMoney(topComparison.savingsAmount) : "—",
-      detail: topComparison ? topComparison.productName : "пока нет данных для сравнения",
-      tone: "warning",
       icon: "badgePercent",
+    },
+    {
+      label: "Упущенная экономия",
+      value: formatMoney(potentialSavingsAmount),
+      detail: "Разница до лучшей текущей цены",
+      tone: potentialSavingsAmount > 0 ? "warning" : "neutral",
+      icon: "trendingUp",
+    },
+    {
+      label: "Проблемы",
+      value: formatCount(documentsNeedAttentionCount + withoutActualPriceCount + notBestChoiceCount),
+      detail: "Ошибки, пустые цены и невыгодные покупки",
+      tone: documentsNeedAttentionCount + withoutActualPriceCount + notBestChoiceCount > 0 ? "danger" : "success",
+      icon: "triangleAlert",
+    },
+    {
+      label: "Рост цен",
+      value: formatCount(productsWithRiseCount),
+      detail: "Позиции с ростом против прошлого снимка",
+      tone: productsWithRiseCount > 0 ? "warning" : "success",
+      icon: "trendingUp",
     },
   ];
 
-  const comparisonFocusItems: HomeOverviewFocusItem[] = comparisonCandidates.slice(0, 3).map((item) => ({
-    title: item.productName,
-    description: `У ${item.bestSupplier} цена ${formatMoney(item.bestPrice)}, у ${item.worstSupplier} — ${formatMoney(item.worstPrice)}.`,
-    badge:
-      item.savingsPercent >= 1
-        ? `Экономия ${Math.round(item.savingsPercent)}%`
-        : `Экономия ${formatMoney(item.savingsAmount)}`,
-    href: "/catalog",
-    tone: buildComparisonTone(item.savingsPercent),
-    icon: buildComparisonIcon(item.savingsPercent),
-  }));
+  const heroFacts: HomeOverviewHeroFact[] = [
+    {
+      label: "Поставщиков в работе",
+      value: formatCount(activeSuppliersCount),
+      detail: "Активные поставщики в системе",
+    },
+    {
+      label: "Закуплено позиций",
+      value: formatCount(orderedPositionsCount),
+      detail: "Строк заказа за текущий месяц",
+    },
+    {
+      label: "Закупки проведены через",
+      value: formatCount(usedSuppliers.size),
+      detail: "Поставщиков в этом месяце",
+    },
+  ];
 
-  const focusItems = comparisonFocusItems.slice(0, 4);
+  const workflowStats: HomeOverviewWorkflowStat[] = [
+    {
+      label: "Заказано",
+      value: formatCount(orderedPositionsCount),
+      detail: ordersThisMonthCount > 0 ? `${formatCount(ordersThisMonthCount)} заказов за ${periodLabel}` : "Пока без проведённых заказов",
+      tone: "accent",
+    },
+    {
+      label: "Выгодно распределено",
+      value: formatCount(bestChoiceCount),
+      detail: "Купили по лучшей текущей цене",
+      tone: "success",
+    },
+    {
+      label: "Купили не по лучшей цене",
+      value: formatCount(notBestChoiceCount),
+      detail: potentialSavingsAmount > 0 ? `Потеряли ${formatMoney(potentialSavingsAmount)}` : "Пока без потерь",
+      tone: notBestChoiceCount > 0 ? "warning" : "success",
+    },
+    {
+      label: "Без актуальной цены",
+      value: formatCount(withoutActualPriceCount),
+      detail: "Нужно проверить поставщика или сопоставление",
+      tone: withoutActualPriceCount > 0 ? "danger" : "success",
+    },
+  ];
 
-  const documentEvents: Array<HomeOverviewRecentEvent & { sortDate: Date }> = currentDocuments.slice(0, 5).map((document) => {
-    let title = `Загружен прайс ${document.supplier.name}`;
-    let tone: HomeTone = "neutral";
-    let icon: HomeIconName = "upload";
-
-    if (document.status === "processing") {
-      title = `Прайс ${document.supplier.name} сейчас разбирается`;
-      tone = "accent";
-    } else if (document.status === "parsed_with_errors") {
-      title = `Прайс ${document.supplier.name} разобран с предупреждениями`;
-      tone = "warning";
-      icon = "triangleAlert";
-    } else if (document.qualityReport?.usabilityStatus === "blocked") {
-      title = `Прайс ${document.supplier.name} требует ручной проверки`;
-      tone = "danger";
-      icon = "triangleAlert";
-    } else if (document.isCurrent) {
-      title = `Обновлён текущий прайс ${document.supplier.name}`;
-      tone = "success";
-      icon = "fileSpreadsheet";
-    }
-
-    return {
-      title,
-      time: formatEventTime(document.uploadedAt),
-      tone,
-      icon,
-      sortDate: document.uploadedAt,
-    };
-  });
-
-  const comparisonEvents: Array<HomeOverviewRecentEvent & { sortDate: Date }> = comparisonCandidates
-    .slice(0, 3)
-    .map((item) => ({
-      title: `${item.bestSupplier} дешевле ${item.worstSupplier} по «${item.productName}» на ${formatMoney(item.savingsAmount)}`,
-      time: formatEventTime(item.capturedAt),
-      tone: buildComparisonTone(item.savingsPercent),
-      icon: "badgePercent",
-      sortDate: item.capturedAt,
-    }));
-
-  const recentEvents = [...comparisonEvents, ...documentEvents]
-    .sort((left, right) => right.sortDate.getTime() - left.sortDate.getTime())
+  const lossRows: HomeOverviewLossRow[] = lossRowsRaw
+    .sort((left, right) => right.loss - left.loss)
     .slice(0, 5)
-    .map((event) => ({
-      title: event.title,
-      time: event.time,
-      tone: event.tone,
-      icon: event.icon,
+    .map((item) => ({
+      title: item.title,
+      supplier: item.supplier,
+      purchasePrice: formatMoney(item.purchasePrice),
+      bestPrice: formatMoney(item.bestPrice),
+      quantity: formatQuantity(item.quantity, item.unit),
+      loss: formatMoney(item.loss),
+      tone: buildToneByLoss(item.loss),
     }));
+
+  const attentionItems: HomeOverviewAttentionItem[] = [];
+
+  if (documentsNeedAttentionCount > 0) {
+    attentionItems.push({
+      title: "Есть прайсы, которые требуют ручной проверки",
+      description: "В текущих документах найдены ошибки разбора, блокировки или слабые сопоставления.",
+      value: formatCount(documentsNeedAttentionCount),
+      tone: "danger",
+      icon: "triangleAlert",
+    });
+  }
+
+  if (withoutActualPriceCount > 0) {
+    attentionItems.push({
+      title: "Не у всех закупленных позиций есть актуальная цена",
+      description: "Часть строк заказа не привязана к актуальному прайсу. Это мешает честно считать выгоду.",
+      value: formatCount(withoutActualPriceCount),
+      tone: "warning",
+      icon: "receiptText",
+    });
+  }
+
+  if (potentialSavingsAmount > 0) {
+    attentionItems.push({
+      title: "Есть закупки, где уже видно потерю денег",
+      description: "По части позиций купили дороже, чем лучшая текущая цена у другого поставщика.",
+      value: formatMoney(potentialSavingsAmount),
+      tone: "warning",
+      icon: "badgePercent",
+    });
+  }
+
+  priceRiseCandidates
+    .sort((left, right) => right.percent - left.percent)
+    .slice(0, 2)
+    .forEach((item) => {
+      attentionItems.push({
+        title: `${item.productName} вырос в цене`,
+        description: `${item.supplierName}: было ${formatMoney(item.previousPrice)}, стало ${formatMoney(item.currentPrice)}.`,
+        value: `+${Math.round(item.percent)}%`,
+        tone: buildToneByPercent(item.percent),
+        icon: buildPriceRiseIcon(item.percent),
+      });
+    });
+
+  if (attentionItems.length === 0) {
+    attentionItems.push({
+      title: "Критичных сигналов сейчас нет",
+      description: "На текущих данных не видно ошибок разбора, пустых цен или заметных потерь.",
+      value: "OK",
+      tone: "success",
+      icon: "badgePercent",
+    });
+  }
 
   return {
+    periodLabel,
     summaryCards,
-    focusItems,
-    recentEvents,
+    heroFacts,
+    workflowStats,
+    lossRows,
+    attentionItems: attentionItems.slice(0, 5),
   };
 }

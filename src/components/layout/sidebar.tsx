@@ -13,7 +13,6 @@ import {
   Package,
   ReceiptText,
   Settings2,
-  Sparkles,
   Truck,
   Upload,
 } from "lucide-react";
@@ -35,7 +34,14 @@ function NavigationIcon({ icon }: { icon: NavigationItem["icon"] }) {
     case "orders":
       return <ReceiptText size={16} strokeWidth={1.9} />;
     case "smart":
-      return <Sparkles size={16} strokeWidth={1.9} />;
+      return (
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.9">
+          <path d="M6.5 8.5h9a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2Z" />
+          <path d="M9 8.5V7a3 3 0 0 1 5.2-2" />
+          <path d="m9.4 13 1.8 1.8 3.6-3.6" />
+          <path d="M16.9 5.1c.6-1.2 1.7-2 3.1-2.1-.1 1.5-.8 2.8-2.1 3.5" />
+        </svg>
+      );
     case "suppliers":
       return <Truck size={16} strokeWidth={1.9} />;
     case "upload":
@@ -145,7 +151,11 @@ export function Sidebar() {
           const isActive = pathname === item.href;
 
           return (
-            <Link key={item.href} href={item.href} className={`navItem ${isActive ? "navItemActive" : ""}`}>
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`navItem ${item.icon === "smart" ? "navItemSmart" : ""} ${isActive ? "navItemActive" : ""}`}
+            >
               <span className="navItemIcon" aria-hidden="true">
                 <NavigationIcon icon={item.icon} />
               </span>

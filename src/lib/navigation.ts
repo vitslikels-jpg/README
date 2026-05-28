@@ -16,12 +16,12 @@ export type NavigationItem = {
 };
 
 export const navigationItems: NavigationItem[] = [
-  { href: "/", label: "Главная", icon: "home" },
-  { href: "/orders", label: "Мои заказы", icon: "orders" },
-  { href: "/smart-order", label: "Умный заказ", icon: "smart" },
+  { href: "/", label: "Дашборд", icon: "home" },
   { href: "/suppliers", label: "Поставщики", icon: "suppliers" },
-  { href: "/invoice-upload", label: "Загрузка накладных", icon: "upload" },
   { href: "/products", label: "Товары", icon: "products" },
+  { href: "/orders", label: "Заказы", icon: "orders" },
+  { href: "/invoice-upload", label: "Загрузка накладных", icon: "upload" },
+  { href: "/smart-order", label: "Умный заказ", icon: "smart" },
   { href: "/catalog", label: "Catalog", icon: "catalog" },
   { href: "/categories", label: "Категории", icon: "categories" },
   { href: "/reports", label: "Отчёты", icon: "reports" },

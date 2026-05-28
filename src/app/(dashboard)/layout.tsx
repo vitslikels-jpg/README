@@ -23,6 +23,45 @@ async function getEnterprises() {
   }));
 }
 
+function DashboardShell({
+  children,
+  enterprises,
+  databaseWarning,
+}: {
+  children: ReactNode;
+  enterprises: Awaited<ReturnType<typeof getEnterprises>>;
+  databaseWarning?: string;
+}) {
+  return (
+    <EnterpriseProvider initialEnterprises={enterprises}>
+      <div className="appShell">
+        <Sidebar />
+
+        <div className="appContent">
+          <Topbar />
+          <main className="mainContent">
+            {databaseWarning ? (
+              <section className="card pagePlaceholder">
+                <p className="panelEyebrow">Preview mode</p>
+                <h2 className="pageTitle">База сейчас недоступна</h2>
+                <p className="pageDescription">{databaseWarning}</p>
+                <div className="placeholderBox">
+                  <p className="placeholderTitle">Что это значит</p>
+                  <p className="placeholderText">
+                    Интерфейс открыт в режиме предпросмотра. Как только PostgreSQL снова поднимется, главная сама
+                    начнёт показывать живые данные.
+                  </p>
+                </div>
+              </section>
+            ) : null}
+            {children}
+          </main>
+        </div>
+      </div>
+    </EnterpriseProvider>
+  );
+}
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -39,44 +78,35 @@ export default async function DashboardLayout({
 
   if (!isDatabaseConfigured()) {
     return (
-      <EnterpriseProvider initialEnterprises={[]}>
-        <div className="appShell">
-          <Sidebar />
-
-          <div className="appContent">
-            <Topbar />
-            <main className="mainContent">
-              <section className="card pagePlaceholder">
-                <p className="panelEyebrow">Setup required</p>
-                <h2 className="pageTitle">Database is not configured</h2>
-                <p className="pageDescription">{getDatabaseSetupMessage()}</p>
-                <div className="placeholderBox">
-                  <p className="placeholderTitle">What to do</p>
-                  <p className="placeholderText">
-                    Create a local <code>.env</code> file from <code>.env.example</code>, set a valid{" "}
-                    <code>DATABASE_URL</code>, then run Prisma migrations.
-                  </p>
-                </div>
-              </section>
-            </main>
+      <DashboardShell enterprises={[]}>
+        <section className="card pagePlaceholder">
+          <p className="panelEyebrow">Setup required</p>
+          <h2 className="pageTitle">Database is not configured</h2>
+          <p className="pageDescription">{getDatabaseSetupMessage()}</p>
+          <div className="placeholderBox">
+            <p className="placeholderTitle">What to do</p>
+            <p className="placeholderText">
+              Create a local <code>.env</code> file from <code>.env.example</code>, set a valid <code>DATABASE_URL</code>,
+              then run Prisma migrations.
+            </p>
           </div>
-        </div>
-      </EnterpriseProvider>
+        </section>
+      </DashboardShell>
     );
   }
 
-  const enterprises = await getEnterprises();
+  try {
+    const enterprises = await getEnterprises();
 
-  return (
-    <EnterpriseProvider initialEnterprises={enterprises}>
-      <div className="appShell">
-        <Sidebar />
+    return <DashboardShell enterprises={enterprises}>{children}</DashboardShell>;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Не удалось подключиться к базе. Проверьте PostgreSQL на 127.0.0.1:5432.";
 
-        <div className="appContent">
-          <Topbar />
-          <main className="mainContent">{children}</main>
-        </div>
-      </div>
-    </EnterpriseProvider>
-  );
+    return (
+      <DashboardShell enterprises={[]} databaseWarning={message}>
+        {children}
+      </DashboardShell>
+    );
+  }
 }
