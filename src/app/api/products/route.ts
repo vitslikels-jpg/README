@@ -9,6 +9,9 @@ export async function GET(request: Request) {
   const source = searchParams.get("source")?.trim();
   const useCatalog = searchParams.get("useCatalog")?.trim() === "true";
   const search = searchParams.get("search")?.trim() ?? "";
+  const query = searchParams.get("q")?.trim() ?? search;
+  const limitValue = Number(searchParams.get("limit") ?? "20");
+  const limit = Number.isFinite(limitValue) ? Math.min(Math.max(Math.trunc(limitValue), 1), 100) : 20;
 
   if (!enterpriseId) {
     return jsonUtf8({ message: "Параметр enterpriseId обязателен." }, { status: 400 });
@@ -51,10 +54,52 @@ export async function GET(request: Request) {
     const products = await listCatalogProductsReadModel({
       enterpriseId,
       supplierId: supplierId || null,
-      search,
+      search: query,
     });
 
     return jsonUtf8(products);
+  }
+
+  if (query) {
+    const products = await prisma.product.findMany({
+      where: {
+        enterpriseId,
+        ...(supplierId ? { supplierId } : {}),
+        supplier: {
+          archivedAt: null,
+        },
+        document: {
+          isCurrent: true,
+        },
+        name: {
+          contains: query,
+          mode: "insensitive",
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        supplierId: true,
+        supplier: {
+          select: {
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        name: "asc",
+      },
+      take: limit,
+    });
+
+    return jsonUtf8({
+      products: products.map((product) => ({
+        id: product.id,
+        name: product.name,
+        supplierId: product.supplierId,
+        supplierName: product.supplier.name,
+      })),
+    });
   }
 
   const products = await prisma.product.findMany({

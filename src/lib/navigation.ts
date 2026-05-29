@@ -4,6 +4,7 @@ export type NavigationItem = {
   icon:
     | "home"
     | "orders"
+    | "invoices"
     | "smart"
     | "suppliers"
     | "upload"
@@ -18,7 +19,7 @@ export type NavigationItem = {
 export const navigationItems: NavigationItem[] = [
   { href: "/", label: "Главная", icon: "home" },
   { href: "/orders", label: "Заказы", icon: "orders" },
-  { href: "/invoice-upload", label: "Загрузка накладных", icon: "upload" },
+  { href: "/invoices", label: "Накладные", icon: "invoices" },
   { href: "/smart-order", label: "Умный заказ", icon: "smart" },
   { href: "/suppliers", label: "Поставщики", icon: "suppliers" },
   { href: "/catalog", label: "Прайсы", icon: "catalog" },

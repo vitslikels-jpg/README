@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import {
   Archive,
   BarChart3,
+  FileText,
   Home,
   Layers3,
   Package,
@@ -32,6 +33,8 @@ function NavigationIcon({ icon }: { icon: NavigationItem["icon"] }) {
       return <Home size={16} strokeWidth={1.9} />;
     case "orders":
       return <ReceiptText size={16} strokeWidth={1.9} />;
+    case "invoices":
+      return <FileText size={16} strokeWidth={1.9} />;
     case "smart":
       return (
         <svg className="smartNavIcon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.9">

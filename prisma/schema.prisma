@@ -70,6 +70,21 @@ enum OrderOptimizationMatchStatus {
   not_found
 }
 
+enum InvoiceDocumentStatus {
+  uploaded
+  processing
+  needs_review
+  parsed
+  approved
+  failed
+}
+
+enum InvoicePriceChangeStatus {
+  pending
+  approved
+  rejected
+}
+
 model Enterprise {
   id                 String              @id @default(cuid())
   name               String
@@ -85,6 +100,7 @@ model Enterprise {
   smartOrderManualSelections SmartOrderManualSelection[]
   orders             Order[]
   orderOptimizations OrderOptimization[]
+  invoiceDocuments   InvoiceDocument[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 }
@@ -107,6 +123,8 @@ model Supplier {
   orders              Order[]
   optimizationResults OrderOptimizationResult[]
   smartOrderManualSelections SmartOrderManualSelection[]
+  invoiceDocuments    InvoiceDocument[]
+  invoicePriceChanges InvoicePriceChange[]
   createdAt           DateTime                  @default(now())
   updatedAt           DateTime                  @updatedAt
 
@@ -198,11 +216,105 @@ model Product {
   priceSnapshots       PriceSnapshot[]
   optimizationResults OrderOptimizationResult[]
   smartOrderManualSelections SmartOrderManualSelection[]
+  invoiceItems         InvoiceItem[]
+  invoicePriceChanges  InvoicePriceChange[]
 
   @@index([enterpriseId])
   @@index([supplierId])
   @@index([documentId])
   @@index([enterpriseId, supplierId])
+}
+
+model InvoiceDocument {
+  id                   String                @id @default(cuid())
+  enterpriseId         String
+  supplierId           String?
+  fileUrl              String?
+  storageKey           String?
+  originalFileName     String?
+  status               InvoiceDocumentStatus @default(uploaded)
+
+  detectedSupplierName String?
+  confidence           Float?
+
+  invoiceNumber        String?
+  invoiceDate          DateTime?
+  totalAmount          Decimal?              @db.Decimal(12, 2)
+  vatAmount            Decimal?              @db.Decimal(12, 2)
+
+  rawText              String?
+
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  enterprise           Enterprise            @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  supplier             Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  items                InvoiceItem[]
+  priceChanges         InvoicePriceChange[]
+
+  @@index([enterpriseId])
+  @@index([supplierId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model InvoiceItem {
+  id                   String          @id @default(cuid())
+  invoiceDocumentId    String
+
+  productNameRaw       String
+  matchedProductId     String?
+
+  quantity             Decimal?        @db.Decimal(12, 3)
+  unit                 String?
+
+  priceWithoutVat      Decimal?        @db.Decimal(12, 2)
+  priceWithVat         Decimal?        @db.Decimal(12, 2)
+  vatRate              Decimal?        @db.Decimal(5, 2)
+  lineTotal            Decimal?        @db.Decimal(12, 2)
+
+  confidence           Float?
+  needsReview          Boolean         @default(false)
+
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  invoiceDocument      InvoiceDocument @relation(fields: [invoiceDocumentId], references: [id], onDelete: Cascade)
+  matchedProduct       Product?        @relation(fields: [matchedProductId], references: [id], onDelete: SetNull)
+  priceChanges         InvoicePriceChange[]
+
+  @@index([invoiceDocumentId])
+  @@index([matchedProductId])
+  @@index([needsReview])
+}
+
+model InvoicePriceChange {
+  id                   String                    @id @default(cuid())
+  invoiceDocumentId    String
+  invoiceItemId        String
+  productId            String
+  supplierId           String
+
+  oldPrice             Decimal?                  @db.Decimal(12, 2)
+  newPrice             Decimal                   @db.Decimal(12, 2)
+  differenceAmount     Decimal?                  @db.Decimal(12, 2)
+  differencePercent    Decimal?                  @db.Decimal(8, 2)
+
+  status               InvoicePriceChangeStatus  @default(pending)
+
+  createdAt            DateTime                  @default(now())
+  approvedAt           DateTime?
+
+  invoiceDocument      InvoiceDocument           @relation(fields: [invoiceDocumentId], references: [id], onDelete: Cascade)
+  invoiceItem          InvoiceItem               @relation(fields: [invoiceItemId], references: [id], onDelete: Cascade)
+  product              Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier             Supplier                  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceDocumentId])
+  @@index([invoiceItemId])
+  @@index([productId])
+  @@index([supplierId])
+  @@index([status])
 }
 
 model Unit {
