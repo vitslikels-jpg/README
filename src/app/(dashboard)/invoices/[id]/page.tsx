@@ -46,6 +46,15 @@ type ProductSearchResult = {
   supplierName: string | null;
 };
 
+type EditInvoiceItemDraft = {
+  productNameRaw: string;
+  quantity: string;
+  unit: string;
+  priceWithVat: string;
+  lineTotal: string;
+  vatRate: string;
+};
+
 type InvoiceDetails = {
   id: string;
   status: InvoiceStatus;
@@ -195,6 +204,17 @@ function getMatchedProductLabel(item: InvoiceItem) {
   return [item.matchedProductName, item.matchedProductArticle, item.matchedProductBrand].filter(Boolean).join(" • ");
 }
 
+function buildItemEditDraft(item: InvoiceItem): EditInvoiceItemDraft {
+  return {
+    productNameRaw: item.productNameRaw,
+    quantity: item.quantity ?? "",
+    unit: item.unit ?? "",
+    priceWithVat: item.priceWithVat ?? "",
+    lineTotal: item.lineTotal ?? "",
+    vatRate: item.vatRate ?? "",
+  };
+}
+
 export default function InvoiceDetailsPage() {
   const params = useParams<{ id: string }>();
   const { activeEnterpriseId } = useEnterprise();
@@ -216,6 +236,9 @@ export default function InvoiceDetailsPage() {
   const [productSearchError, setProductSearchError] = useState("");
   const [isSearchingProducts, setIsSearchingProducts] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editItemDraft, setEditItemDraft] = useState<EditInvoiceItemDraft | null>(null);
+  const [isSavingItemEdit, setIsSavingItemEdit] = useState(false);
 
   const loadInvoice = useCallback(
     async (enterpriseId: string, id: string, signal?: AbortSignal) => {
@@ -403,7 +426,7 @@ export default function InvoiceDetailsPage() {
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
-      setSuccessMessage("OCR пока не подключён. Можно вставить текст накладной вручную.");
+      setSuccessMessage("Текст накладной распознан.");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Не удалось обработать накладную.");
     } finally {
@@ -565,6 +588,8 @@ export default function InvoiceDetailsPage() {
     setProductSearchQuery(item.productNameRaw);
     setProductSearchResults([]);
     setProductSearchError("");
+    setEditingItemId(null);
+    setEditItemDraft(null);
     setErrorMessage("");
     setSuccessMessage("");
   }
@@ -574,6 +599,26 @@ export default function InvoiceDetailsPage() {
     setProductSearchQuery("");
     setProductSearchResults([]);
     setProductSearchError("");
+  }
+
+  function handleOpenItemEdit(item: InvoiceItem) {
+    setEditingItemId(item.id);
+    setEditItemDraft(buildItemEditDraft(item));
+    setProductSearchItemId(null);
+    setProductSearchQuery("");
+    setProductSearchResults([]);
+    setProductSearchError("");
+    setErrorMessage("");
+    setSuccessMessage("");
+  }
+
+  function handleCloseItemEdit() {
+    setEditingItemId(null);
+    setEditItemDraft(null);
+  }
+
+  function handleChangeItemDraft(field: keyof EditInvoiceItemDraft, value: string) {
+    setEditItemDraft((current) => (current ? { ...current, [field]: value } : current));
   }
 
   async function handleSelectProduct(itemId: string, matchedProductId: string | null) {
@@ -613,6 +658,57 @@ export default function InvoiceDetailsPage() {
       setErrorMessage(message);
     } finally {
       setIsSavingProduct(false);
+    }
+  }
+
+  async function handleSaveItemEdit(itemId: string) {
+    if (!activeEnterpriseId || !params?.id || !editItemDraft) {
+      return;
+    }
+
+    const productNameRaw = editItemDraft.productNameRaw.trim();
+
+    if (!productNameRaw) {
+      setErrorMessage("Название товара не может быть пустым.");
+      return;
+    }
+
+    const payload = {
+      enterpriseId: activeEnterpriseId,
+      productNameRaw,
+      quantity: editItemDraft.quantity.trim() ? editItemDraft.quantity.trim() : null,
+      unit: editItemDraft.unit.trim() ? editItemDraft.unit.trim() : null,
+      priceWithVat: editItemDraft.priceWithVat.trim() ? editItemDraft.priceWithVat.trim() : null,
+      lineTotal: editItemDraft.lineTotal.trim() ? editItemDraft.lineTotal.trim() : null,
+      vatRate: editItemDraft.vatRate.trim() ? editItemDraft.vatRate.trim() : null,
+    };
+
+    setIsSavingItemEdit(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const response = await fetch(`/api/invoices/${params.id}/items/${itemId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const apiPayload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(apiPayload?.message ?? "Не удалось сохранить строку накладной.");
+      }
+
+      await loadInvoice(activeEnterpriseId, params.id);
+      handleCloseItemEdit();
+      setSuccessMessage("Строка накладной обновлена.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось сохранить строку накладной.");
+    } finally {
+      setIsSavingItemEdit(false);
     }
   }
 
@@ -689,6 +785,7 @@ export default function InvoiceDetailsPage() {
     isParsingItems ||
     isDetectingPriceChanges ||
     isApprovingInvoice ||
+    isSavingItemEdit ||
     isSavingProduct ||
     updatingPriceChangeId !== null;
 
@@ -792,7 +889,7 @@ export default function InvoiceDetailsPage() {
         {errorMessage ? <p className="errorText">{errorMessage}</p> : null}
         {successMessage ? <p className="successText">{successMessage}</p> : null}
 
-        <p className="invoiceHint">OCR пока не подключён. Можно вставить текст накладной вручную.</p>
+        <p className="invoiceHint">Можно распознать текст из файла или вставить его вручную и потом поправить.</p>
 
         <textarea
           className="fieldTextarea"
@@ -808,7 +905,7 @@ export default function InvoiceDetailsPage() {
             {isSavingRawText ? "Сохраняем..." : "Сохранить текст"}
           </button>
           <button type="button" className="secondaryButton compactButton" onClick={() => void handleProcessInvoice()} disabled={isBusy}>
-            {isProcessing ? "Распознаём..." : "Распознать"}
+            {isProcessing ? "Идёт распознавание..." : "Распознать"}
           </button>
           <button type="button" className="secondaryButton compactButton" onClick={() => void handleParseItems()} disabled={isBusy}>
             {isParsingItems ? "Разбираем..." : "Разобрать товары"}
@@ -820,7 +917,7 @@ export default function InvoiceDetailsPage() {
         ) : (
           <div className="emptyState">
             <p className="emptyStateTitle">Текст ещё не распознан</p>
-            <p className="emptyStateText">Пока OCR нет, вставьте текст вручную и сохраните его.</p>
+            <p className="emptyStateText">Нажмите «Распознать» или вставьте текст вручную и сохраните его.</p>
           </div>
         )}
       </section>
@@ -864,7 +961,7 @@ export default function InvoiceDetailsPage() {
                       <td>
                         <div className="invoiceMatchedProductCell">
                           <span>{getMatchedProductLabel(item)}</span>
-                          <div className="compactProductActions">
+                          <div className="compactProductActions invoiceItemRowActions">
                             <button
                               type="button"
                               className="secondaryButton compactButton"
@@ -883,6 +980,14 @@ export default function InvoiceDetailsPage() {
                                 Сбросить
                               </button>
                             ) : null}
+                            <button
+                              type="button"
+                              className="secondaryButton compactButton"
+                              onClick={() => handleOpenItemEdit(item)}
+                              disabled={isBusy}
+                            >
+                              Редактировать
+                            </button>
                           </div>
                         </div>
                       </td>
@@ -945,6 +1050,94 @@ export default function InvoiceDetailsPage() {
                                 ))}
                               </div>
                             ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+
+                    {editingItemId === item.id && editItemDraft ? (
+                      <tr className="invoiceItemSearchRow">
+                        <td colSpan={9}>
+                          <div className="invoiceItemSearchPanel invoiceItemEditPanel">
+                            <div className="invoiceItemEditGrid">
+                              <label className="field">
+                                <span>Название</span>
+                                <input
+                                  type="text"
+                                  value={editItemDraft.productNameRaw}
+                                  onChange={(event) => handleChangeItemDraft("productNameRaw", event.target.value)}
+                                  disabled={isBusy}
+                                />
+                              </label>
+                              <label className="field">
+                                <span>Количество</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={editItemDraft.quantity}
+                                  onChange={(event) => handleChangeItemDraft("quantity", event.target.value)}
+                                  disabled={isBusy}
+                                />
+                              </label>
+                              <label className="field">
+                                <span>Единица</span>
+                                <input
+                                  type="text"
+                                  value={editItemDraft.unit}
+                                  onChange={(event) => handleChangeItemDraft("unit", event.target.value)}
+                                  disabled={isBusy}
+                                />
+                              </label>
+                              <label className="field">
+                                <span>Цена</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={editItemDraft.priceWithVat}
+                                  onChange={(event) => handleChangeItemDraft("priceWithVat", event.target.value)}
+                                  disabled={isBusy}
+                                />
+                              </label>
+                              <label className="field">
+                                <span>Сумма</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={editItemDraft.lineTotal}
+                                  onChange={(event) => handleChangeItemDraft("lineTotal", event.target.value)}
+                                  disabled={isBusy}
+                                />
+                              </label>
+                              <label className="field">
+                                <span>НДС %</span>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={editItemDraft.vatRate}
+                                  onChange={(event) => handleChangeItemDraft("vatRate", event.target.value)}
+                                  disabled={isBusy}
+                                />
+                              </label>
+                            </div>
+
+                            <div className="invoiceItemEditActions">
+                              <button
+                                type="button"
+                                className="primaryButton compactButton"
+                                onClick={() => void handleSaveItemEdit(item.id)}
+                                disabled={isBusy}
+                              >
+                                {isSavingItemEdit ? "Сохраняем..." : "Сохранить"}
+                              </button>
+                              <button
+                                type="button"
+                                className="secondaryButton compactButton"
+                                onClick={handleCloseItemEdit}
+                                disabled={isBusy}
+                              >
+                                Отмена
+                              </button>
+                            </div>
                           </div>
                         </td>
                       </tr>

@@ -1,14 +1,15 @@
+import { extractInvoiceText } from "@/lib/invoice-ocr";
 import { jsonUtf8 } from "@/lib/http";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
+
+export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
     id: string;
   }>;
 };
-
-const OCR_PLACEHOLDER = "OCR пока не подключён. Вставьте текст накладной вручную.";
 
 export async function POST(request: Request, context: RouteContext) {
   const { id } = await context.params;
@@ -32,7 +33,9 @@ export async function POST(request: Request, context: RouteContext) {
     },
     select: {
       id: true,
-      rawText: true,
+      fileUrl: true,
+      storageKey: true,
+      originalFileName: true,
     },
   });
 
@@ -40,23 +43,57 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonUtf8({ message: "Накладная не найдена." }, { status: 404 });
   }
 
-  const trimmedRawText = invoice.rawText?.trim() ?? "";
+  if (!invoice.fileUrl && !invoice.storageKey) {
+    return jsonUtf8({ message: "У накладной нет загруженного файла." }, { status: 400 });
+  }
 
-  const updatedInvoice = await prisma.invoiceDocument.update({
+  await prisma.invoiceDocument.update({
     where: {
       id,
     },
     data: {
-      status: trimmedRawText ? "parsed" : "needs_review",
-      rawText: trimmedRawText || OCR_PLACEHOLDER,
-    },
-    select: {
-      id: true,
-      status: true,
-      rawText: true,
-      updatedAt: true,
+      status: "processing",
     },
   });
 
-  return jsonUtf8({ invoice: updatedInvoice });
+  try {
+    const result = await extractInvoiceText(invoice.storageKey, invoice.fileUrl, invoice.originalFileName);
+
+    const updatedInvoice = await prisma.invoiceDocument.update({
+      where: {
+        id,
+      },
+      data: {
+        rawText: result.rawText,
+        status: "parsed",
+      },
+      select: {
+        id: true,
+        status: true,
+        rawText: true,
+        updatedAt: true,
+      },
+    });
+
+    return jsonUtf8({
+      invoice: updatedInvoice,
+      source: result.source,
+    });
+  } catch (error) {
+    await prisma.invoiceDocument.update({
+      where: {
+        id,
+      },
+      data: {
+        status: "failed",
+      },
+    });
+
+    return jsonUtf8(
+      {
+        message: error instanceof Error ? error.message : "Не удалось распознать текст накладной.",
+      },
+      { status: 500 },
+    );
+  }
 }

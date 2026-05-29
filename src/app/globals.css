@@ -2221,9 +2221,26 @@ body.sidebarResizing * {
   padding: 8px 0;
 }
 
+.invoiceItemEditPanel {
+  gap: 16px;
+}
+
+.invoiceItemEditGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
 .invoiceItemSearchActions {
   display: flex;
   justify-content: flex-end;
+}
+
+.invoiceItemEditActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .invoiceItemSearchResults {
@@ -4340,6 +4357,10 @@ body.sidebarResizing * {
   align-items: center;
   justify-self: end;
   width: 100%;
+}
+
+.invoiceItemRowActions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .compactQuantityControl {

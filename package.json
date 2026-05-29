@@ -16,13 +16,16 @@
     "verify:identity": "node scripts/verify-product-identity.mjs"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.0",
     "@prisma/client": "^6.17.1",
     "bcrypt": "^6.0.0",
     "lucide-react": "^1.11.0",
     "next": "16.2.3",
+    "pdfjs-dist": "^5.7.284",
     "pg": "^8.20.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
