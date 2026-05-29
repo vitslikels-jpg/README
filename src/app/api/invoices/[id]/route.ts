@@ -1,4 +1,5 @@
 import { jsonUtf8 } from "@/lib/http";
+import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -78,6 +79,9 @@ export async function GET(request: Request, context: RouteContext) {
     return jsonUtf8({ message: "Накладная не найдена." }, { status: 404 });
   }
 
+  const supplierMatch =
+    invoice.rawText && invoice.supplierId ? await matchInvoiceSupplier(invoice.rawText, enterpriseId).catch(() => null) : null;
+
   return jsonUtf8({
     id: invoice.id,
     status: invoice.status,
@@ -85,6 +89,7 @@ export async function GET(request: Request, context: RouteContext) {
     supplierName: invoice.supplier?.name ?? null,
     detectedSupplierName: invoice.detectedSupplierName,
     confidence: invoice.confidence,
+    supplierMatchType: supplierMatch?.supplierId === invoice.supplierId ? supplierMatch.matchType : null,
     invoiceNumber: invoice.invoiceNumber,
     invoiceDate: invoice.invoiceDate,
     totalAmount: invoice.totalAmount?.toString() ?? null,

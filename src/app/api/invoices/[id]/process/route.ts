@@ -1,4 +1,5 @@
 import { extractInvoiceText } from "@/lib/invoice-ocr";
+import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
 import { jsonUtf8 } from "@/lib/http";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
@@ -33,6 +34,7 @@ export async function POST(request: Request, context: RouteContext) {
     },
     select: {
       id: true,
+      supplierId: true,
       fileUrl: true,
       storageKey: true,
       originalFileName: true,
@@ -58,6 +60,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     const result = await extractInvoiceText(invoice.storageKey, invoice.fileUrl, invoice.originalFileName);
+    const supplierMatch = await matchInvoiceSupplier(result.rawText, enterpriseId);
 
     const updatedInvoice = await prisma.invoiceDocument.update({
       where: {
@@ -66,11 +69,17 @@ export async function POST(request: Request, context: RouteContext) {
       data: {
         rawText: result.rawText,
         status: "parsed",
+        detectedSupplierName: supplierMatch?.supplierName ?? null,
+        confidence: supplierMatch?.confidence ?? null,
+        ...(invoice.supplierId ? {} : { supplierId: supplierMatch?.supplierId ?? null }),
       },
       select: {
         id: true,
         status: true,
         rawText: true,
+        supplierId: true,
+        detectedSupplierName: true,
+        confidence: true,
         updatedAt: true,
       },
     });
@@ -78,6 +87,7 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonUtf8({
       invoice: updatedInvoice,
       source: result.source,
+      supplierMatchType: supplierMatch?.matchType ?? null,
     });
   } catch (error) {
     await prisma.invoiceDocument.update({

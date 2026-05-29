@@ -8,6 +8,7 @@ import { useEnterprise } from "@/features/enterprises/components/enterprise-cont
 
 type InvoiceStatus = "uploaded" | "processing" | "needs_review" | "parsed" | "approved" | "failed";
 type PriceChangeStatus = "pending" | "approved" | "rejected";
+type SupplierMatchType = "phone" | "email" | "exact_name" | "contains_name";
 
 type InvoiceItem = {
   id: string;
@@ -62,6 +63,7 @@ type InvoiceDetails = {
   supplierName: string | null;
   detectedSupplierName: string | null;
   confidence: number | null;
+  supplierMatchType: SupplierMatchType | null;
   invoiceNumber: string | null;
   invoiceDate: string | null;
   totalAmount: string | null;
@@ -203,6 +205,13 @@ function getMatchedProductLabel(item: InvoiceItem) {
 
   return [item.matchedProductName, item.matchedProductArticle, item.matchedProductBrand].filter(Boolean).join(" • ");
 }
+
+const supplierMatchTypeLabels: Record<SupplierMatchType, string> = {
+  phone: "Совпадение по телефону",
+  email: "Совпадение по email",
+  exact_name: "Точное совпадение названия",
+  contains_name: "Совпадение по названию",
+};
 
 function buildItemEditDraft(item: InvoiceItem): EditInvoiceItemDraft {
   return {
@@ -821,6 +830,11 @@ export default function InvoiceDetailsPage() {
           <div className="supplierMetaItem">
             <span>Поставщик</span>
             <strong>{getSupplierName(invoice)}</strong>
+            {invoice.supplierId && invoice.confidence !== null && invoice.supplierMatchType ? (
+              <span className="invoiceHint">
+                {supplierMatchTypeLabels[invoice.supplierMatchType]} · уверенность {formatNumber(String(invoice.confidence), 2)}
+              </span>
+            ) : null}
           </div>
           <div className="supplierMetaItem">
             <span>Номер</span>
