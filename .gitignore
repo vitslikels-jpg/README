@@ -42,10 +42,18 @@ next-env.d.ts
 
 # local Codex / deploy junk in repo root
 /.codex-dev.log
+/.codex-*.ps1
+/.codex-*.png
+/.codex-*.cjs
+/.codex-dev-*.log
+/.codex-dev-*.err
 /.codex-backup-encoding/
 /codex-*.ps1
+/codex-*.cjs
 /_codex_*
 /_deploy_*
+/.next-dev-*.log
+/.next-dev-*.err.log
 /*.tar.gz
 /*.zip
 /_*.png
