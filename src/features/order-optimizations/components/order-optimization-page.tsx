@@ -191,6 +191,18 @@ function buildProblemItems(items: OrderOptimizationItem[]) {
   }, []);
 }
 
+function getParseSourceBadgeLabel(parseSource: OrderOptimizationItem["parseSource"]) {
+  if (parseSource === "ai") {
+    return "AI parse";
+  }
+
+  if (parseSource === "ai_fallback_regex") {
+    return "AI fallback";
+  }
+
+  return "Regex parse";
+}
+
 async function copyTextToClipboard(text: string) {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
     try {
@@ -951,6 +963,7 @@ export function OrderOptimizationPage() {
                   </div>
 
                   <div className="smartOrderProblemReasons">
+                    <span className="statusPill">{getParseSourceBadgeLabel(item.parseSource)}</span>
                     {reasons.map((reason) => (
                       <span key={`${item.id}-${reason}`} className="statusPill smartOrderProblemReason">
                         {reason}

@@ -11,12 +11,74 @@ import {
 import { suggestOrderOptimizationItem } from "@/lib/order-optimization-ai";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
+import { isSmartOrderAiParseEnabled, requestSmartOrderAiParse } from "@/lib/smart-order-ai-parse";
 
 type RouteContext = {
   params: Promise<{
     optimizationId: string;
   }>;
 };
+
+function logSmartOrderParse(params: {
+  optimizationId: string;
+  enterpriseId: string;
+  source: "ai" | "regex";
+  fallback: boolean;
+  itemCount?: number;
+  reason?: string | null;
+}) {
+  const parts = [
+    "[smart-order][parse]",
+    `optimizationId=${params.optimizationId}`,
+    `enterpriseId=${params.enterpriseId}`,
+    `source=${params.source}`,
+    `fallback=${params.fallback ? "true" : "false"}`,
+  ];
+
+  if (typeof params.itemCount === "number") {
+    parts.push(`items=${params.itemCount}`);
+  }
+
+  if (params.reason) {
+    parts.push(`reason=${params.reason}`);
+  }
+
+  console.info(parts.join(" "));
+}
+
+async function buildAiParsedItems(sourceText: string) {
+  const aiResponse = await requestSmartOrderAiParse(sourceText);
+
+  return aiResponse.items.map((item, index) => {
+    let parsedQuantity = null as ReturnType<typeof parseNullablePositiveDecimal> | null;
+
+    try {
+      if (item.quantity) {
+        parsedQuantity = parseNullablePositiveDecimal(item.quantity, "quantity");
+      }
+    } catch {
+      parsedQuantity = null;
+    }
+
+    const parsedUnit = normalizeOrderOptimizationUnit(item.unit);
+    const parsedName = normalizeOptionalString(item.parsedName) ?? item.originalLine.trim() ?? sourceText.trim();
+    const requestedSupplierName = normalizeOptionalString(item.requestedSupplierName);
+    const isReview = item.needsReview || item.confidence < 0.75;
+
+    return {
+      sourceLine: item.originalLine.trim() || sourceText.trim(),
+      requestedSupplierName,
+      lockSupplier: false,
+      parsedName,
+      parsedQuantity,
+      parsedUnit,
+      requestedAmount: calculateRequestedAmount(parsedQuantity, parsedUnit),
+      sortOrder: index + 1,
+      matchStatus: isReview ? ("review" as const) : ("pending" as const),
+      notes: null,
+    };
+  });
+}
 
 async function applyAiParsingFixes(optimizationId: string, enterpriseId: string) {
   const optimization = await prisma.orderOptimization.findFirst({
@@ -133,13 +195,13 @@ export async function POST(request: Request, context: RouteContext) {
   const enterpriseId = body.enterpriseId?.trim();
 
   if (!enterpriseId) {
-    return jsonUtf8({ message: "Поле enterpriseId обязательно." }, { status: 400 });
+    return jsonUtf8({ message: "РџРѕР»Рµ enterpriseId РѕР±СЏР·Р°С‚РµР»СЊРЅРѕ." }, { status: 400 });
   }
 
   const enterprise = await ensureEnterpriseExists(enterpriseId);
 
   if (!enterprise) {
-    return jsonUtf8({ message: "Предприятие не найдено." }, { status: 404 });
+    return jsonUtf8({ message: "РџСЂРµРґРїСЂРёСЏС‚РёРµ РЅРµ РЅР°Р№РґРµРЅРѕ." }, { status: 404 });
   }
 
   const existingOptimization = await prisma.orderOptimization.findFirst({
@@ -153,7 +215,7 @@ export async function POST(request: Request, context: RouteContext) {
   });
 
   if (!existingOptimization) {
-    return jsonUtf8({ message: "Умный заказ не найден." }, { status: 404 });
+    return jsonUtf8({ message: "РЈРјРЅС‹Р№ Р·Р°РєР°Р· РЅРµ РЅР°Р№РґРµРЅ." }, { status: 404 });
   }
 
   const hasTitle = Object.prototype.hasOwnProperty.call(body, "title");
@@ -171,16 +233,79 @@ export async function POST(request: Request, context: RouteContext) {
     });
   }
 
-  const optimization = await rebuildOrderOptimizationItems(optimizationId, enterpriseId);
+  const latestOptimization = await prisma.orderOptimization.findFirst({
+    where: {
+      id: optimizationId,
+      enterpriseId,
+    },
+    select: {
+      id: true,
+      sourceText: true,
+    },
+  });
 
-  if (!optimization) {
-    return jsonUtf8({ message: "Умный заказ не найден." }, { status: 404 });
+  if (!latestOptimization) {
+    return jsonUtf8({ message: "РЈРјРЅС‹Р№ Р·Р°РєР°Р· РЅРµ РЅР°Р№РґРµРЅ." }, { status: 404 });
   }
 
-  await applyAiParsingFixes(optimizationId, enterpriseId);
+  const useAiFirstParse = isSmartOrderAiParseEnabled();
+  let optimization = null;
+
+  if (!useAiFirstParse) {
+    optimization = await rebuildOrderOptimizationItems(optimizationId, enterpriseId, {
+      parseSource: "regex",
+    });
+  } else {
+    try {
+      const aiParsedItems = await buildAiParsedItems(latestOptimization.sourceText);
+
+      if (aiParsedItems.length === 0) {
+        throw new Error("empty_items");
+      }
+
+      optimization = await rebuildOrderOptimizationItems(optimizationId, enterpriseId, {
+        parsedItems: aiParsedItems,
+        parseSource: "ai",
+      });
+
+      logSmartOrderParse({
+        optimizationId,
+        enterpriseId,
+        source: "ai",
+        fallback: false,
+        itemCount: aiParsedItems.length,
+      });
+    } catch (error) {
+      optimization = await rebuildOrderOptimizationItems(optimizationId, enterpriseId, {
+        parseSource: "ai_fallback_regex",
+      });
+
+      logSmartOrderParse({
+        optimizationId,
+        enterpriseId,
+        source: "regex",
+        fallback: true,
+        reason: error instanceof Error ? error.message.slice(0, 80) : "unknown",
+      });
+    }
+  }
+
+  if (!optimization) {
+    return jsonUtf8({ message: "РЈРјРЅС‹Р№ Р·Р°РєР°Р· РЅРµ РЅР°Р№РґРµРЅ." }, { status: 404 });
+  }
+
+  if (!useAiFirstParse) {
+    await applyAiParsingFixes(optimizationId, enterpriseId);
+    logSmartOrderParse({
+      optimizationId,
+      enterpriseId,
+      source: "regex",
+      fallback: false,
+      itemCount: optimization.items.length,
+    });
+  }
 
   const updatedOptimization = await getOrderOptimizationWithDetails(optimizationId, enterpriseId);
 
   return jsonUtf8(serializeOrderOptimization(updatedOptimization ?? optimization));
 }
-

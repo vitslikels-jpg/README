@@ -42,8 +42,14 @@ type ParsedSourceItem = {
   parsedQuantity: Prisma.Decimal | null;
   parsedUnit: string | null;
   requestedAmount: Prisma.Decimal | null;
+  matchStatus?: OrderOptimizationMatchStatus;
+  notes?: string | null;
   sortOrder: number;
 };
+
+export type OrderOptimizationParseSource = "regex" | "ai" | "ai_fallback_regex";
+
+const orderOptimizationParseSourceNotePrefix = "[parse-source]";
 
 export type SmartOrderSelectedProductDto = {
   id: string;
@@ -74,6 +80,16 @@ export type SmartOrderSupplierBasketDto = {
   minOrderAmount: string | null;
   meetsMinOrder: boolean;
   missingAmount: string;
+};
+
+type OrderOptimizationParseSourceNotePayload = {
+  source: OrderOptimizationParseSource;
+  confidence?: number | null;
+  needsReview?: boolean;
+  reviewReason?: string | null;
+  brand?: string | null;
+  attributes?: string[];
+  comment?: string | null;
 };
 
 export const parsedOrderUnits = ["шт", "кг", "г", "л", "мл", "уп", "пач", "кор", "бут"] as const;
@@ -109,6 +125,44 @@ function decimalToString(value: { toString: () => string } | null | undefined) {
 
 function decimalToMoneyString(value: Prisma.Decimal) {
   return value.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toString();
+}
+
+function splitOrderOptimizationNotes(notes: string | null | undefined) {
+  return String(notes ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+export function readOrderOptimizationParseSource(notes: string | null | undefined): OrderOptimizationParseSource {
+  const parseSourceLine = splitOrderOptimizationNotes(notes).find((line) => line.startsWith(orderOptimizationParseSourceNotePrefix));
+
+  if (!parseSourceLine) {
+    return "regex";
+  }
+
+  const payload = parseSourceLine.slice(orderOptimizationParseSourceNotePrefix.length).trim();
+
+  try {
+    const parsed = JSON.parse(payload) as Partial<OrderOptimizationParseSourceNotePayload>;
+    const source = parsed.source;
+
+    return source === "ai" || source === "ai_fallback_regex" || source === "regex" ? source : "regex";
+  } catch {
+    return "regex";
+  }
+}
+
+export function upsertOrderOptimizationParseSourceNote(
+  notes: string | null | undefined,
+  payload: OrderOptimizationParseSourceNotePayload,
+) {
+  const noteLines = splitOrderOptimizationNotes(notes).filter(
+    (line) => !line.startsWith(orderOptimizationParseSourceNotePrefix),
+  );
+
+  noteLines.push(`${orderOptimizationParseSourceNotePrefix} ${JSON.stringify(payload)}`);
+  return noteLines.join("\n");
 }
 
 function buildSmartOrderSelectedProductDto(
@@ -393,7 +447,14 @@ export function parseOrderOptimizationSourceText(sourceText: string) {
   return parsedItems;
 }
 
-export async function rebuildOrderOptimizationItems(optimizationId: string, enterpriseId?: string) {
+export async function rebuildOrderOptimizationItems(
+  optimizationId: string,
+  enterpriseId?: string,
+  options?: {
+    parsedItems?: ParsedSourceItem[];
+    parseSource?: OrderOptimizationParseSource;
+  },
+) {
   const optimization = await prisma.orderOptimization.findFirst({
     where: {
       id: optimizationId,
@@ -409,7 +470,8 @@ export async function rebuildOrderOptimizationItems(optimizationId: string, ente
     return null;
   }
 
-  const parsedItems = parseOrderOptimizationSourceText(optimization.sourceText);
+  const parsedItems = options?.parsedItems ?? parseOrderOptimizationSourceText(optimization.sourceText);
+  const parseSource = options?.parseSource ?? "regex";
 
   await prisma.$transaction(async (tx) => {
     await tx.orderOptimizationItem.deleteMany({
@@ -432,7 +494,10 @@ export async function rebuildOrderOptimizationItems(optimizationId: string, ente
         parsedUnit: item.parsedUnit,
         requestedAmount: item.requestedAmount?.toString() ?? null,
         selectionMode: null,
-        matchStatus: "pending",
+        matchStatus: item.matchStatus ?? "pending",
+        notes: upsertOrderOptimizationParseSourceNote(item.notes, {
+          source: parseSource,
+        }),
         sortOrder: item.sortOrder,
       })),
     });
@@ -473,6 +538,7 @@ export function serializeOrderOptimization(optimization: OrderOptimizationWithDe
         matchStatus: item.matchStatus as OrderOptimizationMatchStatus,
         status: getOrderOptimizationItemStatus(item),
         isProblem: isOrderOptimizationItemProblem(item),
+        parseSource: readOrderOptimizationParseSource(item.notes),
         notes: item.notes,
         sortOrder: item.sortOrder,
         createdAt: item.createdAt,

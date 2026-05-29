@@ -1,6 +1,7 @@
 export type OrderOptimizationStatus = "draft" | "processed";
 export type OrderOptimizationSelectionMode = "auto" | "manual" | null;
 export type OrderOptimizationItemStatus = "autoselected" | "manual" | "review" | "not_found";
+export type OrderOptimizationParseSource = "regex" | "ai" | "ai_fallback_regex";
 
 export type OrderOptimizationListItem = {
   id: string;
@@ -34,6 +35,7 @@ export type OrderOptimizationItem = {
   matchStatus: "pending" | "review" | "not_found";
   status: OrderOptimizationItemStatus;
   isProblem: boolean;
+  parseSource: OrderOptimizationParseSource;
   notes: string | null;
   sortOrder: number;
   createdAt: string;
