@@ -8,6 +8,8 @@ import type {
   OrderOptimizationListItem,
   OrderOptimizationResult,
   OrderOptimizationSupplierBasket,
+  SmartOrderAiParseTestItem,
+  SmartOrderAiParseTestResponse,
 } from "@/features/order-optimizations/types";
 
 type PickerState = {
@@ -300,6 +302,32 @@ async function matchOptimization(enterpriseId: string, optimizationId: string) {
   return responseBody;
 }
 
+async function runAiParseTest(sourceText: string) {
+  const response = await fetch("/api/order-optimizations/ai-parse-test", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sourceText,
+    }),
+  });
+  const responseBody = (await response.json().catch(() => null)) as
+    | SmartOrderAiParseTestResponse
+    | { message?: string }
+    | null;
+
+  if (!response.ok || !responseBody || isApiErrorResponse(responseBody) || !("items" in responseBody)) {
+    throw new Error(
+      isApiErrorResponse(responseBody) && responseBody.message
+        ? responseBody.message
+        : "Не удалось проверить AI-разбор.",
+    );
+  }
+
+  return responseBody;
+}
+
 export function OrderOptimizationPage() {
   const { activeEnterpriseId } = useEnterprise();
   const [sourceText, setSourceText] = useState("");
@@ -313,6 +341,12 @@ export function OrderOptimizationPage() {
   const [isCopying, setIsCopying] = useState(false);
   const [copyingBasketSupplierName, setCopyingBasketSupplierName] = useState<string | null>(null);
   const [selectingCandidateId, setSelectingCandidateId] = useState<string | null>(null);
+  const [aiParseTestSourceText, setAiParseTestSourceText] = useState(
+    "бекон 3 кг\nАлиди: рис 5 кг, сахар 10 кг\nВосток-Запад: сыр Galbani 500 г аналог можно",
+  );
+  const [aiParseTestResult, setAiParseTestResult] = useState<SmartOrderAiParseTestResponse | null>(null);
+  const [aiParseTestError, setAiParseTestError] = useState("");
+  const [isAiParseTesting, setIsAiParseTesting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -323,6 +357,8 @@ export function OrderOptimizationPage() {
     setDebouncedQuery("");
     setErrorMessage("");
     setSuccessMessage("");
+    setAiParseTestResult(null);
+    setAiParseTestError("");
   }, [activeEnterpriseId]);
 
   useEffect(() => {
@@ -591,6 +627,95 @@ export function OrderOptimizationPage() {
     });
   }
 
+  async function handleAiParseTest() {
+    if (!aiParseTestSourceText.trim()) {
+      return;
+    }
+
+    setIsAiParseTesting(true);
+    setAiParseTestError("");
+
+    try {
+      const result = await runAiParseTest(aiParseTestSourceText);
+      setAiParseTestResult(result);
+    } catch (error) {
+      setAiParseTestResult(null);
+      setAiParseTestError(error instanceof Error ? error.message : "Не удалось проверить AI-разбор.");
+    } finally {
+      setIsAiParseTesting(false);
+    }
+  }
+
+  const aiParseTestSection = (
+    <section className="card smartOrderAiParseTestCard">
+      <div className="smartOrderCardHeader smartOrderCardHeaderSimple">
+        <div>
+          <h2 className="sectionTitle">AI parse test</h2>
+          <p className="pageDescription smartOrderAiParseTestNote">Тестовый режим, не влияет на заказ.</p>
+        </div>
+      </div>
+
+      {aiParseTestError ? <p className="errorText">{aiParseTestError}</p> : null}
+
+      <div className="smartOrderTextareaWrap">
+        <textarea
+          className="fieldTextarea smartOrderTextarea smartOrderAiParseTextarea"
+          value={aiParseTestSourceText}
+          onChange={(event) => setAiParseTestSourceText(event.target.value)}
+          placeholder={"бекон 3 кг\nАлиди: рис 5 кг, сахар 10 кг\nВосток-Запад: сыр Galbani 500 г аналог можно"}
+        />
+      </div>
+
+      <div className="smartOrderActions smartOrderActionsPrimary">
+        <button
+          type="button"
+          className="secondaryButton"
+          disabled={isAiParseTesting || !aiParseTestSourceText.trim()}
+          onClick={() => void handleAiParseTest()}
+        >
+          <Sparkles size={16} />
+          <span>{isAiParseTesting ? "Проверяем..." : "Проверить AI-разбор"}</span>
+        </button>
+      </div>
+
+      {aiParseTestResult ? (
+        <div className="smartOrderAiParseResults">
+          <div className="smartOrderAiParseSummary">
+            <span className="statusPill">source: {aiParseTestResult.source}</span>
+            <span className="statusPill">model: {aiParseTestResult.model}</span>
+            <span className="statusPill">items: {aiParseTestResult.items.length}</span>
+          </div>
+
+          <div className="smartOrderProblemList">
+            {aiParseTestResult.items.map((item: SmartOrderAiParseTestItem, index) => (
+              <section key={`${item.originalLine}-${index}`} className="smartOrderProblemCard smartOrderAiParseCard">
+                <div className="smartOrderProblemHeader">
+                  <div className="smartOrderProblemMain">
+                    <h3>{item.parsedName || "Не удалось выделить название"}</h3>
+                    <p>{item.originalLine}</p>
+                  </div>
+                  <span className={`statusPill ${item.needsReview ? "smartOrderProblemReason" : ""}`}>
+                    {item.needsReview ? "Нужна проверка" : "Ок"}
+                  </span>
+                </div>
+
+                <div className="smartOrderAiParseGrid">
+                  <span><strong>Количество:</strong> {formatAmount(item.quantity, item.unit)}</span>
+                  <span><strong>Поставщик:</strong> {item.requestedSupplierName || "—"}</span>
+                  <span><strong>Бренд:</strong> {item.brand || "—"}</span>
+                  <span><strong>Confidence:</strong> {item.confidence}</span>
+                  <span><strong>Attributes:</strong> {item.attributes.length ? item.attributes.join(", ") : "—"}</span>
+                  <span><strong>Comment:</strong> {item.comment || "—"}</span>
+                  <span><strong>Review reason:</strong> {item.reviewReason || "—"}</span>
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+
   if (!activeEnterpriseId) {
     return (
       <div className="pageStack">
@@ -598,6 +723,7 @@ export function OrderOptimizationPage() {
           <h2 className="pageTitle">Сначала выберите предприятие</h2>
           <p className="pageDescription">Без выбранного предприятия умный заказ работать не будет.</p>
         </section>
+        {aiParseTestSection}
       </div>
     );
   }
@@ -654,6 +780,8 @@ export function OrderOptimizationPage() {
             </button>
           </div>
         </section>
+
+        {aiParseTestSection}
 
         <section className="card smartOrderSummaryCard smartOrderSummaryCardStacked">
           <div className="smartOrderCardHeader">

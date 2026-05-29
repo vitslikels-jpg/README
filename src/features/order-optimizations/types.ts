@@ -50,6 +50,26 @@ export type OrderOptimizationAiSuggestion = {
   source: "polza" | "openrouter" | "local";
 };
 
+export type SmartOrderAiParseTestItem = {
+  originalLine: string;
+  parsedName: string | null;
+  quantity: string | null;
+  unit: string | null;
+  requestedSupplierName: string | null;
+  brand: string | null;
+  attributes: string[];
+  comment: string | null;
+  confidence: number;
+  needsReview: boolean;
+  reviewReason: string | null;
+};
+
+export type SmartOrderAiParseTestResponse = {
+  source: "polza";
+  model: string;
+  items: SmartOrderAiParseTestItem[];
+};
+
 export type OrderOptimizationResult = {
   id: string;
   optimizationId: string;
