@@ -2221,6 +2221,17 @@ body.sidebarResizing * {
   padding: 8px 0;
 }
 
+.invoiceSupplierActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.invoiceSupplierSearchPanel {
+  margin-top: 6px;
+}
+
 .invoiceItemEditPanel {
   gap: 16px;
 }

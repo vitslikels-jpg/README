@@ -47,6 +47,13 @@ type ProductSearchResult = {
   supplierName: string | null;
 };
 
+type SupplierSearchResult = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+};
+
 type EditInvoiceItemDraft = {
   productNameRaw: string;
   quantity: string;
@@ -245,6 +252,12 @@ export default function InvoiceDetailsPage() {
   const [productSearchError, setProductSearchError] = useState("");
   const [isSearchingProducts, setIsSearchingProducts] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isSupplierSearchOpen, setIsSupplierSearchOpen] = useState(false);
+  const [supplierSearchQuery, setSupplierSearchQuery] = useState("");
+  const [supplierSearchResults, setSupplierSearchResults] = useState<SupplierSearchResult[]>([]);
+  const [supplierSearchError, setSupplierSearchError] = useState("");
+  const [isSearchingSuppliers, setIsSearchingSuppliers] = useState(false);
+  const [isSavingSupplier, setIsSavingSupplier] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemDraft, setEditItemDraft] = useState<EditInvoiceItemDraft | null>(null);
   const [isSavingItemEdit, setIsSavingItemEdit] = useState(false);
@@ -376,6 +389,67 @@ export default function InvoiceDetailsPage() {
       window.clearTimeout(timeoutId);
     };
   }, [activeEnterpriseId, invoice?.supplierId, productSearchItemId, productSearchQuery]);
+
+  useEffect(() => {
+    if (!activeEnterpriseId || !isSupplierSearchOpen) {
+      setSupplierSearchResults([]);
+      setSupplierSearchError("");
+      setIsSearchingSuppliers(false);
+      return;
+    }
+
+    const query = supplierSearchQuery.trim();
+
+    if (!query) {
+      setSupplierSearchResults([]);
+      setSupplierSearchError("");
+      setIsSearchingSuppliers(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setIsSearchingSuppliers(true);
+      setSupplierSearchError("");
+
+      try {
+        const searchParams = new URLSearchParams({
+          enterpriseId: activeEnterpriseId,
+          q: query,
+          limit: "20",
+        });
+
+        const response = await fetch(`/api/suppliers?${searchParams.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        const payload = (await response.json().catch(() => null)) as SupplierSearchResult[] | { message?: string } | null;
+
+        if (!response.ok) {
+          throw new Error((payload as { message?: string } | null)?.message ?? "Не удалось найти поставщиков.");
+        }
+
+        setSupplierSearchResults(Array.isArray(payload) ? payload : []);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setSupplierSearchResults([]);
+        setSupplierSearchError(error instanceof Error ? error.message : "Не удалось найти поставщиков.");
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearchingSuppliers(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeEnterpriseId, isSupplierSearchOpen, supplierSearchQuery]);
 
   async function handleSaveRawText() {
     if (!activeEnterpriseId || !params?.id) {
@@ -603,6 +677,28 @@ export default function InvoiceDetailsPage() {
     setSuccessMessage("");
   }
 
+  function handleOpenSupplierSearch() {
+    setIsSupplierSearchOpen(true);
+    setSupplierSearchQuery(invoice?.supplierName || invoice?.detectedSupplierName || "");
+    setSupplierSearchResults([]);
+    setSupplierSearchError("");
+    setProductSearchItemId(null);
+    setProductSearchQuery("");
+    setProductSearchResults([]);
+    setProductSearchError("");
+    setEditingItemId(null);
+    setEditItemDraft(null);
+    setErrorMessage("");
+    setSuccessMessage("");
+  }
+
+  function handleCloseSupplierSearch() {
+    setIsSupplierSearchOpen(false);
+    setSupplierSearchQuery("");
+    setSupplierSearchResults([]);
+    setSupplierSearchError("");
+  }
+
   function handleCloseProductSearch() {
     setProductSearchItemId(null);
     setProductSearchQuery("");
@@ -721,6 +817,46 @@ export default function InvoiceDetailsPage() {
     }
   }
 
+  async function handleSelectSupplier(supplierId: string | null) {
+    if (!activeEnterpriseId || !params?.id) {
+      return;
+    }
+
+    setIsSavingSupplier(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+    setSupplierSearchError("");
+
+    try {
+      const response = await fetch(`/api/invoices/${params.id}/supplier`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          enterpriseId: activeEnterpriseId,
+          supplierId,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Не удалось сохранить поставщика.");
+      }
+
+      await loadInvoice(activeEnterpriseId, params.id);
+      handleCloseSupplierSearch();
+      setSuccessMessage(supplierId ? "Поставщик для накладной сохранён." : "Поставщик для накладной сброшен.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось сохранить поставщика.";
+      setSupplierSearchError(message);
+      setErrorMessage(message);
+    } finally {
+      setIsSavingSupplier(false);
+    }
+  }
+
   if (!activeEnterpriseId) {
     return (
       <div className="pageStack">
@@ -795,6 +931,7 @@ export default function InvoiceDetailsPage() {
     isDetectingPriceChanges ||
     isApprovingInvoice ||
     isSavingItemEdit ||
+    isSavingSupplier ||
     isSavingProduct ||
     updatingPriceChangeId !== null;
 
@@ -834,6 +971,66 @@ export default function InvoiceDetailsPage() {
               <span className="invoiceHint">
                 {supplierMatchTypeLabels[invoice.supplierMatchType]} · уверенность {formatNumber(String(invoice.confidence), 2)}
               </span>
+            ) : invoice.supplierId && invoice.confidence !== null ? (
+              <span className="invoiceHint">Выбран вручную · уверенность {formatNumber(String(invoice.confidence), 2)}</span>
+            ) : null}
+            <div className="invoiceSupplierActions">
+              <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
+                {invoice.supplierId ? "Изменить" : "Выбрать поставщика"}
+              </button>
+              {invoice.supplierId ? (
+                <button
+                  type="button"
+                  className="secondaryButton compactButton"
+                  onClick={() => void handleSelectSupplier(null)}
+                  disabled={isBusy}
+                >
+                  Сбросить
+                </button>
+              ) : null}
+            </div>
+            {isSupplierSearchOpen ? (
+              <div className="invoiceItemSearchPanel invoiceSupplierSearchPanel">
+                <label className="field">
+                  <span>Поиск поставщика</span>
+                  <input
+                    type="text"
+                    value={supplierSearchQuery}
+                    onChange={(event) => setSupplierSearchQuery(event.target.value)}
+                    placeholder="Начните вводить название поставщика"
+                    disabled={isBusy}
+                  />
+                </label>
+
+                <div className="invoiceItemSearchActions">
+                  <button type="button" className="secondaryButton compactButton" onClick={handleCloseSupplierSearch} disabled={isBusy}>
+                    Закрыть
+                  </button>
+                </div>
+
+                {supplierSearchError ? <p className="errorText">{supplierSearchError}</p> : null}
+                {isSearchingSuppliers ? <p className="invoiceHint">Ищем поставщиков...</p> : null}
+                {!isSearchingSuppliers && supplierSearchQuery.trim() && supplierSearchResults.length === 0 ? (
+                  <p className="invoiceHint">Поставщики не найдены</p>
+                ) : null}
+
+                {supplierSearchResults.length > 0 ? (
+                  <div className="invoiceItemSearchResults">
+                    {supplierSearchResults.map((supplier) => (
+                      <button
+                        key={supplier.id}
+                        type="button"
+                        className="invoiceItemSearchResult"
+                        onClick={() => void handleSelectSupplier(supplier.id)}
+                        disabled={isBusy}
+                      >
+                        <strong>{supplier.name}</strong>
+                        <span>{supplier.email || supplier.phone || "Без контактов"}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
           <div className="supplierMetaItem">

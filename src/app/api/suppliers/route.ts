@@ -39,6 +39,9 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const enterpriseId = searchParams.get("enterpriseId")?.trim();
   const archivedFilter = searchParams.get("archived")?.trim();
+  const query = searchParams.get("q")?.trim();
+  const limitValue = Number(searchParams.get("limit")?.trim() ?? "20");
+  const limit = Number.isFinite(limitValue) && limitValue > 0 ? Math.min(limitValue, 50) : 20;
 
   if (!enterpriseId) {
     return jsonUtf8({ message: "Параметр enterpriseId обязателен." }, { status: 400 });
@@ -58,8 +61,17 @@ export async function GET(request: Request) {
         : archivedFilter === "all"
           ? {}
           : { archivedAt: null }),
+      ...(query
+        ? {
+            name: {
+              contains: query,
+              mode: "insensitive",
+            },
+          }
+        : {}),
     },
     orderBy: archivedFilter === "only" ? [{ archivedAt: "desc" }, { name: "asc" }] : { name: "asc" },
+    ...(query ? { take: limit } : {}),
   });
 
   return jsonUtf8(suppliers);
