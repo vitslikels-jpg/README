@@ -314,6 +314,44 @@ function getOptimizerScenarioWarnings(scenario: SupplierOptimizerPreviewScenario
   return warnings;
 }
 
+function buildScenarioCopyText(scenario: SupplierOptimizerPreviewScenario) {
+  const scenarioName = getOptimizerScenarioTitle(scenario.type);
+  const statusText = scenario.allMinOrdersMet ? "выполнены" : "не выполнены";
+  const warnings = getOptimizerScenarioWarnings(scenario);
+  const supplierBlocks = scenario.baskets.map((basket) => {
+    const lines = basket.items.map((item, index) => {
+      const quantityText = [item.quantity, item.unit].filter(Boolean).join(" ").trim();
+      const totalText = formatMoney(item.optimizedLineTotal) ?? item.optimizedLineTotal ?? "—";
+      return `${index + 1}. ${item.selectedProductName || item.parsedName || "Товар"}${
+        quantityText ? ` — ${quantityText}` : ""
+      } — ${totalText}`;
+    });
+
+    const basketLines = [basket.supplierName, ...lines];
+
+    if (Number(basket.missingAmount) > 0) {
+      basketLines.push(`Не хватает до минималки: ${formatMoney(basket.missingAmount) ?? basket.missingAmount}`);
+    }
+
+    return basketLines.join("\n");
+  });
+
+  const parts = [
+    `Вариант закупки: ${scenarioName}`,
+    `Сумма: ${formatMoney(scenario.total) ?? scenario.total}`,
+    `Поставщиков: ${scenario.supplierCount}`,
+    `Минималки: ${statusText}`,
+    "",
+    supplierBlocks.join("\n\n"),
+  ];
+
+  if (warnings.length > 0) {
+    parts.push("", "Предупреждения:", ...warnings.map((warning) => `- ${warning}`));
+  }
+
+  return parts.join("\n");
+}
+
 async function copyTextToClipboard(text: string) {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
     try {
@@ -489,6 +527,7 @@ export function OrderOptimizationPage() {
   const [isMatching, setIsMatching] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const [copyingBasketSupplierName, setCopyingBasketSupplierName] = useState<string | null>(null);
+  const [copyingScenarioType, setCopyingScenarioType] = useState<SupplierOptimizerPreviewScenario["type"] | null>(null);
   const [selectingCandidateId, setSelectingCandidateId] = useState<string | null>(null);
   const [aiParseTestSourceText, setAiParseTestSourceText] = useState(
     "бекон 3 кг\nАлиди: рис 5 кг, сахар 10 кг\nВосток-Запад: сыр Galbani 500 г аналог можно",
@@ -764,6 +803,31 @@ export function OrderOptimizationPage() {
     }
   }
 
+  async function handleCopyScenario(scenario: SupplierOptimizerPreviewScenario) {
+    const text = buildScenarioCopyText(scenario);
+
+    if (!text) {
+      return;
+    }
+
+    setCopyingScenarioType(scenario.type);
+    setErrorMessage("");
+
+    try {
+      const copied = await copyTextToClipboard(text);
+
+      if (!copied) {
+        throw new Error("copy failed");
+      }
+
+      setSuccessMessage(`Сценарий "${getOptimizerScenarioTitle(scenario.type)}" скопирован.`);
+    } catch {
+      setErrorMessage(`Не удалось скопировать сценарий "${getOptimizerScenarioTitle(scenario.type)}".`);
+    } finally {
+      setCopyingScenarioType(null);
+    }
+  }
+
   async function handleSelectCandidate(item: OrderOptimizationItem, candidate: OrderOptimizationResult) {
     if (!activeEnterpriseId || !selectedOptimization || selectingCandidateId) {
       return;
@@ -938,6 +1002,16 @@ export function OrderOptimizationPage() {
                         <span>{getOptimizerScenarioStatus(scenario)}</span>
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      className="secondaryButton compactButton"
+                      disabled={copyingScenarioType === scenario.type}
+                      onClick={() => void handleCopyScenario(scenario)}
+                    >
+                      <Copy size={15} />
+                      <span>{copyingScenarioType === scenario.type ? "Копируем..." : "Скопировать сценарий"}</span>
+                    </button>
                   </div>
 
                   <p className="smartOrderHint">{getOptimizerScenarioDescription(scenario.type)}</p>
