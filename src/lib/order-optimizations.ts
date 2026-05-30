@@ -82,6 +82,16 @@ export type SmartOrderSupplierBasketDto = {
   missingAmount: string;
 };
 
+export type SupplierOptimizerPreviewScenarioType = "cheapest" | "cheapest_with_min_orders";
+
+export type SupplierOptimizerPreviewScenarioDto = {
+  type: SupplierOptimizerPreviewScenarioType;
+  total: string;
+  supplierCount: number;
+  allMinOrdersMet: boolean;
+  baskets: SmartOrderSupplierBasketDto[];
+};
+
 type OrderOptimizationParseSourceNotePayload = {
   source: OrderOptimizationParseSource;
   confidence?: number | null;
@@ -266,6 +276,202 @@ function buildSmartOrderSupplierBaskets(
       missingAmount: decimalToMoneyString(missingAmount),
     };
   });
+}
+
+function hasUsableOptimizationResult(
+  result:
+    | (OrderOptimizationResult & {
+        selectedSupplier: Pick<Supplier, "id" | "name" | "minOrderAmount"> | null;
+        selectedProduct: Pick<
+          Product,
+          "id" | "name" | "article" | "brand" | "unit" | "unitsPerPack" | "minOrderQuantity" | "orderStep"
+        > | null;
+      })
+    | null
+    | undefined,
+) {
+  return Boolean(
+    result?.selectedSupplierId &&
+      result.selectedSupplier?.name &&
+      result.selectedProductId &&
+      result.optimizedLineTotal &&
+      result.optimizedLineTotal.gt(0),
+  );
+}
+
+function compareOptimizationResultsByPrice(
+  left: OrderOptimizationWithDetails["items"][number]["results"][number],
+  right: OrderOptimizationWithDetails["items"][number]["results"][number],
+) {
+  if (left.optimizedLineTotal && right.optimizedLineTotal && !left.optimizedLineTotal.eq(right.optimizedLineTotal)) {
+    return left.optimizedLineTotal.lt(right.optimizedLineTotal) ? -1 : 1;
+  }
+
+  if (left.optimizedLineTotal && !right.optimizedLineTotal) {
+    return -1;
+  }
+
+  if (!left.optimizedLineTotal && right.optimizedLineTotal) {
+    return 1;
+  }
+
+  if (left.coverageMode === "no_shortage" && right.coverageMode !== "no_shortage") {
+    return -1;
+  }
+
+  if (right.coverageMode === "no_shortage" && left.coverageMode !== "no_shortage") {
+    return 1;
+  }
+
+  if (left.shortage && right.shortage && !left.shortage.eq(right.shortage)) {
+    return left.shortage.lt(right.shortage) ? -1 : 1;
+  }
+
+  return left.createdAt.getTime() - right.createdAt.getTime();
+}
+
+function buildPreviewOptimizationFromAssignments(
+  optimization: OrderOptimizationWithDetails,
+  assignments: Map<string, string>,
+) {
+  const items = optimization.items.map((item) => ({
+    ...item,
+    selectedCandidateId: assignments.get(item.id) ?? null,
+  }));
+  const baskets = buildSmartOrderSupplierBaskets(items);
+  const total = baskets.reduce((sum, basket) => sum.add(new Prisma.Decimal(basket.total)), new Prisma.Decimal(0));
+
+  return {
+    baskets,
+    total: decimalToMoneyString(total),
+    supplierCount: baskets.length,
+    allMinOrdersMet: baskets.every((basket) => basket.meetsMinOrder),
+  };
+}
+
+function buildCheapestAssignments(optimization: OrderOptimizationWithDetails) {
+  const assignments = new Map<string, string>();
+
+  for (const item of optimization.items) {
+    const bestResult = item.results
+      .filter((result) => hasUsableOptimizationResult(result))
+      .sort(compareOptimizationResultsByPrice)[0];
+
+    if (bestResult) {
+      assignments.set(item.id, bestResult.id);
+    }
+  }
+
+  return assignments;
+}
+
+function buildCheapestWithMinOrdersAssignments(optimization: OrderOptimizationWithDetails) {
+  const assignments = buildCheapestAssignments(optimization);
+
+  while (true) {
+    const currentPreview = buildPreviewOptimizationFromAssignments(optimization, assignments);
+    const failingBaskets = currentPreview.baskets
+      .filter((basket) => !basket.meetsMinOrder && basket.supplierId)
+      .sort((left, right) => Number(right.missingAmount) - Number(left.missingAmount));
+
+    if (failingBaskets.length === 0) {
+      break;
+    }
+
+    let changed = false;
+
+    for (const basket of failingBaskets) {
+      const basketItemIds = new Set(basket.items.map((item) => item.itemId));
+      const destinationSupplierIds = new Set(
+        currentPreview.baskets
+          .filter(
+            (candidateBasket) =>
+              candidateBasket.supplierId &&
+              candidateBasket.supplierId !== basket.supplierId &&
+              (candidateBasket.meetsMinOrder || !candidateBasket.minOrderAmount),
+          )
+          .map((candidateBasket) => candidateBasket.supplierId as string),
+      );
+
+      if (destinationSupplierIds.size === 0) {
+        continue;
+      }
+
+      const movePlan = new Map<string, string>();
+      let canMoveWholeBasket = true;
+
+      for (const item of optimization.items) {
+        if (!basketItemIds.has(item.id)) {
+          continue;
+        }
+
+        const alternative = item.results
+          .filter(
+            (result) =>
+              hasUsableOptimizationResult(result) &&
+              result.selectedSupplierId !== basket.supplierId &&
+              result.selectedSupplierId &&
+              destinationSupplierIds.has(result.selectedSupplierId),
+          )
+          .sort(compareOptimizationResultsByPrice)[0];
+
+        if (!alternative) {
+          canMoveWholeBasket = false;
+          break;
+        }
+
+        movePlan.set(item.id, alternative.id);
+      }
+
+      if (!canMoveWholeBasket || movePlan.size === 0) {
+        continue;
+      }
+
+      for (const [itemId, resultId] of movePlan.entries()) {
+        assignments.set(itemId, resultId);
+      }
+
+      changed = true;
+      break;
+    }
+
+    if (!changed) {
+      break;
+    }
+  }
+
+  return assignments;
+}
+
+export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWithDetails): {
+  scenarios: SupplierOptimizerPreviewScenarioDto[];
+} {
+  const cheapestAssignments = buildCheapestAssignments(optimization);
+  const cheapestPreview = buildPreviewOptimizationFromAssignments(optimization, cheapestAssignments);
+  const cheapestWithMinOrdersAssignments = buildCheapestWithMinOrdersAssignments(optimization);
+  const cheapestWithMinOrdersPreview = buildPreviewOptimizationFromAssignments(
+    optimization,
+    cheapestWithMinOrdersAssignments,
+  );
+
+  return {
+    scenarios: [
+      {
+        type: "cheapest",
+        total: cheapestPreview.total,
+        supplierCount: cheapestPreview.supplierCount,
+        allMinOrdersMet: cheapestPreview.allMinOrdersMet,
+        baskets: cheapestPreview.baskets,
+      },
+      {
+        type: "cheapest_with_min_orders",
+        total: cheapestWithMinOrdersPreview.total,
+        supplierCount: cheapestWithMinOrdersPreview.supplierCount,
+        allMinOrdersMet: cheapestWithMinOrdersPreview.allMinOrdersMet,
+        baskets: cheapestWithMinOrdersPreview.baskets,
+      },
+    ],
+  };
 }
 
 function hasUsefulName(value: string | null | undefined) {
