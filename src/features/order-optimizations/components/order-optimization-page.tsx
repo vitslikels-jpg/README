@@ -8,6 +8,8 @@ import type {
   OrderOptimizationListItem,
   OrderOptimizationResult,
   OrderOptimizationSupplierBasket,
+  SupplierOptimizerPreviewResponse,
+  SupplierOptimizerPreviewScenario,
   SmartOrderAiParseTestItem,
   SmartOrderAiParseTestResponse,
 } from "@/features/order-optimizations/types";
@@ -203,6 +205,53 @@ function getParseSourceBadgeLabel(parseSource: OrderOptimizationItem["parseSourc
   return "Regex parse";
 }
 
+function getOptimizerScenarioTitle(type: SupplierOptimizerPreviewScenario["type"]) {
+  if (type === "cheapest_with_min_orders") {
+    return "С учётом минималок";
+  }
+
+  if (type === "minimize_suppliers") {
+    return "Минимум поставщиков";
+  }
+
+  return "Самый дешёвый";
+}
+
+function formatSignedMoney(value: string) {
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue) || numberValue === 0) {
+    return formatMoney(value) ?? value;
+  }
+
+  const prefix = numberValue > 0 ? "+" : "−";
+  return `${prefix}${formatMoney(Math.abs(numberValue)) ?? Math.abs(numberValue)}`;
+}
+
+function formatSignedNumber(value: number) {
+  if (value === 0) {
+    return "0";
+  }
+
+  return value > 0 ? `+${value}` : String(value);
+}
+
+function getOptimizerScenarioStatus(scenario: SupplierOptimizerPreviewScenario) {
+  if (scenario.diagnostics.unresolvedItemsCount > 0) {
+    return "Есть нерешённые позиции";
+  }
+
+  if (scenario.allMinOrdersMet) {
+    return "Минималки выполнены";
+  }
+
+  if (scenario.diagnostics.underMinSuppliers.length > 0) {
+    return "Есть поставщики ниже минималки";
+  }
+
+  return "Без замечаний";
+}
+
 async function copyTextToClipboard(text: string) {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
     try {
@@ -340,6 +389,32 @@ async function runAiParseTest(sourceText: string) {
   return responseBody;
 }
 
+async function loadOptimizerPreview(enterpriseId: string, optimizationId: string) {
+  const response = await fetch(
+    `/api/order-optimizations/${optimizationId}/optimizer-preview?enterpriseId=${encodeURIComponent(enterpriseId)}`,
+  );
+  const responseBody = (await response.json().catch(() => null)) as
+    | SupplierOptimizerPreviewResponse
+    | { message?: string }
+    | null;
+
+  if (
+    !response.ok ||
+    !responseBody ||
+    isApiErrorResponse(responseBody) ||
+    !("scenarios" in responseBody) ||
+    !Array.isArray(responseBody.scenarios)
+  ) {
+    throw new Error(
+      isApiErrorResponse(responseBody) && responseBody.message
+        ? responseBody.message
+        : "Не удалось загрузить варианты закупки.",
+    );
+  }
+
+  return responseBody;
+}
+
 export function OrderOptimizationPage() {
   const { activeEnterpriseId } = useEnterprise();
   const [sourceText, setSourceText] = useState("");
@@ -359,6 +434,9 @@ export function OrderOptimizationPage() {
   const [aiParseTestResult, setAiParseTestResult] = useState<SmartOrderAiParseTestResponse | null>(null);
   const [aiParseTestError, setAiParseTestError] = useState("");
   const [isAiParseTesting, setIsAiParseTesting] = useState(false);
+  const [optimizerPreview, setOptimizerPreview] = useState<SupplierOptimizerPreviewResponse | null>(null);
+  const [optimizerPreviewError, setOptimizerPreviewError] = useState("");
+  const [isOptimizerPreviewLoading, setIsOptimizerPreviewLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -371,6 +449,9 @@ export function OrderOptimizationPage() {
     setSuccessMessage("");
     setAiParseTestResult(null);
     setAiParseTestError("");
+    setOptimizerPreview(null);
+    setOptimizerPreviewError("");
+    setIsOptimizerPreviewLoading(false);
   }, [activeEnterpriseId]);
 
   useEffect(() => {
@@ -485,6 +566,44 @@ export function OrderOptimizationPage() {
       cancelled = true;
     };
   }, [activeEnterpriseId, debouncedQuery, pickerItem, selectedOptimization]);
+
+  useEffect(() => {
+    if (!activeEnterpriseId || !selectedOptimization?.id) {
+      setOptimizerPreview(null);
+      setOptimizerPreviewError("");
+      setIsOptimizerPreviewLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsOptimizerPreviewLoading(true);
+    setOptimizerPreviewError("");
+
+    void (async () => {
+      try {
+        const preview = await loadOptimizerPreview(activeEnterpriseId, selectedOptimization.id);
+
+        if (!cancelled) {
+          setOptimizerPreview(preview);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setOptimizerPreview(null);
+          setOptimizerPreviewError(
+            error instanceof Error ? error.message : "Не удалось загрузить варианты закупки.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsOptimizerPreviewLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEnterpriseId, selectedOptimization?.id]);
 
   async function handleRunSmartOrder() {
     if (!activeEnterpriseId || !sourceText.trim()) {
@@ -728,6 +847,119 @@ export function OrderOptimizationPage() {
     </section>
   );
 
+  const optimizerPreviewSection =
+    selectedOptimization && smartOrderGroups.length > 0 ? (
+      <section className="smartOrderBasketsSection">
+        <div className="smartOrderCardHeader smartOrderCardHeaderSimple">
+          <div>
+            <h3 className="sectionTitle">Варианты закупки</h3>
+          </div>
+        </div>
+
+        {isOptimizerPreviewLoading ? <p className="smartOrderHint">Считаем варианты закупки...</p> : null}
+        {optimizerPreviewError ? <p className="smartOrderHint">{optimizerPreviewError}</p> : null}
+
+        {optimizerPreview?.scenarios?.length ? (
+          <div className="smartOrderSupplierList">
+            {optimizerPreview.scenarios.map((scenario) => (
+              <section key={scenario.type} className="smartOrderSupplierBlock">
+                <div className="smartOrderSupplierTop">
+                  <div className="smartOrderBasketHeader">
+                    <h3>{getOptimizerScenarioTitle(scenario.type)}</h3>
+                    <div className="smartOrderBasketMeta">
+                      <span>Сумма: {formatMoney(scenario.total) ?? scenario.total}</span>
+                      <span>Поставщики: {scenario.supplierCount}</span>
+                      <span>{getOptimizerScenarioStatus(scenario)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="smartOrderSupplierRows">
+                  <div className="smartOrderRow">
+                    <div className="smartOrderRowMain">
+                      <span className="smartOrderRowName">Минималки</span>
+                    </div>
+                    <span className="smartOrderRowMeta">
+                      {scenario.allMinOrdersMet ? "Выполнены" : "Есть ниже минималки"}
+                    </span>
+                    <span className="smartOrderRowTotal">
+                      Δ {formatSignedMoney(scenario.totalDeltaVsCheapest)}
+                    </span>
+                  </div>
+
+                  <div className="smartOrderRow">
+                    <div className="smartOrderRowMain">
+                      <span className="smartOrderRowName">Изменение поставщиков</span>
+                    </div>
+                    <span className="smartOrderRowMeta">
+                      Δ {formatSignedNumber(scenario.supplierCountDeltaVsCheapest)}
+                    </span>
+                    <span className="smartOrderRowTotal">
+                      Мин. заказов: {formatSignedNumber(scenario.minOrdersMetDeltaVsCheapest)}
+                    </span>
+                  </div>
+
+                  <div className="smartOrderRow">
+                    <div className="smartOrderRowMain">
+                      <span className="smartOrderRowName">Диагностика</span>
+                    </div>
+                    <span className="smartOrderRowMeta">
+                      Нерешённые: {scenario.diagnostics.unresolvedItemsCount}
+                    </span>
+                    <span className="smartOrderRowTotal">Пропущенные: {scenario.diagnostics.skippedItemsCount}</span>
+                  </div>
+                </div>
+
+                <p className="smartOrderHint">{scenario.diagnostics.explanation}</p>
+
+                <details>
+                  <summary>Детали</summary>
+
+                  {scenario.diagnostics.underMinSuppliers.length ? (
+                    <div className="smartOrderSupplierRows" style={{ marginTop: 12 }}>
+                      {scenario.diagnostics.underMinSuppliers.map((supplier) => (
+                        <div
+                          key={`${scenario.type}-${supplier.supplierId ?? supplier.supplierName}`}
+                          className="smartOrderRow"
+                        >
+                          <div className="smartOrderRowMain">
+                            <span className="smartOrderRowName">{supplier.supplierName}</span>
+                          </div>
+                          <span className="smartOrderRowMeta">
+                            Не хватает {formatMoney(supplier.missingAmount) ?? supplier.missingAmount}
+                          </span>
+                          <span className="smartOrderRowTotal">{supplier.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="smartOrderSupplierRows" style={{ marginTop: 12 }}>
+                    {scenario.baskets.map((basket) => (
+                      <div key={`${scenario.type}-${basket.supplierId ?? basket.supplierName}`} className="smartOrderRow">
+                        <div className="smartOrderRowMain">
+                          <span className="smartOrderRowName">{basket.supplierName}</span>
+                        </div>
+                        <span className="smartOrderRowMeta">
+                          {basket.itemsCount} поз. · {basket.meetsMinOrder ? "ok" : "ниже минималки"}
+                        </span>
+                        <span className="smartOrderRowTotal">
+                          {formatMoney(basket.total) ?? basket.total}
+                          {basket.meetsMinOrder
+                            ? ""
+                            : ` · не хватает ${formatMoney(basket.missingAmount) ?? basket.missingAmount}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </section>
+            ))}
+          </div>
+        ) : null}
+      </section>
+    ) : null;
+
   if (!activeEnterpriseId) {
     return (
       <div className="pageStack">
@@ -930,6 +1162,8 @@ export function OrderOptimizationPage() {
                   </div>
                 </section>
               ) : null}
+
+              {optimizerPreviewSection}
             </>
           )}
         </section>

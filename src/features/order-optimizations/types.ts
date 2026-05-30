@@ -72,6 +72,18 @@ export type SmartOrderAiParseTestResponse = {
   items: SmartOrderAiParseTestItem[];
 };
 
+export type SupplierOptimizerPreviewScenarioType =
+  | "cheapest"
+  | "cheapest_with_min_orders"
+  | "minimize_suppliers";
+
+export type SupplierOptimizerPreviewUnderMinReason =
+  | "no_alternative_candidates"
+  | "no_target_supplier_meets_min_order"
+  | "partial_transfer_not_allowed"
+  | "transfer_would_increase_total_too_much"
+  | "unknown";
+
 export type OrderOptimizationResult = {
   id: string;
   optimizationId: string;
@@ -129,4 +141,36 @@ export type OrderOptimizationSupplierBasket = {
   minOrderAmount: string | null;
   meetsMinOrder: boolean;
   missingAmount: string;
+};
+
+export type SupplierOptimizerPreviewUnderMinSupplier = {
+  supplierId: string | null;
+  supplierName: string;
+  total: string;
+  minOrderAmount: string | null;
+  missingAmount: string;
+  reason: SupplierOptimizerPreviewUnderMinReason;
+};
+
+export type SupplierOptimizerPreviewScenarioDiagnostics = {
+  underMinSuppliers: SupplierOptimizerPreviewUnderMinSupplier[];
+  unresolvedItemsCount: number;
+  skippedItemsCount: number;
+  explanation: string;
+};
+
+export type SupplierOptimizerPreviewScenario = {
+  type: SupplierOptimizerPreviewScenarioType;
+  total: string;
+  supplierCount: number;
+  allMinOrdersMet: boolean;
+  baskets: OrderOptimizationSupplierBasket[];
+  diagnostics: SupplierOptimizerPreviewScenarioDiagnostics;
+  totalDeltaVsCheapest: string;
+  supplierCountDeltaVsCheapest: number;
+  minOrdersMetDeltaVsCheapest: number;
+};
+
+export type SupplierOptimizerPreviewResponse = {
+  scenarios: SupplierOptimizerPreviewScenario[];
 };
