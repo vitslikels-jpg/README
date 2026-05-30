@@ -158,6 +158,16 @@ export type SupplierOptimizerPreviewScenarioDiagnostics = {
   underMinSuppliers: SupplierOptimizerPreviewUnderMinSupplier[];
   unresolvedItemsCount: number;
   skippedItemsCount: number;
+  transferredItemsCount: number;
+  closedUnderMinSuppliersCount: number;
+  totalIncreasePercent: number;
+  transferActions: Array<{
+    itemId: string;
+    parsedName: string | null;
+    fromSupplierName: string;
+    toSupplierName: string;
+    costDelta: string;
+  }>;
   explanation: string;
 };
 
