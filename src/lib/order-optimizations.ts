@@ -82,7 +82,7 @@ export type SmartOrderSupplierBasketDto = {
   missingAmount: string;
 };
 
-export type SupplierOptimizerPreviewScenarioType = "cheapest" | "cheapest_with_min_orders";
+export type SupplierOptimizerPreviewScenarioType = "cheapest" | "cheapest_with_min_orders" | "minimize_suppliers";
 
 export type SupplierOptimizerPreviewUnderMinReason =
   | "no_alternative_candidates"
@@ -392,6 +392,103 @@ function buildCheapestAssignments(optimization: OrderOptimizationWithDetails) {
   return assignments;
 }
 
+function buildMinimizeSuppliersAssignments(optimization: OrderOptimizationWithDetails) {
+  const assignments = new Map<string, string>();
+  const remainingItemIds = new Set(optimization.items.map((item) => item.id));
+
+  while (remainingItemIds.size > 0) {
+    const supplierPlans = new Map<
+      string,
+      {
+        supplierId: string;
+        supplierName: string;
+        minOrderAmount: Prisma.Decimal | null;
+        resultIdsByItemId: Map<string, string>;
+        total: Prisma.Decimal;
+        noShortageCount: number;
+      }
+    >();
+
+    for (const item of optimization.items) {
+      if (!remainingItemIds.has(item.id)) {
+        continue;
+      }
+
+      const bestResultBySupplier = new Map<string, OrderOptimizationWithDetails["items"][number]["results"][number]>();
+
+      for (const result of item.results) {
+        if (!hasUsableOptimizationResult(result) || !result.selectedSupplierId || !result.selectedSupplier?.name) {
+          continue;
+        }
+
+        const currentBest = bestResultBySupplier.get(result.selectedSupplierId);
+
+        if (!currentBest || compareOptimizationResultsByPrice(result, currentBest) < 0) {
+          bestResultBySupplier.set(result.selectedSupplierId, result);
+        }
+      }
+
+      for (const result of bestResultBySupplier.values()) {
+        const plan = supplierPlans.get(result.selectedSupplierId!) ?? {
+          supplierId: result.selectedSupplierId!,
+          supplierName: result.selectedSupplier!.name,
+          minOrderAmount: result.selectedSupplier!.minOrderAmount ?? null,
+          resultIdsByItemId: new Map<string, string>(),
+          total: new Prisma.Decimal(0),
+          noShortageCount: 0,
+        };
+
+        plan.resultIdsByItemId.set(item.id, result.id);
+        plan.total = plan.total.add(result.optimizedLineTotal as Prisma.Decimal);
+
+        if (result.coverageMode === "no_shortage") {
+          plan.noShortageCount += 1;
+        }
+
+        supplierPlans.set(result.selectedSupplierId!, plan);
+      }
+    }
+
+    const bestSupplierPlan = Array.from(supplierPlans.values()).sort((left, right) => {
+      if (left.resultIdsByItemId.size !== right.resultIdsByItemId.size) {
+        return right.resultIdsByItemId.size - left.resultIdsByItemId.size;
+      }
+
+      if (!left.total.eq(right.total)) {
+        return left.total.lt(right.total) ? -1 : 1;
+      }
+
+      if (left.noShortageCount !== right.noShortageCount) {
+        return right.noShortageCount - left.noShortageCount;
+      }
+
+      const leftMissingAmount =
+        left.minOrderAmount && left.total.lt(left.minOrderAmount) ? left.minOrderAmount.sub(left.total) : new Prisma.Decimal(0);
+      const rightMissingAmount =
+        right.minOrderAmount && right.total.lt(right.minOrderAmount)
+          ? right.minOrderAmount.sub(right.total)
+          : new Prisma.Decimal(0);
+
+      if (!leftMissingAmount.eq(rightMissingAmount)) {
+        return leftMissingAmount.lt(rightMissingAmount) ? -1 : 1;
+      }
+
+      return left.supplierName.localeCompare(right.supplierName, "ru");
+    })[0];
+
+    if (!bestSupplierPlan || bestSupplierPlan.resultIdsByItemId.size === 0) {
+      break;
+    }
+
+    for (const [itemId, resultId] of bestSupplierPlan.resultIdsByItemId.entries()) {
+      assignments.set(itemId, resultId);
+      remainingItemIds.delete(itemId);
+    }
+  }
+
+  return assignments;
+}
+
 function buildSkippedItemsCount(optimization: OrderOptimizationWithDetails) {
   return optimization.items.filter((item) => item.results.filter((result) => hasUsableOptimizationResult(result)).length === 0).length;
 }
@@ -451,6 +548,8 @@ function buildScenarioDiagnostics(params: {
   const explanation =
     params.type === "cheapest"
       ? "Локально самый дешёвый candidate по каждой позиции без учёта минималок поставщиков."
+      : params.type === "minimize_suppliers"
+        ? "Жадно выбирает поставщика, который закрывает максимум оставшихся позиций. При равенстве: ниже total, больше no_shortage, меньше missingAmount."
       : underMinSuppliers.length === 0
         ? "Минималки выполнены или under-min корзины удалось убрать полным переносом позиций."
         : "Минималки не выполнены: текущий greedy пытается переносить только корзину целиком в уже подходящих поставщиков.";
@@ -592,6 +691,8 @@ export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWit
     optimization,
     cheapestWithMinOrders.assignments,
   );
+  const minimizeSuppliersAssignments = buildMinimizeSuppliersAssignments(optimization);
+  const minimizeSuppliersPreview = buildPreviewOptimizationFromAssignments(optimization, minimizeSuppliersAssignments);
   const cheapestTotalDecimal = new Prisma.Decimal(cheapestPreview.total);
 
   return {
@@ -627,6 +728,22 @@ export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWit
           cheapestSupplierCount: cheapestPreview.supplierCount,
           cheapestAllMinOrdersMet: cheapestPreview.allMinOrdersMet,
           underMinReasons: cheapestWithMinOrders.underMinReasons,
+        }),
+      },
+      {
+        type: "minimize_suppliers",
+        total: minimizeSuppliersPreview.total,
+        supplierCount: minimizeSuppliersPreview.supplierCount,
+        allMinOrdersMet: minimizeSuppliersPreview.allMinOrdersMet,
+        baskets: minimizeSuppliersPreview.baskets,
+        ...buildScenarioDiagnostics({
+          optimization,
+          type: "minimize_suppliers",
+          assignments: minimizeSuppliersAssignments,
+          baskets: minimizeSuppliersPreview.baskets,
+          cheapestTotal: cheapestTotalDecimal,
+          cheapestSupplierCount: cheapestPreview.supplierCount,
+          cheapestAllMinOrdersMet: cheapestPreview.allMinOrdersMet,
         }),
       },
     ],
