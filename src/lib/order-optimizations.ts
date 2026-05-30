@@ -124,6 +124,16 @@ export type SupplierOptimizerPreviewRecommendationDto = {
   recommendationReason: string;
 };
 
+export type SupplierOptimizerPreviewQualityStatus = "excellent" | "warning" | "poor";
+
+export type SupplierOptimizerPreviewQualityDto = {
+  totalItems: number;
+  usableItems: number;
+  problemItems: number;
+  qualityPercent: number;
+  qualityStatus: SupplierOptimizerPreviewQualityStatus;
+};
+
 type OrderOptimizationParseSourceNotePayload = {
   source: OrderOptimizationParseSource;
   confidence?: number | null;
@@ -688,7 +698,8 @@ function buildCheapestWithMinOrdersAssignments(optimization: OrderOptimizationWi
 
 export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWithDetails): {
   scenarios: SupplierOptimizerPreviewScenarioDto[];
-} & SupplierOptimizerPreviewRecommendationDto {
+} & SupplierOptimizerPreviewRecommendationDto &
+  SupplierOptimizerPreviewQualityDto {
   const cheapestAssignments = buildCheapestAssignments(optimization);
   const cheapestPreview = buildPreviewOptimizationFromAssignments(optimization, cheapestAssignments);
   const cheapestWithMinOrders = buildCheapestWithMinOrdersAssignments(optimization);
@@ -699,6 +710,25 @@ export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWit
   const minimizeSuppliersAssignments = buildMinimizeSuppliersAssignments(optimization);
   const minimizeSuppliersPreview = buildPreviewOptimizationFromAssignments(optimization, minimizeSuppliersAssignments);
   const cheapestTotalDecimal = new Prisma.Decimal(cheapestPreview.total);
+  const totalItems = optimization.items.length;
+  const usableItems = optimization.items.reduce((count, item) => {
+    const selectedResult = item.selectedCandidateId ? findOptimizationResultById(optimization, item.selectedCandidateId) : null;
+
+    if (
+      item.selectedCandidateId &&
+      item.matchStatus !== "not_found" &&
+      selectedResult?.selectedSupplierId &&
+      selectedResult.optimizedLineTotal
+    ) {
+      return count + 1;
+    }
+
+    return count;
+  }, 0);
+  const problemItems = Math.max(totalItems - usableItems, 0);
+  const qualityPercent = totalItems > 0 ? Math.round((usableItems / totalItems) * 100) : 0;
+  const qualityStatus: SupplierOptimizerPreviewQualityStatus =
+    qualityPercent >= 90 ? "excellent" : qualityPercent >= 70 ? "warning" : "poor";
   const cheapestWithMinOrdersDeltaRatio =
     Number(cheapestWithMinOrdersPreview.total) > 0 && Number(cheapestPreview.total) > 0
       ? (Number(cheapestWithMinOrdersPreview.total) - Number(cheapestPreview.total)) / Number(cheapestPreview.total)
@@ -725,6 +755,11 @@ export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWit
   return {
     recommendedScenarioType,
     recommendationReason,
+    totalItems,
+    usableItems,
+    problemItems,
+    qualityPercent,
+    qualityStatus,
     scenarios: [
       {
         type: "cheapest",

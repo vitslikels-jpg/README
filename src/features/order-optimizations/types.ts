@@ -77,6 +77,8 @@ export type SupplierOptimizerPreviewScenarioType =
   | "cheapest_with_min_orders"
   | "minimize_suppliers";
 
+export type SupplierOptimizerPreviewQualityStatus = "excellent" | "warning" | "poor";
+
 export type SupplierOptimizerPreviewUnderMinReason =
   | "no_alternative_candidates"
   | "no_target_supplier_meets_min_order"
@@ -174,5 +176,10 @@ export type SupplierOptimizerPreviewScenario = {
 export type SupplierOptimizerPreviewResponse = {
   recommendedScenarioType: SupplierOptimizerPreviewScenarioType;
   recommendationReason: string;
+  totalItems: number;
+  usableItems: number;
+  problemItems: number;
+  qualityPercent: number;
+  qualityStatus: SupplierOptimizerPreviewQualityStatus;
   scenarios: SupplierOptimizerPreviewScenario[];
 };

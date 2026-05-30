@@ -8,6 +8,7 @@ import type {
   OrderOptimizationListItem,
   OrderOptimizationResult,
   OrderOptimizationSupplierBasket,
+  SupplierOptimizerPreviewQualityStatus,
   SupplierOptimizerPreviewResponse,
   SupplierOptimizerPreviewScenario,
   SmartOrderAiParseTestItem,
@@ -314,6 +315,25 @@ function getOptimizerScenarioWarnings(scenario: SupplierOptimizerPreviewScenario
   return warnings;
 }
 
+function isEmptyOptimizerScenario(scenario: SupplierOptimizerPreviewScenario) {
+  const totalValue = Number(scenario.total);
+  return scenario.supplierCount === 0 || !Number.isFinite(totalValue) || totalValue <= 0;
+}
+
+function getOptimizerPreviewQualitySummary(
+  qualityPercent: number,
+  qualityStatus: SupplierOptimizerPreviewQualityStatus,
+) {
+  if (qualityStatus === "excellent") {
+    return `${qualityPercent}% — Отлично`;
+  }
+
+  if (qualityStatus === "warning") {
+    return `${qualityPercent}% — Требуется проверка проблемных позиций`;
+  }
+
+  return `${qualityPercent}% — Недостаточно данных для надёжной оптимизации`;
+}
 function buildScenarioCopyText(scenario: SupplierOptimizerPreviewScenario) {
   const scenarioName = getOptimizerScenarioTitle(scenario.type);
   const statusText = scenario.allMinOrdersMet ? "выполнены" : "не выполнены";
@@ -978,18 +998,36 @@ export function OrderOptimizationPage() {
       <section className="smartOrderBasketsSection">
         <div className="smartOrderCardHeader smartOrderCardHeaderSimple">
           <div>
-            <h3 className="sectionTitle">???????????????? ??????????????</h3>
+            <h3 className="sectionTitle">Варианты закупки</h3>
           </div>
         </div>
 
-        {isOptimizerPreviewLoading ? <p className="smartOrderHint">?????????????? ???????????????? ??????????????...</p> : null}
+        {isOptimizerPreviewLoading ? <p className="smartOrderHint">Загружаем варианты закупки...</p> : null}
         {optimizerPreviewError ? <p className="smartOrderHint">{optimizerPreviewError}</p> : null}
+        {optimizerPreview ? (
+          <div style={{ marginBottom: 16 }}>
+            <p className="smartOrderHint">
+              <strong>Качество расчёта:</strong>{" "}
+              {getOptimizerPreviewQualitySummary(optimizerPreview.qualityPercent, optimizerPreview.qualityStatus)}
+            </p>
+            <p className="smartOrderHint">
+              Используемо позиций: {optimizerPreview.usableItems} из {optimizerPreview.totalItems}. Проблемных:{" "}
+              {optimizerPreview.problemItems}.
+            </p>
+            {optimizerPreview.qualityPercent < 70 ? (
+              <p className="smartOrderHint">
+                Сначала исправьте проблемные позиции. Варианты закупки могут быть неточными.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {optimizerPreview?.scenarios?.length ? (
           <div className="smartOrderSupplierList">
             {optimizerPreview.scenarios.map((scenario) => {
               const tradeoff = getOptimizerScenarioTradeoff(scenario);
               const warnings = getOptimizerScenarioWarnings(scenario);
+              const isEmptyScenario = isEmptyOptimizerScenario(scenario);
 
               return (
                 <section key={scenario.type} className="smartOrderSupplierBlock">
@@ -997,8 +1035,8 @@ export function OrderOptimizationPage() {
                     <div className="smartOrderBasketHeader">
                       <h3>{getOptimizerScenarioTitle(scenario.type)}</h3>
                       <div className="smartOrderBasketMeta">
-                        <span>??????????: {formatMoney(scenario.total) ?? scenario.total}</span>
-                        <span>????????????????????: {scenario.supplierCount}</span>
+                        <span>Сумма: {formatMoney(scenario.total) ?? scenario.total}</span>
+                        <span>Поставщиков: {scenario.supplierCount}</span>
                         <span>{getOptimizerScenarioStatus(scenario)}</span>
                         {optimizerPreview.recommendedScenarioType === scenario.type ? (
                           <span className="statusPill">Рекомендуемый вариант</span>
@@ -1006,15 +1044,17 @@ export function OrderOptimizationPage() {
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      className="secondaryButton compactButton"
-                      disabled={copyingScenarioType === scenario.type}
-                      onClick={() => void handleCopyScenario(scenario)}
-                    >
-                      <Copy size={15} />
-                      <span>{copyingScenarioType === scenario.type ? "Копируем..." : "Скопировать сценарий"}</span>
-                    </button>
+                    {!isEmptyScenario ? (
+                      <button
+                        type="button"
+                        className="secondaryButton compactButton"
+                        disabled={copyingScenarioType === scenario.type}
+                        onClick={() => void handleCopyScenario(scenario)}
+                      >
+                        <Copy size={15} />
+                        <span>{copyingScenarioType === scenario.type ? "Копируем..." : "Скопировать сценарий"}</span>
+                      </button>
+                    ) : null}
                   </div>
 
                   <p className="smartOrderHint">{getOptimizerScenarioDescription(scenario.type)}</p>
@@ -1022,85 +1062,93 @@ export function OrderOptimizationPage() {
                     <p className="smartOrderHint">{optimizerPreview.recommendationReason}</p>
                   ) : null}
 
-                  <div className="smartOrderSupplierRows">
-                    <div className="smartOrderRow">
-                      <div className="smartOrderRowMain">
-                        <span className="smartOrderRowName">Tradeoff</span>
-                      </div>
-                      <span className="smartOrderRowMeta">{tradeoff.priceText}</span>
-                      <span className="smartOrderRowTotal">{tradeoff.suppliersText}</span>
-                    </div>
-
-                    <div className="smartOrderRow">
-                      <div className="smartOrderRowMain">
-                        <span className="smartOrderRowName">??????????????????</span>
-                      </div>
-                      <span className="smartOrderRowMeta">{tradeoff.minOrdersText}</span>
-                      <span className="smartOrderRowTotal">? {formatSignedMoney(scenario.totalDeltaVsCheapest)}</span>
-                    </div>
-
-                    <div className="smartOrderRow">
-                      <div className="smartOrderRowMain">
-                        <span className="smartOrderRowName">????????????</span>
-                      </div>
-                      <span className="smartOrderRowMeta">????????????????????: ? {formatSignedNumber(scenario.supplierCountDeltaVsCheapest)}</span>
-                      <span className="smartOrderRowTotal">??????. ??????????????: {formatSignedNumber(scenario.minOrdersMetDeltaVsCheapest)}</span>
-                    </div>
-                  </div>
-
-                  {warnings.length ? (
-                    <div className="smartOrderProblemReasons">
-                      {warnings.map((warning) => (
-                        <span key={`${scenario.type}-${warning}`} className="statusPill smartOrderProblemReason">
-                          {warning}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <p className="smartOrderHint">{scenario.diagnostics.explanation}</p>
-
-                  <details>
-                    <summary>????????????</summary>
-
-                    {scenario.diagnostics.underMinSuppliers.length ? (
-                      <div className="smartOrderSupplierRows" style={{ marginTop: 12 }}>
-                        {scenario.diagnostics.underMinSuppliers.map((supplier) => (
-                          <div
-                            key={`${scenario.type}-${supplier.supplierId ?? supplier.supplierName}`}
-                            className="smartOrderRow"
-                          >
-                            <div className="smartOrderRowMain">
-                              <span className="smartOrderRowName">{supplier.supplierName}</span>
-                            </div>
-                            <span className="smartOrderRowMeta">
-                              ???? ?????????????? {formatMoney(supplier.missingAmount) ?? supplier.missingAmount}
-                            </span>
-                            <span className="smartOrderRowTotal">{supplier.reason}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    <div className="smartOrderSupplierRows" style={{ marginTop: 12 }}>
-                      {scenario.baskets.map((basket) => (
-                        <div key={`${scenario.type}-${basket.supplierId ?? basket.supplierName}`} className="smartOrderRow">
+                  {isEmptyScenario ? (
+                    <p className="smartOrderHint">Недостаточно подобранных товаров для расчёта сценариев закупки.</p>
+                  ) : (
+                    <>
+                      <div className="smartOrderSupplierRows">
+                        <div className="smartOrderRow">
                           <div className="smartOrderRowMain">
-                            <span className="smartOrderRowName">{basket.supplierName}</span>
+                            <span className="smartOrderRowName">Tradeoff</span>
+                          </div>
+                          <span className="smartOrderRowMeta">{tradeoff.priceText}</span>
+                          <span className="smartOrderRowTotal">{tradeoff.suppliersText}</span>
+                        </div>
+
+                        <div className="smartOrderRow">
+                          <div className="smartOrderRowMain">
+                            <span className="smartOrderRowName">Минималки</span>
+                          </div>
+                          <span className="smartOrderRowMeta">{tradeoff.minOrdersText}</span>
+                          <span className="smartOrderRowTotal">{formatSignedMoney(scenario.totalDeltaVsCheapest)}</span>
+                        </div>
+
+                        <div className="smartOrderRow">
+                          <div className="smartOrderRowMain">
+                            <span className="smartOrderRowName">Сводка</span>
                           </div>
                           <span className="smartOrderRowMeta">
-                            {basket.itemsCount} ??????. ? {basket.meetsMinOrder ? 'ok' : '???????? ??????????????????'}
+                            Поставщики: {formatSignedNumber(scenario.supplierCountDeltaVsCheapest)}
                           </span>
                           <span className="smartOrderRowTotal">
-                            {formatMoney(basket.total) ?? basket.total}
-                            {basket.meetsMinOrder
-                              ? ''
-                              : ` ? ???? ?????????????? ${formatMoney(basket.missingAmount) ?? basket.missingAmount}`}
+                            Мин. суммы: {formatSignedNumber(scenario.minOrdersMetDeltaVsCheapest)}
                           </span>
                         </div>
-                      ))}
-                    </div>
-                  </details>
+                      </div>
+
+                      {warnings.length ? (
+                        <div className="smartOrderProblemReasons">
+                          {warnings.map((warning) => (
+                            <span key={`${scenario.type}-${warning}`} className="statusPill smartOrderProblemReason">
+                              {warning}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <p className="smartOrderHint">{scenario.diagnostics.explanation}</p>
+
+                      <details>
+                        <summary>Детали</summary>
+
+                        {scenario.diagnostics.underMinSuppliers.length ? (
+                          <div className="smartOrderSupplierRows" style={{ marginTop: 12 }}>
+                            {scenario.diagnostics.underMinSuppliers.map((supplier) => (
+                              <div
+                                key={`${scenario.type}-${supplier.supplierId ?? supplier.supplierName}`}
+                                className="smartOrderRow"
+                              >
+                                <div className="smartOrderRowMain">
+                                  <span className="smartOrderRowName">{supplier.supplierName}</span>
+                                </div>
+                                <span className="smartOrderRowMeta">
+                                  Не хватает до минималки {formatMoney(supplier.missingAmount) ?? supplier.missingAmount}
+                                </span>
+                                <span className="smartOrderRowTotal">{supplier.reason}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        <div className="smartOrderSupplierRows" style={{ marginTop: 12 }}>
+                          {scenario.baskets.map((basket) => (
+                            <div key={`${scenario.type}-${basket.supplierId ?? basket.supplierName}`} className="smartOrderRow">
+                              <div className="smartOrderRowMain">
+                                <span className="smartOrderRowName">{basket.supplierName}</span>
+                              </div>
+                              <span className="smartOrderRowMeta">
+                                {basket.itemsCount} поз. · {basket.meetsMinOrder ? "ok" : "ниже минималки"}
+                              </span>
+                              <span className="smartOrderRowTotal">
+                                {formatMoney(basket.total) ?? basket.total}
+                                {basket.meetsMinOrder ? "" : ` · Не хватает ${formatMoney(basket.missingAmount) ?? basket.missingAmount}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    </>
+                  )}
                 </section>
               );
             })}
