@@ -84,12 +84,39 @@ export type SmartOrderSupplierBasketDto = {
 
 export type SupplierOptimizerPreviewScenarioType = "cheapest" | "cheapest_with_min_orders";
 
+export type SupplierOptimizerPreviewUnderMinReason =
+  | "no_alternative_candidates"
+  | "no_target_supplier_meets_min_order"
+  | "partial_transfer_not_allowed"
+  | "transfer_would_increase_total_too_much"
+  | "unknown";
+
+export type SupplierOptimizerPreviewUnderMinSupplierDto = {
+  supplierId: string | null;
+  supplierName: string;
+  total: string;
+  minOrderAmount: string | null;
+  missingAmount: string;
+  reason: SupplierOptimizerPreviewUnderMinReason;
+};
+
+export type SupplierOptimizerPreviewScenarioDiagnosticsDto = {
+  underMinSuppliers: SupplierOptimizerPreviewUnderMinSupplierDto[];
+  unresolvedItemsCount: number;
+  skippedItemsCount: number;
+  explanation: string;
+};
+
 export type SupplierOptimizerPreviewScenarioDto = {
   type: SupplierOptimizerPreviewScenarioType;
   total: string;
   supplierCount: number;
   allMinOrdersMet: boolean;
   baskets: SmartOrderSupplierBasketDto[];
+  diagnostics: SupplierOptimizerPreviewScenarioDiagnosticsDto;
+  totalDeltaVsCheapest: string;
+  supplierCountDeltaVsCheapest: number;
+  minOrdersMetDeltaVsCheapest: number;
 };
 
 type OrderOptimizationParseSourceNotePayload = {
@@ -365,8 +392,86 @@ function buildCheapestAssignments(optimization: OrderOptimizationWithDetails) {
   return assignments;
 }
 
+function buildSkippedItemsCount(optimization: OrderOptimizationWithDetails) {
+  return optimization.items.filter((item) => item.results.filter((result) => hasUsableOptimizationResult(result)).length === 0).length;
+}
+
+function findOptimizationResultById(optimization: OrderOptimizationWithDetails, resultId: string) {
+  for (const item of optimization.items) {
+    const found = item.results.find((result) => result.id === resultId);
+
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function getAlternativeCandidatesForBasketItem(params: {
+  item: OrderOptimizationWithDetails["items"][number];
+  sourceSupplierId: string | null;
+  destinationSupplierIds: Set<string>;
+}) {
+  return params.item.results
+    .filter(
+      (result) =>
+        hasUsableOptimizationResult(result) &&
+        result.selectedSupplierId !== params.sourceSupplierId &&
+        result.selectedSupplierId &&
+        params.destinationSupplierIds.has(result.selectedSupplierId),
+    )
+    .sort(compareOptimizationResultsByPrice);
+}
+
+function buildScenarioDiagnostics(params: {
+  optimization: OrderOptimizationWithDetails;
+  type: SupplierOptimizerPreviewScenarioType;
+  assignments: Map<string, string>;
+  baskets: SmartOrderSupplierBasketDto[];
+  cheapestTotal: Prisma.Decimal;
+  cheapestSupplierCount: number;
+  cheapestAllMinOrdersMet: boolean;
+  underMinReasons?: Map<string, SupplierOptimizerPreviewUnderMinReason>;
+}) {
+  const currentTotal = params.baskets.reduce((sum, basket) => sum.add(new Prisma.Decimal(basket.total)), new Prisma.Decimal(0));
+  const skippedItemsCount = buildSkippedItemsCount(params.optimization);
+  const unresolvedItemsCount = params.optimization.items.length - params.assignments.size;
+  const underMinSuppliers = params.baskets
+    .filter((basket) => !basket.meetsMinOrder)
+    .map((basket) => ({
+      supplierId: basket.supplierId,
+      supplierName: basket.supplierName,
+      total: basket.total,
+      minOrderAmount: basket.minOrderAmount,
+      missingAmount: basket.missingAmount,
+      reason: basket.supplierId ? params.underMinReasons?.get(basket.supplierId) ?? "unknown" : "unknown",
+    }));
+
+  const explanation =
+    params.type === "cheapest"
+      ? "Локально самый дешёвый candidate по каждой позиции без учёта минималок поставщиков."
+      : underMinSuppliers.length === 0
+        ? "Минималки выполнены или under-min корзины удалось убрать полным переносом позиций."
+        : "Минималки не выполнены: текущий greedy пытается переносить только корзину целиком в уже подходящих поставщиков.";
+
+  return {
+    diagnostics: {
+      underMinSuppliers,
+      unresolvedItemsCount,
+      skippedItemsCount,
+      explanation,
+    },
+    totalDeltaVsCheapest: decimalToMoneyString(currentTotal.sub(params.cheapestTotal)),
+    supplierCountDeltaVsCheapest: params.baskets.length - params.cheapestSupplierCount,
+    minOrdersMetDeltaVsCheapest:
+      Number(params.baskets.every((basket) => basket.meetsMinOrder)) - Number(params.cheapestAllMinOrdersMet),
+  };
+}
+
 function buildCheapestWithMinOrdersAssignments(optimization: OrderOptimizationWithDetails) {
   const assignments = buildCheapestAssignments(optimization);
+  const underMinReasons = new Map<string, SupplierOptimizerPreviewUnderMinReason>();
 
   while (true) {
     const currentPreview = buildPreviewOptimizationFromAssignments(optimization, assignments);
@@ -394,41 +499,72 @@ function buildCheapestWithMinOrdersAssignments(optimization: OrderOptimizationWi
       );
 
       if (destinationSupplierIds.size === 0) {
+        if (basket.supplierId) {
+          underMinReasons.set(basket.supplierId, "no_target_supplier_meets_min_order");
+        }
         continue;
       }
 
       const movePlan = new Map<string, string>();
       let canMoveWholeBasket = true;
+      let hasAlternativeForAnyItem = false;
+      let transferIncrease = new Prisma.Decimal(0);
 
       for (const item of optimization.items) {
         if (!basketItemIds.has(item.id)) {
           continue;
         }
 
-        const alternative = item.results
-          .filter(
-            (result) =>
-              hasUsableOptimizationResult(result) &&
-              result.selectedSupplierId !== basket.supplierId &&
-              result.selectedSupplierId &&
-              destinationSupplierIds.has(result.selectedSupplierId),
-          )
-          .sort(compareOptimizationResultsByPrice)[0];
+        const alternatives = getAlternativeCandidatesForBasketItem({
+          item,
+          sourceSupplierId: basket.supplierId,
+          destinationSupplierIds,
+        });
+        const alternative = alternatives[0];
+
+        if (alternatives.length > 0) {
+          hasAlternativeForAnyItem = true;
+        }
 
         if (!alternative) {
           canMoveWholeBasket = false;
           break;
         }
 
+        const currentResult = item.selectedCandidateId ? findOptimizationResultById(optimization, item.selectedCandidateId) : null;
+
+        if (currentResult?.optimizedLineTotal && alternative.optimizedLineTotal) {
+          transferIncrease = transferIncrease.add(alternative.optimizedLineTotal.sub(currentResult.optimizedLineTotal));
+        }
+
         movePlan.set(item.id, alternative.id);
       }
 
       if (!canMoveWholeBasket || movePlan.size === 0) {
+        if (basket.supplierId) {
+          underMinReasons.set(
+            basket.supplierId,
+            hasAlternativeForAnyItem ? "partial_transfer_not_allowed" : "no_alternative_candidates",
+          );
+        }
+        continue;
+      }
+
+      const currentBasketMissingAmount = new Prisma.Decimal(basket.missingAmount);
+
+      if (transferIncrease.gt(currentBasketMissingAmount)) {
+        if (basket.supplierId) {
+          underMinReasons.set(basket.supplierId, "transfer_would_increase_total_too_much");
+        }
         continue;
       }
 
       for (const [itemId, resultId] of movePlan.entries()) {
         assignments.set(itemId, resultId);
+      }
+
+      if (basket.supplierId) {
+        underMinReasons.delete(basket.supplierId);
       }
 
       changed = true;
@@ -440,7 +576,10 @@ function buildCheapestWithMinOrdersAssignments(optimization: OrderOptimizationWi
     }
   }
 
-  return assignments;
+  return {
+    assignments,
+    underMinReasons,
+  };
 }
 
 export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWithDetails): {
@@ -448,11 +587,12 @@ export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWit
 } {
   const cheapestAssignments = buildCheapestAssignments(optimization);
   const cheapestPreview = buildPreviewOptimizationFromAssignments(optimization, cheapestAssignments);
-  const cheapestWithMinOrdersAssignments = buildCheapestWithMinOrdersAssignments(optimization);
+  const cheapestWithMinOrders = buildCheapestWithMinOrdersAssignments(optimization);
   const cheapestWithMinOrdersPreview = buildPreviewOptimizationFromAssignments(
     optimization,
-    cheapestWithMinOrdersAssignments,
+    cheapestWithMinOrders.assignments,
   );
+  const cheapestTotalDecimal = new Prisma.Decimal(cheapestPreview.total);
 
   return {
     scenarios: [
@@ -462,6 +602,15 @@ export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWit
         supplierCount: cheapestPreview.supplierCount,
         allMinOrdersMet: cheapestPreview.allMinOrdersMet,
         baskets: cheapestPreview.baskets,
+        ...buildScenarioDiagnostics({
+          optimization,
+          type: "cheapest",
+          assignments: cheapestAssignments,
+          baskets: cheapestPreview.baskets,
+          cheapestTotal: cheapestTotalDecimal,
+          cheapestSupplierCount: cheapestPreview.supplierCount,
+          cheapestAllMinOrdersMet: cheapestPreview.allMinOrdersMet,
+        }),
       },
       {
         type: "cheapest_with_min_orders",
@@ -469,6 +618,16 @@ export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWit
         supplierCount: cheapestWithMinOrdersPreview.supplierCount,
         allMinOrdersMet: cheapestWithMinOrdersPreview.allMinOrdersMet,
         baskets: cheapestWithMinOrdersPreview.baskets,
+        ...buildScenarioDiagnostics({
+          optimization,
+          type: "cheapest_with_min_orders",
+          assignments: cheapestWithMinOrders.assignments,
+          baskets: cheapestWithMinOrdersPreview.baskets,
+          cheapestTotal: cheapestTotalDecimal,
+          cheapestSupplierCount: cheapestPreview.supplierCount,
+          cheapestAllMinOrdersMet: cheapestPreview.allMinOrdersMet,
+          underMinReasons: cheapestWithMinOrders.underMinReasons,
+        }),
       },
     ],
   };
