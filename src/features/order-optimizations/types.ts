@@ -172,5 +172,7 @@ export type SupplierOptimizerPreviewScenario = {
 };
 
 export type SupplierOptimizerPreviewResponse = {
+  recommendedScenarioType: SupplierOptimizerPreviewScenarioType;
+  recommendationReason: string;
   scenarios: SupplierOptimizerPreviewScenario[];
 };

@@ -1000,6 +1000,9 @@ export function OrderOptimizationPage() {
                         <span>??????????: {formatMoney(scenario.total) ?? scenario.total}</span>
                         <span>????????????????????: {scenario.supplierCount}</span>
                         <span>{getOptimizerScenarioStatus(scenario)}</span>
+                        {optimizerPreview.recommendedScenarioType === scenario.type ? (
+                          <span className="statusPill">Рекомендуемый вариант</span>
+                        ) : null}
                       </div>
                     </div>
 
@@ -1015,6 +1018,9 @@ export function OrderOptimizationPage() {
                   </div>
 
                   <p className="smartOrderHint">{getOptimizerScenarioDescription(scenario.type)}</p>
+                  {optimizerPreview.recommendedScenarioType === scenario.type ? (
+                    <p className="smartOrderHint">{optimizerPreview.recommendationReason}</p>
+                  ) : null}
 
                   <div className="smartOrderSupplierRows">
                     <div className="smartOrderRow">

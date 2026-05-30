@@ -119,6 +119,11 @@ export type SupplierOptimizerPreviewScenarioDto = {
   minOrdersMetDeltaVsCheapest: number;
 };
 
+export type SupplierOptimizerPreviewRecommendationDto = {
+  recommendedScenarioType: SupplierOptimizerPreviewScenarioType;
+  recommendationReason: string;
+};
+
 type OrderOptimizationParseSourceNotePayload = {
   source: OrderOptimizationParseSource;
   confidence?: number | null;
@@ -683,7 +688,7 @@ function buildCheapestWithMinOrdersAssignments(optimization: OrderOptimizationWi
 
 export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWithDetails): {
   scenarios: SupplierOptimizerPreviewScenarioDto[];
-} {
+} & SupplierOptimizerPreviewRecommendationDto {
   const cheapestAssignments = buildCheapestAssignments(optimization);
   const cheapestPreview = buildPreviewOptimizationFromAssignments(optimization, cheapestAssignments);
   const cheapestWithMinOrders = buildCheapestWithMinOrdersAssignments(optimization);
@@ -694,8 +699,32 @@ export function buildSupplierOptimizerPreview(optimization: OrderOptimizationWit
   const minimizeSuppliersAssignments = buildMinimizeSuppliersAssignments(optimization);
   const minimizeSuppliersPreview = buildPreviewOptimizationFromAssignments(optimization, minimizeSuppliersAssignments);
   const cheapestTotalDecimal = new Prisma.Decimal(cheapestPreview.total);
+  const cheapestWithMinOrdersDeltaRatio =
+    Number(cheapestWithMinOrdersPreview.total) > 0 && Number(cheapestPreview.total) > 0
+      ? (Number(cheapestWithMinOrdersPreview.total) - Number(cheapestPreview.total)) / Number(cheapestPreview.total)
+      : Number.POSITIVE_INFINITY;
+  const minimizeSuppliersDeltaRatio =
+    Number(minimizeSuppliersPreview.total) > 0 && Number(cheapestPreview.total) > 0
+      ? (Number(minimizeSuppliersPreview.total) - Number(cheapestPreview.total)) / Number(cheapestPreview.total)
+      : Number.POSITIVE_INFINITY;
+
+  let recommendedScenarioType: SupplierOptimizerPreviewScenarioType = "cheapest";
+  let recommendationReason = "Самый дешёвый, но есть поставщики ниже минималки";
+
+  if (cheapestPreview.allMinOrdersMet) {
+    recommendedScenarioType = "cheapest";
+    recommendationReason = "Самый дешёвый вариант, минималки выполнены";
+  } else if (cheapestWithMinOrdersPreview.allMinOrdersMet && cheapestWithMinOrdersDeltaRatio <= 0.1) {
+    recommendedScenarioType = "cheapest_with_min_orders";
+    recommendationReason = "Немного дороже, но выполняет минималки";
+  } else if (minimizeSuppliersPreview.allMinOrdersMet && minimizeSuppliersDeltaRatio <= 0.25) {
+    recommendedScenarioType = "minimize_suppliers";
+    recommendationReason = "Меньше поставщиков, но цена выше";
+  }
 
   return {
+    recommendedScenarioType,
+    recommendationReason,
     scenarios: [
       {
         type: "cheapest",
