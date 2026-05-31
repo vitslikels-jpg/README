@@ -1,5 +1,5 @@
-import { Prisma } from "@prisma/client";
 import { jsonUtf8 } from "@/lib/http";
+import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -10,23 +10,6 @@ type RouteContext = {
 };
 
 type ProductMatchStatus = "matched" | "ambiguous" | "not_found";
-
-const UNIT_TOKENS = new Set(["кг", "г", "л", "мл", "шт", "уп", "короб", "кор", "бут", "банка"]);
-
-function parseNumericToken(token: string) {
-  const normalized = token.trim().replace(",", ".");
-
-  if (!/^\d+(?:\.\d+)?$/.test(normalized)) {
-    return null;
-  }
-
-  const value = Number(normalized);
-  return Number.isFinite(value) ? value : null;
-}
-
-function normalizeToken(token: string) {
-  return token.toLowerCase().replace(/[.,;:!?()]/g, "");
-}
 
 function normalizeSearchText(value: string | null | undefined) {
   return String(value ?? "")
@@ -41,56 +24,6 @@ function getSearchWords(value: string) {
   return normalizeSearchText(value)
     .split(" ")
     .filter((token) => token.length > 1);
-}
-
-function buildDecimal(value: number, scale: number) {
-  return new Prisma.Decimal(value).toDecimalPlaces(scale, Prisma.Decimal.ROUND_HALF_UP);
-}
-
-function parseInvoiceLine(line: string) {
-  const trimmedLine = line.trim();
-  const tokens = trimmedLine.split(/\s+/).filter(Boolean);
-  const normalizedTokens = tokens.map(normalizeToken);
-
-  const unitIndex = normalizedTokens.findIndex((token) => UNIT_TOKENS.has(token));
-  const quantityValue = unitIndex > 0 ? parseNumericToken(tokens[unitIndex - 1] ?? "") : null;
-  const unitValue = unitIndex >= 0 ? normalizedTokens[unitIndex] : null;
-
-  const numericTokensAfterUnit =
-    unitIndex >= 0
-      ? tokens
-          .slice(unitIndex + 1)
-          .map((token) => parseNumericToken(token))
-          .filter((value): value is number => value !== null)
-      : [];
-
-  const priceWithVatValue =
-    numericTokensAfterUnit.length >= 2
-      ? numericTokensAfterUnit[numericTokensAfterUnit.length - 2]
-      : numericTokensAfterUnit.length === 1
-        ? numericTokensAfterUnit[0]
-        : null;
-
-  const lineTotalValue =
-    numericTokensAfterUnit.length >= 2 ? numericTokensAfterUnit[numericTokensAfterUnit.length - 1] : null;
-
-  const productNameRaw =
-    unitIndex > 1 ? tokens.slice(0, unitIndex - 1).join(" ").trim() || trimmedLine : trimmedLine;
-
-  const hasQuantity = quantityValue !== null;
-  const hasUnit = Boolean(unitValue);
-  const hasPrice = priceWithVatValue !== null;
-  const recognizedCount = Number(hasQuantity) + Number(hasUnit) + Number(hasPrice);
-
-  return {
-    productNameRaw,
-    quantity: hasQuantity ? buildDecimal(quantityValue as number, 3) : null,
-    unit: unitValue,
-    priceWithVat: hasPrice ? buildDecimal(priceWithVatValue as number, 2) : null,
-    lineTotal: lineTotalValue !== null ? buildDecimal(lineTotalValue, 2) : null,
-    confidence: recognizedCount === 3 ? 0.8 : recognizedCount > 0 ? 0.5 : 0.2,
-    needsReview: recognizedCount < 3,
-  };
 }
 
 async function matchProduct(params: {
@@ -274,14 +207,10 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonUtf8({ message: "У накладной нет текста для разбора." }, { status: 400 });
   }
 
-  const lines = rawText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const invoiceLines = parseInvoiceItemsFromText(rawText);
 
   const parsedItems = await Promise.all(
-    lines.map(async (line) => {
-      const parsedItem = parseInvoiceLine(line);
+    invoiceLines.map(async (parsedItem) => {
       const productMatch = await matchProduct({
         enterpriseId,
         supplierId: invoice.supplierId,
