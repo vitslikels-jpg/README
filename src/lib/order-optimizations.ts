@@ -144,6 +144,48 @@ export type SupplierOptimizerPreviewQualityDto = {
   qualityStatus: SupplierOptimizerPreviewQualityStatus;
 };
 
+export type CandidatePoolHealthProblemLevel = "ok" | "weak" | "poor" | "empty";
+
+export type CandidatePoolHealthItemAlternativeSupplierDto = {
+  supplierName: string;
+  lineTotal: string | null;
+  coverageMode: string | null;
+  wouldMeetMinOrder: boolean;
+};
+
+export type CandidatePoolHealthItemDto = {
+  itemId: string;
+  parsedName: string | null;
+  sourceLine: string;
+  matchStatus: OrderOptimizationMatchStatus;
+  selectedCandidateId: string | null;
+  candidatesCount: number;
+  suppliersCount: number;
+  candidatesWithPriceCount: number;
+  noShortageCandidatesCount: number;
+  selectedSupplierName: string | null;
+  cheapestSupplierName: string | null;
+  problemLevel: CandidatePoolHealthProblemLevel;
+  reasons: string[];
+  alternativeSuppliers: CandidatePoolHealthItemAlternativeSupplierDto[];
+};
+
+export type CandidatePoolHealthSummaryDto = {
+  totalItems: number;
+  okItems: number;
+  weakItems: number;
+  poorItems: number;
+  emptyItems: number;
+  avgCandidatesPerItem: number;
+  avgSuppliersPerItem: number;
+  topProblemItems: CandidatePoolHealthItemDto[];
+};
+
+export type CandidatePoolHealthReportDto = {
+  summary: CandidatePoolHealthSummaryDto;
+  items: CandidatePoolHealthItemDto[];
+};
+
 type OrderOptimizationParseSourceNotePayload = {
   source: OrderOptimizationParseSource;
   confidence?: number | null;
@@ -516,6 +558,212 @@ function buildMinimizeSuppliersAssignments(optimization: OrderOptimizationWithDe
 
 function buildSkippedItemsCount(optimization: OrderOptimizationWithDetails) {
   return optimization.items.filter((item) => item.results.filter((result) => hasUsableOptimizationResult(result)).length === 0).length;
+}
+
+function roundToTwo(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function getCandidatePoolHealthProblemLevel(
+  candidatesCount: number,
+  suppliersCount: number,
+  candidatesWithPriceCount: number,
+  noShortageCandidatesCount: number,
+): CandidatePoolHealthProblemLevel {
+  if (candidatesCount === 0) {
+    return "empty";
+  }
+
+  if (suppliersCount === 0 || candidatesWithPriceCount === 0) {
+    return "poor";
+  }
+
+  if (suppliersCount === 1 || noShortageCandidatesCount === 0) {
+    return "weak";
+  }
+
+  return "ok";
+}
+
+function getCandidatePoolHealthReasons(params: {
+  item: OrderOptimizationWithDetails["items"][number];
+  candidatesCount: number;
+  suppliersCount: number;
+  candidatesWithPriceCount: number;
+  noShortageCandidatesCount: number;
+  selectedSupplierName: string | null;
+}) {
+  const reasons: string[] = [];
+
+  if (params.item.matchStatus === "not_found") {
+    reasons.push("match_not_found");
+  }
+
+  if (params.candidatesCount === 0) {
+    reasons.push("no_candidates");
+    return reasons;
+  }
+
+  if (params.suppliersCount === 0) {
+    reasons.push("no_suppliers");
+  }
+
+  if (params.candidatesWithPriceCount === 0) {
+    reasons.push("no_price_candidates");
+  }
+
+  if (params.suppliersCount === 1) {
+    reasons.push("single_supplier_pool");
+  }
+
+  if (params.noShortageCandidatesCount === 0) {
+    reasons.push("no_no_shortage_candidates");
+  }
+
+  if (!params.item.selectedCandidateId) {
+    reasons.push("no_selected_candidate");
+  }
+
+  if (!params.selectedSupplierName && params.item.selectedCandidateId) {
+    reasons.push("selected_candidate_without_supplier");
+  }
+
+  return reasons;
+}
+
+function compareCandidatePoolProblemItems(left: CandidatePoolHealthItemDto, right: CandidatePoolHealthItemDto) {
+  const problemLevelRank: Record<CandidatePoolHealthProblemLevel, number> = {
+    empty: 3,
+    poor: 2,
+    weak: 1,
+    ok: 0,
+  };
+
+  if (problemLevelRank[left.problemLevel] !== problemLevelRank[right.problemLevel]) {
+    return problemLevelRank[right.problemLevel] - problemLevelRank[left.problemLevel];
+  }
+
+  if (left.suppliersCount !== right.suppliersCount) {
+    return left.suppliersCount - right.suppliersCount;
+  }
+
+  if (left.candidatesCount !== right.candidatesCount) {
+    return left.candidatesCount - right.candidatesCount;
+  }
+
+  return (left.parsedName ?? "").localeCompare(right.parsedName ?? "", "ru");
+}
+
+export function buildCandidatePoolHealthReport(optimization: OrderOptimizationWithDetails): CandidatePoolHealthReportDto {
+  const currentBaskets = buildSmartOrderSupplierBaskets(optimization.items);
+  const basketBySupplierId = new Map(
+    currentBaskets.filter((basket) => basket.supplierId).map((basket) => [basket.supplierId as string, basket]),
+  );
+
+  const items = optimization.items.map((item) => {
+    const suppliers = new Map<string, string>();
+    let candidatesWithPriceCount = 0;
+    let noShortageCandidatesCount = 0;
+
+    for (const result of item.results) {
+      if (result.selectedSupplierId && result.selectedSupplier?.name) {
+        suppliers.set(result.selectedSupplierId, result.selectedSupplier.name);
+      }
+
+      if (result.optimizedLineTotal && result.optimizedLineTotal.gt(0)) {
+        candidatesWithPriceCount += 1;
+      }
+
+      if (result.coverageMode === "no_shortage") {
+        noShortageCandidatesCount += 1;
+      }
+    }
+
+    const selectedResult = item.selectedCandidateId ? item.results.find((result) => result.id === item.selectedCandidateId) ?? null : null;
+    const selectedSupplierName = selectedResult?.selectedSupplier?.name ?? null;
+    const cheapestResult = item.results
+      .filter((result) => hasUsableOptimizationResult(result))
+      .sort(compareOptimizationResultsByPrice)[0];
+    const cheapestSupplierName = cheapestResult?.selectedSupplier?.name ?? null;
+    const alternativeSuppliers = item.results
+      .filter(
+        (result) =>
+          hasUsableOptimizationResult(result) &&
+          result.selectedSupplier?.name &&
+          (!selectedResult?.selectedSupplierId || result.selectedSupplierId !== selectedResult.selectedSupplierId),
+      )
+      .sort(compareOptimizationResultsByPrice)
+      .map((result) => {
+        const supplierBasket = result.selectedSupplierId ? basketBySupplierId.get(result.selectedSupplierId) ?? null : null;
+        const basketTotal = supplierBasket ? new Prisma.Decimal(supplierBasket.total) : new Prisma.Decimal(0);
+        const candidateLineTotal = result.optimizedLineTotal ?? new Prisma.Decimal(0);
+        const nextTotal = basketTotal.add(candidateLineTotal);
+        const minOrderAmount = result.selectedSupplier?.minOrderAmount ?? null;
+
+        return {
+          supplierName: result.selectedSupplier!.name,
+          lineTotal: decimalToString(result.optimizedLineTotal),
+          coverageMode: result.coverageMode ?? null,
+          wouldMeetMinOrder: !minOrderAmount || nextTotal.gte(minOrderAmount),
+        };
+      });
+    const candidatesCount = item.results.length;
+    const suppliersCount = suppliers.size;
+    const problemLevel = getCandidatePoolHealthProblemLevel(
+      candidatesCount,
+      suppliersCount,
+      candidatesWithPriceCount,
+      noShortageCandidatesCount,
+    );
+    const reasons = getCandidatePoolHealthReasons({
+      item,
+      candidatesCount,
+      suppliersCount,
+      candidatesWithPriceCount,
+      noShortageCandidatesCount,
+      selectedSupplierName,
+    });
+
+    return {
+      itemId: item.id,
+      parsedName: item.parsedName,
+      sourceLine: item.sourceLine,
+      matchStatus: item.matchStatus,
+      selectedCandidateId: item.selectedCandidateId,
+      candidatesCount,
+      suppliersCount,
+      candidatesWithPriceCount,
+      noShortageCandidatesCount,
+      selectedSupplierName,
+      cheapestSupplierName,
+      problemLevel,
+      reasons,
+      alternativeSuppliers,
+    };
+  });
+
+  const totalItems = items.length;
+  const okItems = items.filter((item) => item.problemLevel === "ok").length;
+  const weakItems = items.filter((item) => item.problemLevel === "weak").length;
+  const poorItems = items.filter((item) => item.problemLevel === "poor").length;
+  const emptyItems = items.filter((item) => item.problemLevel === "empty").length;
+
+  return {
+    summary: {
+      totalItems,
+      okItems,
+      weakItems,
+      poorItems,
+      emptyItems,
+      avgCandidatesPerItem: totalItems > 0 ? roundToTwo(items.reduce((sum, item) => sum + item.candidatesCount, 0) / totalItems) : 0,
+      avgSuppliersPerItem: totalItems > 0 ? roundToTwo(items.reduce((sum, item) => sum + item.suppliersCount, 0) / totalItems) : 0,
+      topProblemItems: [...items]
+        .filter((item) => item.problemLevel !== "ok")
+        .sort(compareCandidatePoolProblemItems)
+        .slice(0, 10),
+    },
+    items,
+  };
 }
 
 function findOptimizationResultById(optimization: OrderOptimizationWithDetails, resultId: string) {
