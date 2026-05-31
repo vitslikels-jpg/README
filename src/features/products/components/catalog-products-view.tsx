@@ -26,6 +26,30 @@ function normalizeSearch(value: string) {
   return value.trim().toLowerCase();
 }
 
+function getCatalogProductBrands(product: CatalogProductListItem) {
+  return Array.from(
+    new Set(
+      [product.brand, product.bestOffer?.brand, ...product.currentOffers.map((offer) => offer.brand)]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function getCatalogProductBrandLabel(product: CatalogProductListItem) {
+  const brands = getCatalogProductBrands(product);
+
+  if (brands.length === 0) {
+    return "Без бренда";
+  }
+
+  if (brands.length <= 2) {
+    return brands.join(" • ");
+  }
+
+  return `${brands.slice(0, 2).join(" • ")} +${brands.length - 2}`;
+}
+
 function matchesProduct(product: CatalogProductListItem, search: string) {
   const normalized = normalizeSearch(search);
 
@@ -33,7 +57,13 @@ function matchesProduct(product: CatalogProductListItem, search: string) {
     return true;
   }
 
-  return [product.name, product.brand, product.category, product.bestOffer?.supplier.name]
+  return [
+    product.name,
+    product.brand,
+    product.category,
+    product.bestOffer?.supplier.name,
+    ...product.currentOffers.map((offer) => offer.brand),
+  ]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(normalized));
 }
@@ -295,7 +325,7 @@ export function CatalogProductsView() {
                         <div>
                           <h3>{product.name}</h3>
                           <p>
-                            {product.brand || "Без бренда"}
+                            {getCatalogProductBrandLabel(product)}
                             {product.category ? ` • ${product.category}` : ""}
                             {product.unit?.symbol ? ` • ${product.unit.symbol}` : ""}
                           </p>
@@ -344,6 +374,7 @@ export function CatalogProductsView() {
                               <strong>{offer.supplier.name}</strong>
                               <p>
                                 {offer.name}
+                                {offer.brand ? ` • ${offer.brand}` : ""}
                                 {offer.article ? ` • ${offer.article}` : ""}
                               </p>
                             </div>
