@@ -186,6 +186,62 @@ export type CandidatePoolHealthReportDto = {
   items: CandidatePoolHealthItemDto[];
 };
 
+export type SmartOrderMatchingAuditCandidateDto = {
+  candidateId: string;
+  productName: string | null;
+  supplierName: string | null;
+  price: string | null;
+  coverageMode: string | null;
+  score: number | null;
+  rank: number;
+  isSelected: boolean;
+  isCheapest: boolean;
+  cheaperThanSelected: boolean;
+};
+
+export type SmartOrderMatchingAuditCheaperCandidateReasonDto = {
+  candidateId: string;
+  productName: string | null;
+  supplierName: string | null;
+  price: string | null;
+  reason: string;
+};
+
+export type SmartOrderMatchingAuditItemDto = {
+  itemId: string;
+  sourceLine: string;
+  parsedName: string | null;
+  selectedCandidateId: string | null;
+  selectedProductName: string | null;
+  selectedPrice: string | null;
+  cheapestCandidateId: string | null;
+  cheapestProductName: string | null;
+  cheapestPrice: string | null;
+  priceDifference: string | null;
+  priceDifferencePercent: number | null;
+  selectedSupplierName: string | null;
+  cheapestSupplierName: string | null;
+  candidatesCount: number;
+  selectedReason: string;
+  cheaperCandidatesReasons: SmartOrderMatchingAuditCheaperCandidateReasonDto[];
+  candidates: SmartOrderMatchingAuditCandidateDto[];
+};
+
+export type SmartOrderMatchingAuditReportDto = {
+  summary: {
+    totalItems: number;
+    selectedNotCheapestCount: number;
+    aboveFivePercentCount: number;
+    singleCandidateCount: number;
+    missingSelectedCandidateCount: number;
+    explanation: string;
+  };
+  items: SmartOrderMatchingAuditItemDto[];
+  selectedNotCheapestItems: SmartOrderMatchingAuditItemDto[];
+  aboveFivePercentItems: SmartOrderMatchingAuditItemDto[];
+  singleCandidateItems: SmartOrderMatchingAuditItemDto[];
+};
+
 type OrderOptimizationParseSourceNotePayload = {
   source: OrderOptimizationParseSource;
   confidence?: number | null;
@@ -562,6 +618,233 @@ function buildSkippedItemsCount(optimization: OrderOptimizationWithDetails) {
 
 function roundToTwo(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function compareOptimizationResultsBySelectionAudit(
+  left: OrderOptimizationWithDetails["items"][number]["results"][number],
+  right: OrderOptimizationWithDetails["items"][number]["results"][number],
+) {
+  const leftHasCoverage = Boolean(left.coverageMode && left.shortage && left.overage);
+  const rightHasCoverage = Boolean(right.coverageMode && right.shortage && right.overage);
+
+  if (leftHasCoverage && !rightHasCoverage) {
+    return -1;
+  }
+
+  if (!leftHasCoverage && rightHasCoverage) {
+    return 1;
+  }
+
+  if (!leftHasCoverage && !rightHasCoverage) {
+    return compareOptimizationResultsByPrice(left, right);
+  }
+
+  const leftOverage = left.overage as Prisma.Decimal;
+  const rightOverage = right.overage as Prisma.Decimal;
+  const leftShortage = left.shortage as Prisma.Decimal;
+  const rightShortage = right.shortage as Prisma.Decimal;
+
+  if (left.coverageMode === "no_shortage" && right.coverageMode !== "no_shortage") {
+    return -1;
+  }
+
+  if (right.coverageMode === "no_shortage" && left.coverageMode !== "no_shortage") {
+    return 1;
+  }
+
+  if (left.coverageMode === "no_shortage" && right.coverageMode === "no_shortage") {
+    if (left.optimizedLineTotal && right.optimizedLineTotal && !left.optimizedLineTotal.eq(right.optimizedLineTotal)) {
+      return left.optimizedLineTotal.lt(right.optimizedLineTotal) ? -1 : 1;
+    }
+
+    if (!leftOverage.eq(rightOverage)) {
+      return leftOverage.lt(rightOverage) ? -1 : 1;
+    }
+
+    return left.createdAt.getTime() - right.createdAt.getTime();
+  }
+
+  if (!leftShortage.eq(rightShortage)) {
+    return leftShortage.lt(rightShortage) ? -1 : 1;
+  }
+
+  if (left.optimizedLineTotal && right.optimizedLineTotal && !left.optimizedLineTotal.eq(right.optimizedLineTotal)) {
+    return left.optimizedLineTotal.lt(right.optimizedLineTotal) ? -1 : 1;
+  }
+
+  if (!leftOverage.eq(rightOverage)) {
+    return leftOverage.lt(rightOverage) ? -1 : 1;
+  }
+
+  return left.createdAt.getTime() - right.createdAt.getTime();
+}
+
+function describeWhyCheaperCandidateLost(params: {
+  item: OrderOptimizationWithDetails["items"][number];
+  selectedResult: OrderOptimizationWithDetails["items"][number]["results"][number] | null;
+  candidate: OrderOptimizationWithDetails["items"][number]["results"][number];
+}) {
+  const { item, selectedResult, candidate } = params;
+
+  if (!selectedResult) {
+    return "Выбранный кандидат отсутствует.";
+  }
+
+  if (item.selectionMode === "manual") {
+    return "Проиграл, потому что позиция выбрана вручную.";
+  }
+
+  if (item.lockSupplier && item.requestedSupplierName && selectedResult.selectedSupplier?.name) {
+    return `Строка закреплена за поставщиком ${selectedResult.selectedSupplier.name}.`;
+  }
+
+  if (selectedResult.coverageMode === "no_shortage" && candidate.coverageMode !== "no_shortage") {
+    return "Дешевле, но дает недопокрытие количества.";
+  }
+
+  if (selectedResult.coverageMode !== "no_shortage" && candidate.coverageMode === "no_shortage") {
+    return "Дешевле и без shortage, но matching score не сохранен, точную причину из БД не восстановить.";
+  }
+
+  if (selectedResult.shortage && candidate.shortage && candidate.shortage.gt(selectedResult.shortage)) {
+    return "Дешевле, но shortage больше, чем у выбранного кандидата.";
+  }
+
+  if (
+    selectedResult.overage &&
+    candidate.overage &&
+    candidate.overage.gt(selectedResult.overage) &&
+    selectedResult.coverageMode === candidate.coverageMode
+  ) {
+    return "Дешевле, но overage хуже, чем у выбранного кандидата.";
+  }
+
+  return "Дешевле, но matching score/rank не сохраняются в БД, поэтому точную причину выбора сейчас не видно.";
+}
+
+function describeSelectedCandidateReason(
+  item: OrderOptimizationWithDetails["items"][number],
+  selectedResult: OrderOptimizationWithDetails["items"][number]["results"][number] | null,
+  cheapestResult: OrderOptimizationWithDetails["items"][number]["results"][number] | null,
+) {
+  if (!selectedResult) {
+    return "Кандидат не выбран.";
+  }
+
+  if (item.selectionMode === "manual") {
+    return "Кандидат выбран вручную.";
+  }
+
+  if (item.lockSupplier && item.requestedSupplierName && selectedResult.selectedSupplier?.name) {
+    return `Автовыбор внутри закрепленного поставщика ${selectedResult.selectedSupplier.name}.`;
+  }
+
+  if (cheapestResult && selectedResult.id === cheapestResult.id) {
+    return "Выбран самый дешевый подходящий кандидат.";
+  }
+
+  if (selectedResult.coverageMode === "no_shortage") {
+    return "Выбран кандидат без shortage, хотя есть более дешевые варианты.";
+  }
+
+  return "Выбран не самый дешевый кандидат; по БД видно итоговый выбор, но score matching не сохранен.";
+}
+
+export function buildSmartOrderMatchingAuditReport(optimization: OrderOptimizationWithDetails): SmartOrderMatchingAuditReportDto {
+  const items = optimization.items.map((item) => {
+    const usableResults = item.results.filter((result) => hasUsableOptimizationResult(result));
+    const selectionRankedResults = [...usableResults].sort(compareOptimizationResultsBySelectionAudit);
+    const selectedResult = item.selectedCandidateId
+      ? item.results.find((result) => result.id === item.selectedCandidateId) ?? null
+      : null;
+    const cheapestResult = [...usableResults].sort(compareOptimizationResultsByPrice)[0] ?? null;
+    const selectedPrice = selectedResult?.optimizedLineTotal ?? null;
+    const cheapestPrice = cheapestResult?.optimizedLineTotal ?? null;
+    const priceDifference =
+      selectedPrice && cheapestPrice ? selectedPrice.sub(cheapestPrice).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP) : null;
+    const priceDifferencePercent =
+      priceDifference && cheapestPrice && cheapestPrice.gt(0)
+        ? roundToTwo(Number(priceDifference.div(cheapestPrice).mul(100).toString()))
+        : null;
+
+    const cheaperCandidatesReasons = usableResults
+      .filter(
+        (candidate) =>
+          selectedPrice &&
+          candidate.id !== selectedResult?.id &&
+          candidate.optimizedLineTotal &&
+          candidate.optimizedLineTotal.lt(selectedPrice),
+      )
+      .sort(compareOptimizationResultsByPrice)
+      .map((candidate) => ({
+        candidateId: candidate.id,
+        productName: candidate.selectedProduct?.name ?? null,
+        supplierName: candidate.selectedSupplier?.name ?? null,
+        price: decimalToString(candidate.optimizedLineTotal),
+        reason: describeWhyCheaperCandidateLost({
+          item,
+          selectedResult,
+          candidate,
+        }),
+      }));
+
+    const candidates = selectionRankedResults.map((candidate, index) => ({
+      candidateId: candidate.id,
+      productName: candidate.selectedProduct?.name ?? null,
+      supplierName: candidate.selectedSupplier?.name ?? null,
+      price: decimalToString(candidate.optimizedLineTotal),
+      coverageMode: candidate.coverageMode ?? null,
+      score: null,
+      rank: index + 1,
+      isSelected: candidate.id === selectedResult?.id,
+      isCheapest: candidate.id === cheapestResult?.id,
+      cheaperThanSelected: Boolean(
+        selectedPrice && candidate.optimizedLineTotal && candidate.optimizedLineTotal.lt(selectedPrice),
+      ),
+    }));
+
+    return {
+      itemId: item.id,
+      sourceLine: item.sourceLine,
+      parsedName: item.parsedName,
+      selectedCandidateId: selectedResult?.id ?? null,
+      selectedProductName: selectedResult?.selectedProduct?.name ?? null,
+      selectedPrice: decimalToString(selectedPrice),
+      cheapestCandidateId: cheapestResult?.id ?? null,
+      cheapestProductName: cheapestResult?.selectedProduct?.name ?? null,
+      cheapestPrice: decimalToString(cheapestPrice),
+      priceDifference: decimalToString(priceDifference),
+      priceDifferencePercent,
+      selectedSupplierName: selectedResult?.selectedSupplier?.name ?? null,
+      cheapestSupplierName: cheapestResult?.selectedSupplier?.name ?? null,
+      candidatesCount: usableResults.length,
+      selectedReason: describeSelectedCandidateReason(item, selectedResult, cheapestResult),
+      cheaperCandidatesReasons,
+      candidates,
+    };
+  });
+
+  const selectedNotCheapestItems = items.filter(
+    (item) => item.selectedCandidateId && item.cheapestCandidateId && item.selectedCandidateId !== item.cheapestCandidateId,
+  );
+  const aboveFivePercentItems = items.filter((item) => (item.priceDifferencePercent ?? 0) > 5);
+  const singleCandidateItems = items.filter((item) => item.candidatesCount === 1);
+
+  return {
+    summary: {
+      totalItems: items.length,
+      selectedNotCheapestCount: selectedNotCheapestItems.length,
+      aboveFivePercentCount: aboveFivePercentItems.length,
+      singleCandidateCount: singleCandidateItems.length,
+      missingSelectedCandidateCount: items.filter((item) => !item.selectedCandidateId).length,
+      explanation:
+        "Score matching сейчас не сохраняется в OrderOptimizationResult, поэтому score в отчете = null, а rank считается по coverage/price среди сохраненных кандидатов.",
+    },
+    items,
+    selectedNotCheapestItems,
+    aboveFivePercentItems,
+    singleCandidateItems,
+  };
 }
 
 function getCandidatePoolHealthProblemLevel(
