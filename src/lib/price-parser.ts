@@ -1925,8 +1925,6 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
     supplierProfiles.find((profile) => profile.id === headerMatch.supplierProfileId) ?? null;
   const products: ParsedProductRow[] = [];
   let skippedCount = 0;
-  let identityAiRowsUsed = 0;
-  const maxIdentityAiRows = 40;
 
   for (let rowIndex = headerMatch.headerRowIndex + headerMatch.headerRowSpan; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex] ?? [];
@@ -2046,11 +2044,8 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
       rawBrand: directBrand,
       rawCountry: directCountry,
       supplierName: options.supplierName ?? null,
-      disableAi: identityAiRowsUsed >= maxIdentityAiRows,
+      disableAi: false,
     });
-    if (refinedIdentity.usedAi) {
-      identityAiRowsUsed += 1;
-    }
     const product = {
       ...parsedProduct,
       name: refinedIdentity.name,
