@@ -1,7 +1,5 @@
-import { PagePlaceholder } from "@/components/ui/page-placeholder";
+import { ProductMasterAuditReport } from "@/features/reports/components/product-master-audit-report";
 
 export default function ReportsPage() {
-  return (
-    <PagePlaceholder title="Отчёты" description="Каркас раздела для будущих отчётов и аналитики." />
-  );
+  return <ProductMasterAuditReport />;
 }
