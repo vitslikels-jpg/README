@@ -6,6 +6,10 @@ const OCR_LANGS = "rus+eng";
 const OCR_CACHE_DIRECTORY = path.join(process.cwd(), ".cache", "tesseract");
 const INVOICE_UPLOAD_DIRECTORY = path.join(process.cwd(), "public", "uploads", "invoices");
 const PDF_TEXT_THRESHOLD = 24;
+const TESSERACT_JS_DIRECTORY = path.join(process.cwd(), "node_modules", "tesseract.js");
+const TESSERACT_CORE_DIRECTORY = path.join(process.cwd(), "node_modules", "tesseract.js-core");
+const TESSERACT_WORKER_PATH = path.join(TESSERACT_JS_DIRECTORY, "src", "worker-script", "node", "index.js");
+const TESSERACT_CORE_PATH = path.join(TESSERACT_CORE_DIRECTORY, "tesseract-core-lstm.js");
 
 type OcrResult = {
   rawText: string;
@@ -48,6 +52,8 @@ async function recognizeImage(input: string | Buffer) {
 
   const worker = await createWorker(OCR_LANGS, 1, {
     cachePath: OCR_CACHE_DIRECTORY,
+    corePath: TESSERACT_CORE_PATH,
+    workerPath: TESSERACT_WORKER_PATH,
   });
 
   try {
