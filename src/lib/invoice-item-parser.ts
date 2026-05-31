@@ -19,7 +19,8 @@ const UNIT_ALIASES = new Map<string, string>([
   ["бан", "банка"],
 ]);
 
-const UNIT_PATTERN = /\b(кг|г|л|мл|шт|штук|уп|упак|упаковка|короб|коробка|кор|бут|бутылка|банка|бан)\.?\b/iu;
+const UNIT_PATTERN =
+  /(^|[^\p{L}\p{N}])(кг|г|л|мл|шт|штук|уп|упак|упаковка|короб|коробка|кор|бут|бутылка|банка|бан)\.?(?=$|[^\p{L}\p{N}])/iu;
 const NUMBER_PATTERN = /(?<!\d)(?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[,.]\d+)?(?!\d)/gu;
 
 const HEADER_OR_TOTAL_PATTERNS = [
@@ -91,7 +92,19 @@ function isIgnoredInvoiceLine(line: string) {
     return true;
   }
 
-  return HEADER_OR_TOTAL_PATTERNS.some((pattern) => pattern.test(trimmed));
+  const lower = trimmed.toLowerCase().replace(/ё/g, "е");
+
+  return (
+    lower.includes("товарная накладная") ||
+    lower.includes("универсальный передаточный") ||
+    lower.includes("счет-фактура") ||
+    lower.includes("счет на оплату") ||
+    lower.startsWith("итого") ||
+    lower.startsWith("всего") ||
+    lower.startsWith("сумма ндс") ||
+    lower.startsWith("к оплате") ||
+    HEADER_OR_TOTAL_PATTERNS.some((pattern) => pattern.test(trimmed))
+  );
 }
 
 function cleanupProductName(value: string, fallback: string) {
@@ -111,9 +124,10 @@ function parseStructuredLine(line: string): ParsedInvoiceItemLine | null {
     return null;
   }
 
-  const unitStart = unitMatch.index;
-  const unitEnd = unitStart + unitMatch[0].length;
-  const normalizedUnit = UNIT_ALIASES.get(unitMatch[1].toLowerCase().replace(".", "")) ?? unitMatch[1].toLowerCase();
+  const unitStart = unitMatch.index + unitMatch[1].length;
+  const unitRaw = unitMatch[2];
+  const unitEnd = unitStart + unitRaw.length;
+  const normalizedUnit = UNIT_ALIASES.get(unitRaw.toLowerCase().replace(".", "")) ?? unitRaw.toLowerCase();
   const numbers = findNumbers(line);
   const quantity = numbers.filter((number) => number.end <= unitStart).at(-1) ?? null;
   const afterUnitNumbers = numbers.filter((number) => number.start >= unitEnd);
