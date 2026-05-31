@@ -85,6 +85,12 @@ enum InvoicePriceChangeStatus {
   rejected
 }
 
+enum ProductMasterDuplicateReviewStatus {
+  needs_review
+  duplicate
+  not_duplicate
+}
+
 model Enterprise {
   id                 String              @id @default(cuid())
   name               String
@@ -97,6 +103,7 @@ model Enterprise {
   supplierOffers     SupplierOffer[]
   priceSnapshots     PriceSnapshot[]
   productMappings    ProductMapping[]
+  productMasterDuplicateReviews ProductMasterDuplicateReview[]
   smartOrderManualSelections SmartOrderManualSelection[]
   productIdentityRules ProductIdentityRule[]
   orders             Order[]
@@ -492,6 +499,24 @@ model ProductIdentityRule {
   @@index([normalizedArticle])
   @@index([normalizedBrand])
   @@unique([enterpriseId, supplierId, normalizedArticle, normalizedMatchText, normalizedBrand])
+}
+
+model ProductMasterDuplicateReview {
+  id             String                             @id @default(cuid())
+  enterpriseId   String
+  normalizedName String
+  masterIds      Json
+  status         ProductMasterDuplicateReviewStatus @default(needs_review)
+  comment        String?
+  reviewedAt     DateTime?
+  reviewedBy     String?
+  createdAt      DateTime                           @default(now())
+  updatedAt      DateTime                           @updatedAt
+  enterprise     Enterprise                         @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+
+  @@index([enterpriseId])
+  @@index([enterpriseId, normalizedName])
+  @@unique([enterpriseId, normalizedName])
 }
 
 model Order {
