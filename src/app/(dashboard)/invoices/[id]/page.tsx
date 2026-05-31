@@ -43,6 +43,8 @@ type InvoicePriceChange = {
 type ProductSearchResult = {
   id: string;
   name: string;
+  article: string | null;
+  brand: string | null;
   supplierId: string;
   supplierName: string | null;
 };
@@ -1256,7 +1258,7 @@ export default function InvoiceDetailsPage() {
                                     disabled={isBusy}
                                   >
                                     <strong>{product.name}</strong>
-                                    <span>{product.supplierName || "Без поставщика"}</span>
+                                    <span>{[product.brand, product.article, product.supplierName].filter(Boolean).join(" / ") || "Без поставщика"}</span>
                                   </button>
                                 ))}
                               </div>

@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { syncCatalogForDocument } from "@/lib/catalog-sync-core.js";
 import { upsertDocumentQualityReport } from "@/lib/document-quality";
+import { loadProductIdentityRules, type LoadedProductIdentityRule } from "@/lib/product-identity-rules";
 import { isMeridianSupplierName, parseMeridianSheetRows } from "@/lib/price-parser-meridian.mjs";
 import { refineParsedProductIdentity } from "@/lib/product-identity-refiner.mjs";
 import { isRedDragonSupplierName, parseRedDragonSheetRows } from "@/lib/price-parser-red-dragon.mjs";
@@ -60,6 +61,7 @@ type ParsedProductRow = {
 
 type ParseRowsOptions = {
   supplierName?: string | null;
+  identityRules?: LoadedProductIdentityRule[];
 };
 
 type SupplierProfile = {
@@ -2043,6 +2045,8 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
       country: finalizedNameParts.country,
       rawBrand: directBrand,
       rawCountry: directCountry,
+      article: parsedProduct.article,
+      identityRules: options.identityRules ?? [],
       supplierName: options.supplierName ?? null,
       disableAi: false,
     });
@@ -2122,15 +2126,17 @@ export async function parsePriceDocument(documentId: string): Promise<ParseDocum
 
   try {
     const absolutePath = path.join(/* turbopackIgnore: true */ process.cwd(), document.storedFilePath);
+    const identityRules = await loadProductIdentityRules(document.enterpriseId, document.supplierId);
     const { products, skippedCount } =
       document.sourceFormat === "pdf"
         ? parsePdfRows(await extractPdfLayoutText(absolutePath))
         : isMeridianSupplierName(document.supplier?.name)
           ? await parseMeridianSheetRows(await parseWorkbookRows(absolutePath))
         : isRedDragonSupplierName(document.supplier?.name)
-          ? await parseRedDragonSheetRows(await parseWorkbookRows(absolutePath))
+          ? await parseRedDragonSheetRows(await parseWorkbookRows(absolutePath), { identityRules })
           : await parseRows(await parseWorkbookRows(absolutePath), {
               supplierName: document.supplier?.name ?? null,
+              identityRules,
             });
 
     if (products.length === 0) {

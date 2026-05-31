@@ -98,6 +98,7 @@ model Enterprise {
   priceSnapshots     PriceSnapshot[]
   productMappings    ProductMapping[]
   smartOrderManualSelections SmartOrderManualSelection[]
+  productIdentityRules ProductIdentityRule[]
   orders             Order[]
   orderOptimizations OrderOptimization[]
   invoiceDocuments   InvoiceDocument[]
@@ -123,6 +124,7 @@ model Supplier {
   orders              Order[]
   optimizationResults OrderOptimizationResult[]
   smartOrderManualSelections SmartOrderManualSelection[]
+  productIdentityRules ProductIdentityRule[]
   invoiceDocuments    InvoiceDocument[]
   invoicePriceChanges InvoicePriceChange[]
   createdAt           DateTime                  @default(now())
@@ -465,6 +467,31 @@ model SmartOrderManualSelection {
   @@index([enterpriseId, normalizedParsedName])
   @@index([selectedProductId])
   @@unique([enterpriseId, normalizedParsedName, selectedProductId])
+}
+
+model ProductIdentityRule {
+  id                  String      @id @default(cuid())
+  enterpriseId        String
+  supplierId          String?
+  article             String?
+  normalizedArticle   String?
+  matchText           String?
+  normalizedMatchText String?
+  brand               String?
+  normalizedBrand     String?
+  country             String?
+  source              String      @default("manual")
+  confidence          Decimal?    @db.Decimal(5, 4)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  enterprise          Enterprise  @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  supplier            Supplier?   @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  @@index([enterpriseId])
+  @@index([supplierId])
+  @@index([normalizedArticle])
+  @@index([normalizedBrand])
+  @@unique([enterpriseId, supplierId, normalizedArticle, normalizedMatchText, normalizedBrand])
 }
 
 model Order {

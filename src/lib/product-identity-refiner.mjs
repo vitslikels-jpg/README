@@ -63,6 +63,19 @@ function normalizeComparableText(value) {
     .replace(/\s+/gu, " ");
 }
 
+const BLOCKED_BRAND_VALUES = new Set(["гост", "ту", "сто", "мк"]);
+
+function normalizeBrandGuardText(value) {
+  return normalizeComparableText(value)
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function isBlockedBrandValue(value) {
+  const normalized = normalizeBrandGuardText(value);
+  return normalized ? BLOCKED_BRAND_VALUES.has(normalized) : false;
+}
+
 function normalizeOptionalText(value) {
   const normalized = String(value ?? "").trim();
   return normalized ? normalized : null;
@@ -142,6 +155,10 @@ function isPotentialBrandCandidate(value) {
   }
 
   if (NON_BRAND_TERMS.has(normalizeComparableText(candidate))) {
+    return false;
+  }
+
+  if (isBlockedBrandValue(candidate)) {
     return false;
   }
 
@@ -430,6 +447,57 @@ function stripBrandFromName(name, brand) {
   return nextName;
 }
 
+function normalizedRuleText(value) {
+  return normalizeComparableText(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function ruleMatchesText(rawName, rule) {
+  const normalizedName = normalizedRuleText(rawName);
+  const normalizedMatchText = normalizedRuleText(rule.normalizedMatchText || rule.matchText);
+  const normalizedBrand = normalizedRuleText(rule.normalizedBrand || rule.brand);
+
+  if (normalizedMatchText && normalizedName.includes(normalizedMatchText)) {
+    return true;
+  }
+
+  if (!normalizedBrand) {
+    return false;
+  }
+
+  return new RegExp(`(?:^|\\s)${normalizedBrand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|$)`, "u").test(
+    normalizedName,
+  );
+}
+
+function findMatchingIdentityRule(input) {
+  const rules = Array.isArray(input.identityRules)
+    ? input.identityRules.filter((rule) => !isBlockedBrandValue(rule.normalizedBrand || rule.brand))
+    : [];
+
+  if (rules.length === 0) {
+    return null;
+  }
+
+  const normalizedArticle = normalizedRuleText(input.article);
+  const articleRule = normalizedArticle
+    ? rules.find((rule) => normalizedRuleText(rule.normalizedArticle || rule.article) === normalizedArticle)
+    : null;
+
+  if (articleRule) {
+    return articleRule;
+  }
+
+  const textRules = rules
+    .filter((rule) => ruleMatchesText(input.rawName, rule))
+    .sort((left, right) => String(right.brand ?? right.matchText ?? "").length - String(left.brand ?? left.matchText ?? "").length);
+
+  return textRules[0] ?? null;
+}
+
 function clampConfidence(value) {
   const numericValue = Number(value);
 
@@ -503,7 +571,8 @@ function normalizeAiSuggestion(value) {
 
   const suggestion = value;
   const parsedName = normalizeOptionalText(suggestion.parsedName);
-  const brand = normalizeOptionalText(suggestion.brand);
+  const rawBrand = normalizeOptionalText(suggestion.brand);
+  const brand = rawBrand && !isBlockedBrandValue(rawBrand) ? rawBrand : null;
   const country = normalizeOptionalText(suggestion.country);
 
   return {
@@ -550,6 +619,10 @@ function shouldRequestAi(input, brandCandidates) {
   }
 
   if (!input.country && looksLikeCountry(input.rawName)) {
+    return true;
+  }
+
+  if (!input.brand && countWords(input.rawName) >= 3) {
     return true;
   }
 
@@ -653,6 +726,20 @@ export async function refineParsedProductIdentity(input) {
   let nextBrand = normalizeOptionalText(input.brand);
   let nextCountry = normalizeOptionalText(input.country);
   const directCountry = normalizeOptionalText(input.rawCountry);
+  const matchingRule = findMatchingIdentityRule(input);
+
+  if (nextBrand && isBlockedBrandValue(nextBrand)) {
+    nextBrand = null;
+  }
+
+  if (matchingRule?.brand && !nextBrand && !isBlockedBrandValue(matchingRule.brand)) {
+    nextBrand = normalizeOptionalText(matchingRule.brand);
+    nextName = stripBrandFromName(nextName, nextBrand);
+  }
+
+  if (matchingRule?.country && !nextCountry) {
+    nextCountry = normalizeOptionalText(matchingRule.country);
+  }
 
   if (!nextCountry && directCountry && looksLikeCountry(directCountry)) {
     nextCountry = toDisplayCountry(directCountry);
@@ -688,10 +775,10 @@ export async function refineParsedProductIdentity(input) {
     }
   }
 
-  if (shouldRequestAi(input, brandCandidates)) {
+  if (!matchingRule && shouldRequestAi({ ...input, brand: nextBrand, country: nextCountry }, brandCandidates)) {
     const suggestion = await requestAiRefinement(input, brandCandidates);
 
-    if (suggestion?.brand && (suggestion.confidence ?? 0) >= 0.55) {
+    if (suggestion?.brand && !isBlockedBrandValue(suggestion.brand) && (suggestion.confidence ?? 0) >= 0.55) {
       nextBrand = suggestion.brand;
     }
 
@@ -720,9 +807,13 @@ export async function refineParsedProductIdentity(input) {
     name: normalizeOptionalText(nextName) ?? normalizeOptionalText(input.parsedName) ?? normalizeOptionalText(input.rawName) ?? "",
     brand: nextBrand,
     country: nextCountry,
-    source: nextBrand && brandCandidates.length === 1 ? "local" : "parser",
-    confidence: nextBrand && brandCandidates.length === 1 ? 0.7 : null,
-    explanation: nextBrand && brandCandidates.length === 1 ? "Локально найден один сильный кандидат бренда." : null,
+    source: matchingRule ? "identity_rule" : nextBrand && brandCandidates.length === 1 ? "local" : "parser",
+    confidence: matchingRule ? Number(matchingRule.confidence ?? 1) : nextBrand && brandCandidates.length === 1 ? 0.7 : null,
+    explanation: matchingRule
+      ? "Применено сохраненное правило бренда/страны."
+      : nextBrand && brandCandidates.length === 1
+        ? "Локально найден один сильный кандидат бренда."
+        : null,
     usedAi: false,
   };
 }

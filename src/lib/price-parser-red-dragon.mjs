@@ -23,7 +23,6 @@ const REQUIRED_HEADERS = {
   price: PRICE_HEADERS,
 };
 
-const MAX_RED_DRAGON_AI_ROWS = 25;
 const RED_DRAGON_IDENTITY_OVERRIDES = new Map([
   ["4803oz", { brand: "Doldori" }],
   ["5714oz", { brand: "Doldori" }],
@@ -392,7 +391,7 @@ function applyRedDragonIdentityOverride(article, identity) {
   };
 }
 
-export async function parseRedDragonSheetRows(rows) {
+export async function parseRedDragonSheetRows(rows, options = {}) {
   const headerMatch = detectHeaderRow(rows);
 
   if (!headerMatch) {
@@ -404,9 +403,6 @@ export async function parseRedDragonSheetRows(rows) {
   const headers = buildHeaderCandidates(rows, headerMatch.headerRowIndex, headerMatch.headerRowSpan);
   const products = [];
   let skippedCount = 0;
-  let aiRowsUsed = 0;
-  let identityAiRowsUsed = 0;
-  const maxIdentityAiRows = 40;
 
   for (let rowIndex = headerMatch.headerRowIndex + headerMatch.headerRowSpan; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex] ?? [];
@@ -441,7 +437,6 @@ export async function parseRedDragonSheetRows(rows) {
     });
 
     const shouldAskAi =
-      aiRowsUsed < MAX_RED_DRAGON_AI_ROWS &&
       (packaging === null || (unitsPerPack === null && unitsPerPackRaw.length > 0) || (price === null && priceRaw.length > 0));
 
     if (shouldAskAi) {
@@ -477,7 +472,6 @@ export async function parseRedDragonSheetRows(rows) {
       if (aiSuggestion) {
         rawData.aiSource = providerSource();
         rawData.aiExplanation = aiSuggestion.explanation ?? "";
-        aiRowsUsed += 1;
       }
     }
 
@@ -509,14 +503,12 @@ export async function parseRedDragonSheetRows(rows) {
       country: null,
       rawBrand: null,
       rawCountry: countryRaw || null,
+      article: article || null,
+      identityRules: options.identityRules ?? [],
       supplierName: "\u041a\u0440\u0430\u0441\u043d\u044b\u0439 \u0434\u0440\u0430\u043a\u043e\u043d",
-      disableAi: identityAiRowsUsed >= maxIdentityAiRows,
+      disableAi: false,
     });
     const finalIdentity = applyRedDragonIdentityOverride(article, refinedIdentity);
-
-    if (refinedIdentity.usedAi) {
-      identityAiRowsUsed += 1;
-    }
 
     rawData.identityRefinerSource = finalIdentity.source;
     rawData.identityRefinerConfidence = finalIdentity.confidence?.toString() ?? "";

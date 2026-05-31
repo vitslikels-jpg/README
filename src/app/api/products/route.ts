@@ -71,14 +71,32 @@ export async function GET(request: Request) {
         document: {
           isCurrent: true,
         },
-        name: {
-          contains: query,
-          mode: "insensitive",
-        },
+        OR: [
+          {
+            name: {
+              contains: query,
+              mode: "insensitive",
+            },
+          },
+          {
+            brand: {
+              contains: query,
+              mode: "insensitive",
+            },
+          },
+          {
+            article: {
+              contains: query,
+              mode: "insensitive",
+            },
+          },
+        ],
       },
       select: {
         id: true,
         name: true,
+        article: true,
+        brand: true,
         supplierId: true,
         supplier: {
           select: {
@@ -96,6 +114,8 @@ export async function GET(request: Request) {
       products: products.map((product) => ({
         id: product.id,
         name: product.name,
+        article: product.article,
+        brand: product.brand,
         supplierId: product.supplierId,
         supplierName: product.supplier.name,
       })),
