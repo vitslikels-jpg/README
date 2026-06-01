@@ -34,6 +34,46 @@ function buildRawTextPreview(rawText: string) {
   return rawText.replace(/\s+/g, " ").trim().slice(0, 1000);
 }
 
+function buildRowsPreview(rows: string[]) {
+  return rows.join("\n").slice(0, 1000);
+}
+
+function sanitizeParsedItem(item: {
+  name: string | null;
+  quantity: number | null;
+  unit: string | null;
+  priceWithVat: number | null;
+  priceWithoutVat: number | null;
+  vatRate: number | null;
+  lineTotal: number | null;
+}) {
+  const sanitizedQuantity = sanitizeQuantity(item.quantity);
+  const sanitizedPriceWithoutVat = sanitizeMoney(item.priceWithoutVat);
+  const sanitizedPriceWithVat = sanitizeMoney(item.priceWithVat);
+  const sanitizedVatRate = sanitizeVatRate(item.vatRate);
+  const sanitizedLineTotal = sanitizeMoney(item.lineTotal);
+  const forcedReview =
+    sanitizedQuantity.forcedReview ||
+    sanitizedPriceWithoutVat.forcedReview ||
+    sanitizedPriceWithVat.forcedReview ||
+    sanitizedVatRate.forcedReview ||
+    sanitizedLineTotal.forcedReview;
+
+  const sanitizedItem = {
+    ...item,
+    quantity: sanitizedQuantity.value?.toNumber() ?? null,
+    priceWithoutVat: sanitizedPriceWithoutVat.value?.toNumber() ?? null,
+    priceWithVat: sanitizedPriceWithVat.value?.toNumber() ?? null,
+    vatRate: sanitizedVatRate.value?.toNumber() ?? null,
+    lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
+  };
+
+  return {
+    ...sanitizedItem,
+    forcedReview,
+  };
+}
+
 export async function POST(request: Request, context: RouteContext) {
   const { id } = await context.params;
   const { searchParams } = new URL(request.url);
@@ -86,49 +126,74 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     const parsedInvoice = await parseInvoiceWithGemini(rawText);
+    const { structure, tableRows } = parsedInvoice;
+
+    console.info("[invoice-ai-parse:structure]", {
+      invoiceId: id,
+      rawTextLength: rawText.length,
+      tableDetected: structure.tableDetected,
+      tableRowsCount: tableRows.length,
+      parsedItemsCount: parsedInvoice.items.length,
+      columns: structure.columns,
+    });
+
+    if (!structure.tableDetected || tableRows.length === 0) {
+      await prisma.invoiceDocument.update({
+        where: {
+          id,
+        },
+        data: {
+          detectedSupplierName: structure.supplierName,
+          invoiceNumber: structure.invoiceNumber,
+          invoiceDate: parseDate(structure.invoiceDate),
+          totalAmount: structure.totalAmount,
+          vatAmount: structure.vatAmount,
+          status: "needs_review",
+        },
+      });
+
+      return jsonUtf8(
+        {
+          message: "Таблица товаров не обнаружена",
+          rawTextPreview: buildRawTextPreview(rawText),
+          tableDetected: structure.tableDetected,
+          tableRowsCount: tableRows.length,
+          parsedItemsCount: 0,
+          columns: structure.columns,
+        },
+        { status: 400 },
+      );
+    }
+
     let parsedItems = parsedInvoice.items.map((item) => {
-      const sanitizedQuantity = sanitizeQuantity(item.quantity);
-      const sanitizedPriceWithoutVat = sanitizeMoney(item.priceWithoutVat);
-      const sanitizedPriceWithVat = sanitizeMoney(item.priceWithVat);
-      const sanitizedVatRate = sanitizeVatRate(item.vatRate);
-      const sanitizedLineTotal = sanitizeMoney(item.lineTotal);
-      const forcedReview =
-        sanitizedQuantity.forcedReview ||
-        sanitizedPriceWithoutVat.forcedReview ||
-        sanitizedPriceWithVat.forcedReview ||
-        sanitizedVatRate.forcedReview ||
-        sanitizedLineTotal.forcedReview;
-      const sanitizedItem = {
-        ...item,
-        quantity: sanitizedQuantity.value?.toNumber() ?? null,
-        priceWithoutVat: sanitizedPriceWithoutVat.value?.toNumber() ?? null,
-        priceWithVat: sanitizedPriceWithVat.value?.toNumber() ?? null,
-        vatRate: sanitizedVatRate.value?.toNumber() ?? null,
-        lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
-      };
-      const needsReview = forcedReview || needsItemReview(sanitizedItem);
+      const sanitizedItem = sanitizeParsedItem(item);
+      const needsReview = sanitizedItem.forcedReview || needsItemReview(sanitizedItem);
 
       return {
         ...sanitizedItem,
-        confidence: forcedReview ? 0.5 : needsReview ? 0.65 : 0.85,
+        confidence: sanitizedItem.forcedReview ? 0.5 : needsReview ? 0.65 : 0.85,
         needsReview,
       };
     });
+
     let fallbackUsed = false;
 
     console.info("[invoice-ai-parse:result]", {
       invoiceId: id,
       rawTextLength: rawText.length,
+      tableDetected: structure.tableDetected,
+      tableRowsCount: tableRows.length,
       aiItemsCount: parsedItems.length,
     });
 
     if (parsedItems.length === 0) {
-      const fallbackItems = parseInvoiceItemsFromText(rawText);
+      const fallbackItems = parseInvoiceItemsFromText(tableRows.join("\n"));
       fallbackUsed = fallbackItems.length > 0;
 
       console.info("[invoice-ai-parse:fallback]", {
         invoiceId: id,
-        rawTextLength: rawText.length,
+        tableDetected: structure.tableDetected,
+        tableRowsCount: tableRows.length,
         fallbackItemsCount: fallbackItems.length,
       });
 
@@ -147,6 +212,7 @@ export async function POST(request: Request, context: RouteContext) {
           priceWithoutVat: null,
           vatRate: null,
           lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
+          forcedReview,
           confidence: forcedReview ? 0.5 : item.confidence,
           needsReview: true,
         };
@@ -158,6 +224,11 @@ export async function POST(request: Request, context: RouteContext) {
             id,
           },
           data: {
+            detectedSupplierName: structure.supplierName,
+            invoiceNumber: structure.invoiceNumber,
+            invoiceDate: parseDate(structure.invoiceDate),
+            totalAmount: structure.totalAmount,
+            vatAmount: structure.vatAmount,
             status: "needs_review",
           },
         });
@@ -165,7 +236,11 @@ export async function POST(request: Request, context: RouteContext) {
         return jsonUtf8(
           {
             message: "AI не смог разобрать товары. Проверьте распознанный текст или используйте разбор без AI.",
-            rawTextPreview: buildRawTextPreview(rawText),
+            rawTextPreview: buildRowsPreview(tableRows),
+            tableDetected: structure.tableDetected,
+            tableRowsCount: tableRows.length,
+            parsedItemsCount: 0,
+            columns: structure.columns,
           },
           { status: 400 },
         );
@@ -173,6 +248,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const reviewItemsCount = parsedItems.filter((item) => item.needsReview).length;
+    const createdItemsCount = parsedItems.length;
 
     await prisma.$transaction(async (tx) => {
       await tx.invoiceItem.deleteMany({
@@ -181,7 +257,7 @@ export async function POST(request: Request, context: RouteContext) {
         },
       });
 
-      for (const item of parsedItems) {
+      for (const [itemIndex, item] of parsedItems.entries()) {
         const sanitizedQuantity = sanitizeQuantity(item.quantity);
         const sanitizedPriceWithoutVat = sanitizeMoney(item.priceWithoutVat);
         const sanitizedPriceWithVat = sanitizeMoney(item.priceWithVat);
@@ -192,7 +268,9 @@ export async function POST(request: Request, context: RouteContext) {
           sanitizedPriceWithoutVat.forcedReview ||
           sanitizedPriceWithVat.forcedReview ||
           sanitizedVatRate.forcedReview ||
-          sanitizedLineTotal.forcedReview;
+          sanitizedLineTotal.forcedReview ||
+          item.forcedReview;
+
         const payload = {
           invoiceDocumentId: id,
           productNameRaw: item.name ?? "",
@@ -213,7 +291,7 @@ export async function POST(request: Request, context: RouteContext) {
         } catch (error) {
           console.error("[invoice-ai-parse:create-failed]", {
             invoiceId: id,
-            itemIndex: parsedItems.indexOf(item),
+            itemIndex,
             payload: {
               ...payload,
               quantity: payload.quantity?.toString() ?? null,
@@ -230,7 +308,9 @@ export async function POST(request: Request, context: RouteContext) {
 
       console.info("[invoice-ai-parse:created]", {
         invoiceId: id,
-        createdItemsCount: parsedItems.length,
+        tableDetected: structure.tableDetected,
+        tableRowsCount: tableRows.length,
+        createdItemsCount,
         reviewItemsCount,
       });
 
@@ -239,22 +319,26 @@ export async function POST(request: Request, context: RouteContext) {
           id,
         },
         data: {
-          detectedSupplierName: parsedInvoice.supplierName,
-          invoiceNumber: parsedInvoice.invoiceNumber,
-          invoiceDate: parseDate(parsedInvoice.invoiceDate),
-          totalAmount: parsedInvoice.totalAmount,
-          vatAmount: parsedInvoice.vatAmount,
-          status: parsedItems.length === 0 || reviewItemsCount > 0 ? "needs_review" : "parsed",
+          detectedSupplierName: structure.supplierName,
+          invoiceNumber: structure.invoiceNumber,
+          invoiceDate: parseDate(structure.invoiceDate),
+          totalAmount: structure.totalAmount,
+          vatAmount: structure.vatAmount,
+          status: createdItemsCount === 0 || reviewItemsCount > 0 ? "needs_review" : "parsed",
         },
       });
     });
 
     return jsonUtf8({
       invoiceId: id,
-      createdItemsCount: parsedItems.length,
+      createdItemsCount,
       reviewItemsCount,
       fallbackUsed,
-      message: fallbackUsed ? "AI не нашёл товары, использован простой разбор." : undefined,
+      tableDetected: structure.tableDetected,
+      tableRowsCount: tableRows.length,
+      parsedItemsCount: createdItemsCount,
+      columns: structure.columns,
+      message: fallbackUsed ? "AI не нашёл товары, использован простой разбор по строкам таблицы." : undefined,
     });
   } catch (error) {
     await prisma.invoiceDocument.update({
