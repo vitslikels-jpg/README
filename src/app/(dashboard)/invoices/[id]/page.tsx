@@ -318,6 +318,8 @@ export default function InvoiceDetailsPage() {
   const [editItemDraft, setEditItemDraft] = useState<EditInvoiceItemDraft | null>(null);
   const [isSavingItemEdit, setIsSavingItemEdit] = useState(false);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [isBulkDeletingItems, setIsBulkDeletingItems] = useState(false);
 
   const loadInvoice = useCallback(
     async (enterpriseId: string, id: string, signal?: AbortSignal) => {
@@ -1030,6 +1032,61 @@ export default function InvoiceDetailsPage() {
     }
   }
 
+  function handleToggleItemSelection(itemId: string) {
+    setSelectedItemIds((current) =>
+      current.includes(itemId) ? current.filter((selectedId) => selectedId !== itemId) : [...current, itemId],
+    );
+  }
+
+  function handleToggleAllItems() {
+    if (!invoice) {
+      return;
+    }
+
+    setSelectedItemIds((current) => (current.length === invoice.items.length ? [] : invoice.items.map((item) => item.id)));
+  }
+
+  async function handleBulkDeleteItems() {
+    if (!activeEnterpriseId || !params?.id || selectedItemIds.length === 0) {
+      return;
+    }
+
+    if (!window.confirm(`Удалить выбранные строки: ${selectedItemIds.length}?`)) {
+      return;
+    }
+
+    setIsBulkDeletingItems(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const response = await fetch(`/api/invoices/${params.id}/items/bulk-delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          enterpriseId: activeEnterpriseId,
+          itemIds: selectedItemIds,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { message?: string; deletedCount?: number } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Не удалось удалить выбранные строки.");
+      }
+
+      await loadInvoice(activeEnterpriseId, params.id);
+      setSelectedItemIds([]);
+      setSuccessMessage(`Удалено строк: ${payload?.deletedCount ?? selectedItemIds.length}.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось удалить выбранные строки.");
+    } finally {
+      setIsBulkDeletingItems(false);
+    }
+  }
+
   async function handleSelectSupplier(supplierId: string | null) {
     if (!activeEnterpriseId || !params?.id) {
       return;
@@ -1143,6 +1200,7 @@ export default function InvoiceDetailsPage() {
   const hasPriceChanges = invoice.priceChanges.length > 0;
   const priceChangesByItemId = new Map(invoice.priceChanges.map((change) => [change.invoiceItemId, change]));
   const priceChangesChecked = hasItems && pendingPriceChangesCount === 0;
+  const areAllItemsSelected = hasItems && selectedItemIds.length === invoice.items.length;
   const isBusy =
     isSavingRawText ||
     isProcessing ||
@@ -1151,6 +1209,7 @@ export default function InvoiceDetailsPage() {
     isDetectingPriceChanges ||
     isApprovingInvoice ||
     isSavingItemEdit ||
+    isBulkDeletingItems ||
     deletingItemId !== null ||
     isSavingSupplier ||
     isSavingProduct ||
@@ -1428,6 +1487,20 @@ export default function InvoiceDetailsPage() {
           </div>
         </div>
 
+        {hasItems ? (
+          <div className="invoiceItemEditActions">
+            <span className="invoiceHint">{`Выбрано строк: ${selectedItemIds.length}`}</span>
+            <button
+              type="button"
+              className="secondaryButton compactButton"
+              onClick={() => void handleBulkDeleteItems()}
+              disabled={isBusy || selectedItemIds.length === 0}
+            >
+              {isBulkDeletingItems ? "Удаляем..." : "Удалить выбранные"}
+            </button>
+          </div>
+        ) : null}
+
         {!hasRawText ? (
           <p className="invoiceHint">Сначала распознайте накладную или вставьте текст вручную.</p>
         ) : null}
@@ -1442,6 +1515,15 @@ export default function InvoiceDetailsPage() {
             <table className="orderItemsTable">
               <thead>
                 <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={areAllItemsSelected}
+                      onChange={handleToggleAllItems}
+                      disabled={isBusy || !hasItems}
+                      aria-label={"Выбрать все строки"}
+                    />
+                  </th>
                   <th>Товар в приложении</th>
                   <th>Товар из накладной</th>
                   <th>Количество</th>
@@ -1473,6 +1555,15 @@ export default function InvoiceDetailsPage() {
                   return (
                   <Fragment key={item.id}>
                     <tr>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedItemIds.includes(item.id)}
+                          onChange={() => handleToggleItemSelection(item.id)}
+                          disabled={isBusy}
+                          aria-label={"Выбрать строку"}
+                        />
+                      </td>
                       <td>
                         <div className="invoiceMatchedProductCell">
                           <span>{item.matchedProductName || "Нужно выбрать товар"}</span>
@@ -1577,7 +1668,7 @@ export default function InvoiceDetailsPage() {
 
                     {productSearchItemId === item.id ? (
                       <tr className="invoiceItemSearchRow">
-                        <td colSpan={9}>
+                        <td colSpan={10}>
                           <div className="invoiceItemSearchPanel">
                             <div className="field">
                               <span>Поиск товара</span>
@@ -1625,7 +1716,7 @@ export default function InvoiceDetailsPage() {
 
                     {editingItemId === item.id && editItemDraft ? (
                       <tr className="invoiceItemSearchRow">
-                        <td colSpan={9}>
+                        <td colSpan={10}>
                           <div className="invoiceItemSearchPanel invoiceItemEditPanel">
                             <div className="invoiceItemEditGrid">
                               <label className="field">
