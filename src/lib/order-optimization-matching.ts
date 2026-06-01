@@ -257,6 +257,25 @@ function normalizeSearchText(value: string | null | undefined) {
     .trim();
 }
 
+function normalizeQuerySearchText(value: string | null | undefined) {
+  const normalized = normalizeSearchText(value);
+  const words = normalized ? normalized.split(" ").filter(Boolean) : [];
+
+  if (words.length < 2) {
+    return normalized;
+  }
+
+  const quantityCandidate = words[words.length - 2] ?? "";
+  const unitCandidate = words[words.length - 1] ?? "";
+  const knownUnits = new Set(["кг", "г", "л", "мл", "шт", "уп", "пач", "кор", "бут"]);
+
+  if (knownUnits.has(unitCandidate) && /^\d+(?:[.,]\d+)?$/u.test(quantityCandidate)) {
+    return words.slice(0, -2).join(" ").trim();
+  }
+
+  return normalized;
+}
+
 function getSearchTokens(value: string | null | undefined) {
   return normalizeSearchText(value)
     .split(" ")
@@ -335,6 +354,326 @@ function getNormalizedWords(value: string | null | undefined) {
   return normalized ? normalized.split(" ").filter(Boolean) : [];
 }
 
+function hasWordPattern(words: string[], pattern: RegExp) {
+  return words.some((word) => pattern.test(word));
+}
+
+function hasWordPrefix(words: string[], prefixes: string[]) {
+  return words.some((word) => prefixes.some((prefix) => word.startsWith(prefix)));
+}
+
+function containsAnyFragment(text: string, fragments: string[]) {
+  return fragments.some((fragment) => text.includes(fragment));
+}
+
+function hasWordInRange(words: string[], pattern: RegExp, endExclusive: number) {
+  return words.slice(0, endExclusive).some((word) => pattern.test(word));
+}
+
+function hasPrefixInRange(words: string[], prefixes: string[], endExclusive: number) {
+  return words.slice(0, endExclusive).some((word) => prefixes.some((prefix) => word.startsWith(prefix)));
+}
+
+function getStrictDangerousQueryDecision(normalizedQuery: string, normalizedCandidateText: string, candidateWords: string[]) {
+  if (!normalizedQuery || !normalizedCandidateText) {
+    return null;
+  }
+
+  const firstCandidateWord = candidateWords[0] ?? "";
+  const hasCheeseWord = hasWordPattern(candidateWords, /^сыр(?:а|у|е|ом|ы|ов)?$/u);
+  const hasCheeseKind = hasWordPrefix(candidateWords, [
+    "моцарел",
+    "чеддер",
+    "гауд",
+    "пармез",
+    "камамбер",
+    "маскарпон",
+    "рикотт",
+    "сулугуни",
+    "брынз",
+    "дорблю",
+    "фетакс",
+    "кремет",
+  ]);
+  const hasChickenWord = hasWordPrefix(candidateWords, ["кур", "цып", "бройлер"]);
+  const hasFilletWord = hasWordPattern(candidateWords, /^филе$/u) || hasWordPrefix(candidateWords, ["грудк"]);
+  const hasButterWord = hasWordPattern(candidateWords, /^масл(?:о|а|у|е|ом)?$/u);
+  const hasCreamyWord = hasWordPrefix(candidateWords, ["сливоч"]);
+  const hasCheddarWord = hasWordPrefix(candidateWords, ["чеддер"]);
+  const hasForbiddenChickenContext = containsAnyFragment(normalizedCandidateText, [
+    "кальмар",
+    "лапша",
+    "приправа",
+    "специи",
+    "со вкусом",
+    "для курицы",
+    "угорь",
+    "пангасиус",
+    "минтай",
+    "тилапия",
+  ]);
+
+  if (normalizedQuery === "сыр") {
+    if (containsAnyFragment(normalizedCandidateText, ["сырой", "сырн", "сырник", "кунжут", "соус", "со вкусом", "с сыром"])) {
+      return false;
+    }
+
+    return (
+      (hasCheeseWord && hasWordInRange(candidateWords, /^сыр(?:а|у|е|ом|ы|ов)?$/u, 2)) ||
+      hasPrefixInRange(candidateWords, ["моцарел", "чеддер", "гауд", "пармез", "камамбер", "маскарпон", "рикотт", "сулугуни", "брынз", "дорблю", "фетакс", "кремет"], 2)
+    );
+  }
+
+  if (normalizedQuery === "чеддер") {
+    if (containsAnyFragment(normalizedCandidateText, ["лапша", "со вкусом", "соус", "приправа"])) {
+      return false;
+    }
+
+    return hasPrefixInRange(candidateWords, ["чеддер"], 2) || (firstCandidateWord.startsWith("сыр") && hasCheddarWord);
+  }
+
+  if (normalizedQuery === "курица") {
+    if (hasForbiddenChickenContext) {
+      return false;
+    }
+
+    return firstCandidateWord.startsWith("кур") || firstCandidateWord.startsWith("цып");
+  }
+
+  if (normalizedQuery === "курица филе" || normalizedQuery === "филе курицы") {
+    if (hasForbiddenChickenContext) {
+      return false;
+    }
+
+    return hasChickenWord && hasFilletWord && hasPrefixInRange(candidateWords, ["кур", "филе"], 3);
+  }
+
+  if (normalizedQuery === "картофель") {
+    if (containsAnyFragment(normalizedCandidateText, ["крахмал", "ньокки", "чипсы", "специи"])) {
+      return false;
+    }
+
+    return hasWordInRange(candidateWords, /^картофель(?:я|ю|е|ем|и)?$/u, 2);
+  }
+
+  if (normalizedQuery === "сахар") {
+    if (containsAnyFragment(normalizedCandidateText, ["соус", "с сахаром", "ваниль", "пудр"])) {
+      return false;
+    }
+
+    return hasWordInRange(candidateWords, /^сахар(?:а|у|е|ом)?$/u, 2);
+  }
+
+  if (normalizedQuery === "рис") {
+    if (containsAnyFragment(normalizedCandidateText, ["лапша", "паста", "уксус", "рисовая", "со вкусом", "с рисом"])) {
+      return false;
+    }
+
+    return hasWordInRange(candidateWords, /^рис(?:а|у|е|ом)?$/u, 2);
+  }
+
+  if (normalizedQuery === "масло") {
+    if (containsAnyFragment(normalizedCandidateText, ["в масле", "подсолнечном масле", "оливковом масле", "соус"])) {
+      return false;
+    }
+
+    return hasWordInRange(candidateWords, /^масл(?:о|а|у|е|ом)?$/u, 2);
+  }
+
+  if (normalizedQuery.startsWith("масло сливоч")) {
+    if (containsAnyFragment(normalizedCandidateText, ["в масле", "подсолнечном масле", "оливковом масле", "соус"])) {
+      return false;
+    }
+
+    if (normalizedQuery.includes("82 5") && !normalizedCandidateText.includes("82 5")) {
+      return false;
+    }
+
+    return hasButterWord && hasCreamyWord && hasPrefixInRange(candidateWords, ["масл", "сливоч"], 3);
+  }
+
+  return null;
+}
+
+function isStrictDangerousQuery(normalizedQuery: string) {
+  return new Set([
+    "сыр",
+    "чеддер",
+    "курица",
+    "курица филе",
+    "филе курицы",
+    "картофель",
+    "сахар",
+    "рис",
+    "масло",
+    "масло сливочное",
+  ]).has(normalizedQuery);
+}
+
+function candidatePassesStrictQueryGuard(searchText: string | null | undefined, candidateText: string | null | undefined) {
+  const normalizedQuery = normalizeQuerySearchText(searchText);
+  const normalizedCandidateText = normalizeSearchText(candidateText);
+  const candidateWords = getNormalizedWords(candidateText);
+  const strictDecision = getStrictDangerousQueryDecision(normalizedQuery, normalizedCandidateText, candidateWords);
+
+  if (strictDecision !== null) {
+    return strictDecision;
+  }
+
+  if (!normalizedQuery || !normalizedCandidateText || !isStrictDangerousQuery(normalizedQuery)) {
+    return true;
+  }
+
+  const firstCandidateWord = candidateWords[0] ?? "";
+  const hasCheeseWord = hasWordPattern(candidateWords, /^сыр(?:а|у|е|ом|ы|ов)?$/u);
+  const hasCheeseKind = hasWordPrefix(candidateWords, [
+    "моцарел",
+    "чеддер",
+    "гауд",
+    "пармез",
+    "камамбер",
+    "маскарпон",
+    "рикотт",
+    "сулугуни",
+    "брынз",
+    "дорблю",
+    "фетакс",
+    "кремет",
+  ]);
+  const hasChickenWord = hasWordPrefix(candidateWords, ["кур", "цып", "бройлер"]);
+  const hasFilletWord = hasWordPattern(candidateWords, /^филе$/u) || hasWordPrefix(candidateWords, ["грудк"]);
+  const hasButterWord = hasWordPattern(candidateWords, /^масл(?:о|а|у|е|ом)?$/u);
+  const hasCreamyWord = hasWordPrefix(candidateWords, ["сливоч"]);
+  const hasRiceWord = hasWordPattern(candidateWords, /^рис(?:а|у|е|ом)?$/u);
+  const hasSugarWord = hasWordPattern(candidateWords, /^сахар(?:а|у|е|ом)?$/u);
+  const hasPotatoWord = hasWordPattern(candidateWords, /^картофель(?:я|ю|е|ем|и)?$/u);
+  const hasCheddarWord = hasWordPrefix(candidateWords, ["чеддер"]);
+  const hasForbiddenChickenContext = containsAnyFragment(normalizedCandidateText, [
+    "кальмар",
+    "лапша",
+    "приправа",
+    "специи",
+    "со вкусом",
+    "для курицы",
+  ]);
+
+  if (normalizedQuery === "сыр") {
+    if (containsAnyFragment(normalizedCandidateText, ["сырой", "сырн", "сырник", "кунжут", "соус", "со вкусом", "с сыром"])) {
+      return false;
+    }
+
+    return (hasCheeseWord && firstCandidateWord.startsWith("сыр")) || hasCheeseKind;
+  }
+
+  if (normalizedQuery === "чеддер") {
+    if (containsAnyFragment(normalizedCandidateText, ["лапша", "со вкусом", "соус", "приправа"])) {
+      return false;
+    }
+
+    return firstCandidateWord.startsWith("чеддер") || (firstCandidateWord.startsWith("сыр") && hasCheddarWord);
+  }
+
+  if (normalizedQuery === "курица") {
+    if (hasForbiddenChickenContext) {
+      return false;
+    }
+
+    return firstCandidateWord.startsWith("кур") || firstCandidateWord.startsWith("цып");
+  }
+
+  if (normalizedQuery === "курица филе" || normalizedQuery === "филе курицы") {
+    if (hasForbiddenChickenContext) {
+      return false;
+    }
+
+    return hasChickenWord && hasFilletWord && (firstCandidateWord.startsWith("кур") || firstCandidateWord === "филе");
+  }
+
+  if (normalizedQuery === "картофель") {
+    if (containsAnyFragment(normalizedCandidateText, ["крахмал", "ньокки", "чипсы", "специи"])) {
+      return false;
+    }
+
+    return hasPotatoWord;
+  }
+
+  if (normalizedQuery === "сахар") {
+    if (containsAnyFragment(normalizedCandidateText, ["соус", "с сахаром", "ваниль", "пудр"])) {
+      return false;
+    }
+
+    return hasSugarWord;
+  }
+
+  if (normalizedQuery === "рис") {
+    if (containsAnyFragment(normalizedCandidateText, ["лапша", "паста", "уксус", "рисовая", "со вкусом"])) {
+      return false;
+    }
+
+    return hasRiceWord;
+  }
+
+  if (normalizedQuery === "масло") {
+    if (containsAnyFragment(normalizedCandidateText, ["в масле", "подсолнечном масле", "оливковом масле", "соус"])) {
+      return false;
+    }
+
+    return hasButterWord;
+  }
+
+  if (normalizedQuery === "масло сливочное") {
+    if (containsAnyFragment(normalizedCandidateText, ["в масле", "подсолнечном масле", "оливковом масле", "соус"])) {
+      return false;
+    }
+
+    return hasButterWord && hasCreamyWord;
+  }
+
+  return true;
+}
+
+function getQueryClarifierPenalty(searchText: string | null | undefined, candidateText: string | null | undefined) {
+  const normalizedQuery = normalizeQuerySearchText(searchText);
+  const normalizedCandidateText = normalizeSearchText(candidateText);
+  const candidateWords = getNormalizedWords(candidateText);
+
+  if (!normalizedQuery || !normalizedCandidateText) {
+    return 0;
+  }
+
+  let penalty = 0;
+
+  if (normalizedQuery.includes("филе")) {
+    const hasFilletWord = hasWordPattern(candidateWords, /^филе$/u) || hasWordPrefix(candidateWords, ["грудк"]);
+
+    if (!hasFilletWord) {
+      penalty -= 260;
+    }
+  }
+
+  if (normalizedQuery.includes("чеддер") && !hasWordPrefix(candidateWords, ["чеддер"])) {
+    penalty -= 260;
+  }
+
+  if (normalizedQuery.includes("моцарел") && !hasWordPrefix(candidateWords, ["моцарел"])) {
+    penalty -= 260;
+  }
+
+  if (normalizedQuery.includes("сливоч") && !hasWordPrefix(candidateWords, ["сливоч"])) {
+    penalty -= 260;
+  }
+
+  if (normalizedQuery.includes("82 5") && !normalizedCandidateText.includes("82 5")) {
+    penalty -= 260;
+  }
+
+  if ((normalizedQuery.includes("6х6") || normalizedQuery.includes("6x6")) && !(normalizedCandidateText.includes("6х6") || normalizedCandidateText.includes("6x6"))) {
+    penalty -= 260;
+  }
+
+  return penalty;
+}
+
 function getSemanticScoreAdjustment(searchTokens: string[], productTokens: Set<string>) {
   const queryTokens = new Set(searchTokens);
   let score = 0;
@@ -377,7 +716,7 @@ function getProductFallbackScoreAdjustment(searchText: string | null | undefined
     return 0;
   }
 
-  let score = 0;
+  let score = getQueryClarifierPenalty(searchText, `${product.name} ${product.brand ?? ""} ${product.article ?? ""}`);
 
   if (normalizedQuery === "сахар") {
     if (normalizedName.includes("сахар песок")) {
@@ -1225,7 +1564,7 @@ async function findCandidateProducts(
     maxPerSupplier?: number;
   },
 ) {
-  const searchText = options?.searchText ?? item.parsedName;
+  const searchText = normalizeQuerySearchText(options?.searchText ?? item.parsedName);
   const tokens = getSearchTokens(searchText).slice(0, 6);
 
   if (tokens.length === 0) {
@@ -1287,7 +1626,14 @@ async function findCandidateProducts(
 
   const scoredCandidates = products
     .map((product) => getCandidateFit(item, product, searchText, manualSelectionProductIds))
-    .filter((candidate) => candidate.score > 0)
+    .filter(
+      (candidate) =>
+        candidate.score > 0 &&
+        candidatePassesStrictQueryGuard(
+          searchText,
+          `${candidate.product.name} ${candidate.product.brand ?? ""} ${candidate.product.article ?? ""}`,
+        ),
+    )
     .sort(compareScoredCandidates);
 
   const dedupedCandidates = dedupeScoredCandidates(item, scoredCandidates);
@@ -1412,7 +1758,7 @@ async function findCatalogCandidateProductsWithScores(
     maxProducts?: number;
   },
 ): Promise<ScoredCatalogCandidate[]> {
-  const searchText = options?.searchText ?? item.parsedName;
+  const searchText = normalizeQuerySearchText(options?.searchText ?? item.parsedName);
   const requestedMaxProducts = options?.maxProducts ?? MAX_PRODUCTS_TO_SCORE;
   const rawTake = Math.min(Math.max(requestedMaxProducts * 20, 200), 500);
   const tokens = getSearchTokens(searchText).slice(0, 6);
@@ -1647,6 +1993,10 @@ async function findCatalogCandidateProductsWithScores(
           candidateWordRoots,
           productMasterName,
         }) +
+        getQueryClarifierPenalty(
+          searchText,
+          `${candidate.name} ${candidate.productMaster?.name ?? ""} ${candidate.brand ?? ""} ${candidate.article ?? ""}`,
+        ) +
         negativeAdjustment;
 
       return {
@@ -1661,7 +2011,14 @@ async function findCatalogCandidateProductsWithScores(
         negativeAdjustment,
       };
     })
-    .filter((candidate) => candidate.score > 0)
+    .filter(
+      (candidate) =>
+        candidate.score > 0 &&
+        candidatePassesStrictQueryGuard(
+          searchText,
+          `${candidate.candidate.name} ${candidate.candidate.productMaster?.name ?? ""} ${candidate.candidate.brand ?? ""} ${candidate.candidate.article ?? ""}`,
+        ),
+    )
     .sort((left, right) => {
       if (right.score !== left.score) {
         return right.score - left.score;
@@ -1717,7 +2074,7 @@ export async function findPreferredSmartOrderProductCandidates(
     maxPerSupplier?: number;
   },
 ): Promise<SmartOrderProductSearchResult> {
-  const searchText = options?.searchText ?? item.parsedName ?? "";
+  const searchText = normalizeQuerySearchText(options?.searchText ?? item.parsedName ?? "");
   const normalizedQuery = normalizeSearchText(searchText);
 
   if (isCatalogQueryAllowedAsPrimary(normalizedQuery)) {
