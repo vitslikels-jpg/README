@@ -60,6 +60,11 @@ export async function POST(request: Request, context: RouteContext) {
 
   const rawText = invoice.rawText?.trim() ?? "";
 
+  console.info("[invoice-ai-parse:start]", {
+    invoiceId: id,
+    rawTextLength: rawText.length,
+  });
+
   if (!rawText) {
     return jsonUtf8({ message: "У накладной нет текста для AI-разбора." }, { status: 400 });
   }
@@ -84,6 +89,31 @@ export async function POST(request: Request, context: RouteContext) {
         needsReview: true,
       };
     });
+
+    console.info("[invoice-ai-parse:result]", {
+      invoiceId: id,
+      rawTextLength: rawText.length,
+      aiItemsCount: parsedItems.length,
+    });
+
+    if (parsedItems.length === 0) {
+      await prisma.invoiceDocument.update({
+        where: {
+          id,
+        },
+        data: {
+          status: "needs_review",
+        },
+      });
+
+      return jsonUtf8(
+        {
+          message: "AI не нашёл товары в тексте накладной.",
+        },
+        { status: 400 },
+      );
+    }
+
     const reviewItemsCount = parsedItems.filter((item) => item.needsReview).length;
 
     await prisma.$transaction(async (tx) => {
@@ -109,6 +139,12 @@ export async function POST(request: Request, context: RouteContext) {
           },
         });
       }
+
+      console.info("[invoice-ai-parse:created]", {
+        invoiceId: id,
+        createdItemsCount: parsedItems.length,
+        reviewItemsCount,
+      });
 
       await tx.invoiceDocument.update({
         where: {

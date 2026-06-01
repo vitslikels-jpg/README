@@ -82,14 +82,42 @@ export async function POST(request: Request, context: RouteContext) {
             },
           ],
     );
-    const supplierMatch = await matchInvoiceSupplier(result.rawText, enterpriseId);
+    const normalizedRawText = result.rawText.trim();
+
+    console.info("[invoice-process]", {
+      invoiceId: id,
+      rawTextLength: normalizedRawText.length,
+      filesCount: invoice.files.length > 0 ? invoice.files.length : 1,
+      source: result.source,
+    });
+
+    if (!normalizedRawText) {
+      await prisma.invoiceDocument.update({
+        where: {
+          id,
+        },
+        data: {
+          status: "failed",
+          rawText: null,
+        },
+      });
+
+      return jsonUtf8(
+        {
+          message: "Текст не распознан. Попробуйте другое фото или вставьте текст вручную.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const supplierMatch = await matchInvoiceSupplier(normalizedRawText, enterpriseId);
 
     const updatedInvoice = await prisma.invoiceDocument.update({
       where: {
         id,
       },
       data: {
-        rawText: result.rawText,
+        rawText: normalizedRawText,
         status: "parsed",
         detectedSupplierName: supplierMatch?.supplierName ?? null,
         confidence: supplierMatch?.confidence ?? null,

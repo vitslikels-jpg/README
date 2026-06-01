@@ -656,7 +656,7 @@ export default function InvoiceDetailsPage() {
       const processPayload = (await processResponse.json().catch(() => null)) as { message?: string } | null;
 
       if (!processResponse.ok) {
-        throw new Error(processPayload?.message ?? "Не удалось распознать накладную.");
+        throw new Error(processPayload?.message ?? "OCR не прочитал текст.");
       }
 
       const aiResponse = await fetch(`/api/invoices/${params.id}/ai-parse?${query.toString()}`, {
@@ -665,8 +665,11 @@ export default function InvoiceDetailsPage() {
       const aiPayload = (await aiResponse.json().catch(() => null)) as { message?: string } | null;
 
       if (!aiResponse.ok) {
-        throw new Error(aiPayload?.message ?? "Не удалось разобрать накладную через AI.");
+        await loadInvoice(activeEnterpriseId, params.id);
+        throw new Error(aiPayload?.message ?? "AI не нашёл товары.");
       }
+
+      await loadInvoice(activeEnterpriseId, params.id);
 
       const detectResponse = await fetch(`/api/invoices/${params.id}/detect-price-changes`, {
         method: "POST",
@@ -680,7 +683,9 @@ export default function InvoiceDetailsPage() {
       const detectPayload = (await detectResponse.json().catch(() => null)) as { message?: string } | null;
 
       if (!detectResponse.ok) {
-        throw new Error(detectPayload?.message ?? "Не удалось найти изменения цен.");
+        await loadInvoice(activeEnterpriseId, params.id);
+        setSuccessMessage("Товары созданы, но изменения цен не рассчитались.");
+        throw new Error(detectPayload?.message ?? "Товары созданы, но изменения цен не рассчитались.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
