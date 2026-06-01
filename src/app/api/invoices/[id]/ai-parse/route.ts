@@ -1,5 +1,6 @@
 import { parseInvoiceWithGemini } from "@/lib/invoice-gemini-parser";
 import { jsonUtf8 } from "@/lib/http";
+import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -26,6 +27,10 @@ function needsItemReview(item: {
   priceWithVat: number | null;
 }) {
   return item.quantity === null || !item.unit || item.priceWithVat === null;
+}
+
+function buildRawTextPreview(rawText: string) {
+  return rawText.replace(/\s+/g, " ").trim().slice(0, 1000);
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -80,7 +85,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     const parsedInvoice = await parseInvoiceWithGemini(rawText);
-    const parsedItems = parsedInvoice.items.map((item) => {
+    let parsedItems = parsedInvoice.items.map((item) => {
       const needsReview = needsItemReview(item);
 
       return {
@@ -89,6 +94,7 @@ export async function POST(request: Request, context: RouteContext) {
         needsReview: true,
       };
     });
+    let fallbackUsed = false;
 
     console.info("[invoice-ai-parse:result]", {
       invoiceId: id,
@@ -97,21 +103,45 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     if (parsedItems.length === 0) {
-      await prisma.invoiceDocument.update({
-        where: {
-          id,
-        },
-        data: {
-          status: "needs_review",
-        },
+      const fallbackItems = parseInvoiceItemsFromText(rawText);
+      fallbackUsed = fallbackItems.length > 0;
+
+      console.info("[invoice-ai-parse:fallback]", {
+        invoiceId: id,
+        rawTextLength: rawText.length,
+        fallbackItemsCount: fallbackItems.length,
       });
 
-      return jsonUtf8(
-        {
-          message: "AI не нашёл товары в тексте накладной.",
-        },
-        { status: 400 },
-      );
+      parsedItems = fallbackItems.map((item) => ({
+        name: item.productNameRaw,
+        quantity: item.quantity?.toNumber() ?? null,
+        unit: item.unit,
+        priceWithVat: item.priceWithVat?.toNumber() ?? null,
+        priceWithoutVat: null,
+        vatRate: null,
+        lineTotal: item.lineTotal?.toNumber() ?? null,
+        confidence: item.confidence,
+        needsReview: true,
+      }));
+
+      if (parsedItems.length === 0) {
+        await prisma.invoiceDocument.update({
+          where: {
+            id,
+          },
+          data: {
+            status: "needs_review",
+          },
+        });
+
+        return jsonUtf8(
+          {
+            message: "AI не смог разобрать товары. Проверьте распознанный текст или используйте разбор без AI.",
+            rawTextPreview: buildRawTextPreview(rawText),
+          },
+          { status: 400 },
+        );
+      }
     }
 
     const reviewItemsCount = parsedItems.filter((item) => item.needsReview).length;
@@ -165,6 +195,8 @@ export async function POST(request: Request, context: RouteContext) {
       invoiceId: id,
       createdItemsCount: parsedItems.length,
       reviewItemsCount,
+      fallbackUsed,
+      message: fallbackUsed ? "AI не нашёл товары, использован простой разбор." : undefined,
     });
   } catch (error) {
     await prisma.invoiceDocument.update({

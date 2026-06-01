@@ -300,6 +300,7 @@ export default function InvoiceDetailsPage() {
   const [updatingPriceChangeId, setUpdatingPriceChangeId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [debugRawTextPreview, setDebugRawTextPreview] = useState("");
   const [isNotFound, setIsNotFound] = useState(false);
   const [productSearchItemId, setProductSearchItemId] = useState<string | null>(null);
   const [productSearchQuery, setProductSearchQuery] = useState("");
@@ -368,6 +369,7 @@ export default function InvoiceDetailsPage() {
       setDraftRawText("");
       setErrorMessage("");
       setSuccessMessage("");
+      setDebugRawTextPreview("");
       setIsNotFound(false);
       return;
     }
@@ -514,6 +516,7 @@ export default function InvoiceDetailsPage() {
     setIsSavingRawText(true);
     setErrorMessage("");
     setSuccessMessage("");
+    setDebugRawTextPreview("");
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -550,6 +553,7 @@ export default function InvoiceDetailsPage() {
     setIsProcessing(true);
     setErrorMessage("");
     setSuccessMessage("");
+    setDebugRawTextPreview("");
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -580,6 +584,7 @@ export default function InvoiceDetailsPage() {
     setIsParsingItems(true);
     setErrorMessage("");
     setSuccessMessage("");
+    setDebugRawTextPreview("");
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -612,6 +617,7 @@ export default function InvoiceDetailsPage() {
     setIsAiParsingItems(true);
     setErrorMessage("");
     setSuccessMessage("");
+    setDebugRawTextPreview("");
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -620,17 +626,22 @@ export default function InvoiceDetailsPage() {
       });
 
       const payload = (await response.json().catch(() => null)) as
-        | { createdItemsCount?: number; reviewItemsCount?: number; message?: string }
+        | { createdItemsCount?: number; reviewItemsCount?: number; fallbackUsed?: boolean; message?: string; rawTextPreview?: string }
         | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "Не удалось разобрать накладную через AI.");
+        setDebugRawTextPreview(payload?.rawTextPreview ?? "");
+        throw new Error(payload?.message ?? "AI не смог разобрать товары. Проверьте распознанный текст или используйте разбор без AI.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
-      setSuccessMessage(`AI-разбор готов. Создано строк: ${payload?.createdItemsCount ?? 0}. Требуют проверки: ${payload?.reviewItemsCount ?? 0}.`);
+      setSuccessMessage(
+        payload?.fallbackUsed
+          ? payload?.message ?? "AI не нашёл товары, использован простой разбор."
+          : `AI-разбор готов. Создано строк: ${payload?.createdItemsCount ?? 0}. Требуют проверки: ${payload?.reviewItemsCount ?? 0}.`,
+      );
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Не удалось разобрать накладную через AI.");
+      setErrorMessage(error instanceof Error ? error.message : "AI не смог разобрать товары. Проверьте распознанный текст или используйте разбор без AI.");
     } finally {
       setIsAiParsingItems(false);
     }
@@ -646,6 +657,7 @@ export default function InvoiceDetailsPage() {
     setIsDetectingPriceChanges(true);
     setErrorMessage("");
     setSuccessMessage("");
+    setDebugRawTextPreview("");
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -662,11 +674,14 @@ export default function InvoiceDetailsPage() {
       const aiResponse = await fetch(`/api/invoices/${params.id}/ai-parse?${query.toString()}`, {
         method: "POST",
       });
-      const aiPayload = (await aiResponse.json().catch(() => null)) as { message?: string } | null;
+      const aiPayload = (await aiResponse.json().catch(() => null)) as
+        | { message?: string; fallbackUsed?: boolean; rawTextPreview?: string; createdItemsCount?: number; reviewItemsCount?: number }
+        | null;
 
       if (!aiResponse.ok) {
+        setDebugRawTextPreview(aiPayload?.rawTextPreview ?? "");
         await loadInvoice(activeEnterpriseId, params.id);
-        throw new Error(aiPayload?.message ?? "AI не нашёл товары.");
+        throw new Error(aiPayload?.message ?? "AI не смог разобрать товары. Проверьте распознанный текст или используйте разбор без AI.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
@@ -684,12 +699,20 @@ export default function InvoiceDetailsPage() {
 
       if (!detectResponse.ok) {
         await loadInvoice(activeEnterpriseId, params.id);
-        setSuccessMessage("Товары созданы, но изменения цен не рассчитались.");
+        setSuccessMessage(
+          aiPayload?.fallbackUsed
+            ? "AI не нашёл товары, использован простой разбор. Изменения цен не рассчитались."
+            : "Товары созданы, но изменения цен не рассчитались.",
+        );
         throw new Error(detectPayload?.message ?? "Товары созданы, но изменения цен не рассчитались.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
-      setSuccessMessage("Накладная распознана, разобрана и проверена на изменения цен.");
+      setSuccessMessage(
+        aiPayload?.fallbackUsed
+          ? "AI не нашёл товары, использован простой разбор. Накладная разобрана."
+          : "Накладная распознана, разобрана и проверена на изменения цен.",
+      );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Не удалось выполнить полный разбор накладной.");
     } finally {
@@ -1183,6 +1206,14 @@ export default function InvoiceDetailsPage() {
         </div>
 
         {errorMessage ? <p className="errorText">{errorMessage}</p> : null}
+        {errorMessage && (debugRawTextPreview || draftRawText.trim()) ? (
+          <details className="invoiceDetailsPanel">
+            <summary>Показать распознанный текст</summary>
+            <pre className="invoiceRawText">
+              {debugRawTextPreview || draftRawText.slice(0, 4000)}
+            </pre>
+          </details>
+        ) : null}
         {successMessage ? <p className="successText">{successMessage}</p> : null}
 
         {invoiceFiles.length === 0 ? (
