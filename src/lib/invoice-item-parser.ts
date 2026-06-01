@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { sanitizeMoney, sanitizeQuantity } from "@/lib/invoice-number-sanitize";
 
 const UNIT_ALIASES = new Map<string, string>([
   ["кг", "кг"],
@@ -48,10 +49,6 @@ type NumberMatch = {
   start: number;
   end: number;
 };
-
-function buildDecimal(value: number, scale: number) {
-  return new Prisma.Decimal(value).toDecimalPlaces(scale, Prisma.Decimal.ROUND_HALF_UP);
-}
 
 function parseNumber(value: string) {
   const normalized = value.replace(/[ \u00a0]/g, "").replace(",", ".");
@@ -146,15 +143,19 @@ function parseStructuredLine(line: string): ParsedInvoiceItemLine | null {
   const nameEnd = quantity?.start ?? unitStart;
   const productNameRaw = cleanupProductName(line.slice(0, nameEnd), line);
   const recognizedCount = Number(Boolean(quantity)) + 1 + Number(Boolean(price));
+  const sanitizedQuantity = sanitizeQuantity(quantity?.value ?? null);
+  const sanitizedPrice = sanitizeMoney(price?.value ?? null);
+  const sanitizedTotal = sanitizeMoney(total?.value ?? null);
+  const forcedReview = sanitizedQuantity.forcedReview || sanitizedPrice.forcedReview || sanitizedTotal.forcedReview;
 
   return {
     productNameRaw,
-    quantity: quantity ? buildDecimal(quantity.value, 3) : null,
+    quantity: sanitizedQuantity.value,
     unit: normalizedUnit,
-    priceWithVat: price ? buildDecimal(price.value, 2) : null,
-    lineTotal: total ? buildDecimal(total.value, 2) : null,
-    confidence: recognizedCount === 3 ? 0.8 : 0.5,
-    needsReview: recognizedCount < 3,
+    priceWithVat: sanitizedPrice.value,
+    lineTotal: sanitizedTotal.value,
+    confidence: forcedReview ? 0.5 : recognizedCount === 3 ? 0.8 : 0.5,
+    needsReview: forcedReview || recognizedCount < 3,
   };
 }
 
@@ -164,14 +165,17 @@ function parseFallbackLine(line: string): ParsedInvoiceItemLine {
   const total = numbers.length >= 2 ? numbers.at(-1) ?? null : null;
   const productNameRaw = cleanupProductName(price ? line.slice(0, price.start) : line, line);
   const hasUsefulNumbers = numbers.length >= 2;
+  const sanitizedPrice = sanitizeMoney(price?.value ?? null);
+  const sanitizedTotal = sanitizeMoney(total?.value ?? null);
+  const forcedReview = sanitizedPrice.forcedReview || sanitizedTotal.forcedReview;
 
   return {
     productNameRaw,
     quantity: null,
     unit: null,
-    priceWithVat: price ? buildDecimal(price.value, 2) : null,
-    lineTotal: total ? buildDecimal(total.value, 2) : null,
-    confidence: hasUsefulNumbers ? 0.35 : 0.2,
+    priceWithVat: sanitizedPrice.value,
+    lineTotal: sanitizedTotal.value,
+    confidence: forcedReview ? 0.2 : hasUsefulNumbers ? 0.35 : 0.2,
     needsReview: true,
   };
 }

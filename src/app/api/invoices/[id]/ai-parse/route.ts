@@ -1,6 +1,7 @@
 import { parseInvoiceWithGemini } from "@/lib/invoice-gemini-parser";
 import { jsonUtf8 } from "@/lib/http";
 import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
+import { sanitizeMoney, sanitizeQuantity, sanitizeVatRate } from "@/lib/invoice-number-sanitize";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -86,12 +87,31 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const parsedInvoice = await parseInvoiceWithGemini(rawText);
     let parsedItems = parsedInvoice.items.map((item) => {
-      const needsReview = needsItemReview(item);
+      const sanitizedQuantity = sanitizeQuantity(item.quantity);
+      const sanitizedPriceWithoutVat = sanitizeMoney(item.priceWithoutVat);
+      const sanitizedPriceWithVat = sanitizeMoney(item.priceWithVat);
+      const sanitizedVatRate = sanitizeVatRate(item.vatRate);
+      const sanitizedLineTotal = sanitizeMoney(item.lineTotal);
+      const forcedReview =
+        sanitizedQuantity.forcedReview ||
+        sanitizedPriceWithoutVat.forcedReview ||
+        sanitizedPriceWithVat.forcedReview ||
+        sanitizedVatRate.forcedReview ||
+        sanitizedLineTotal.forcedReview;
+      const sanitizedItem = {
+        ...item,
+        quantity: sanitizedQuantity.value?.toNumber() ?? null,
+        priceWithoutVat: sanitizedPriceWithoutVat.value?.toNumber() ?? null,
+        priceWithVat: sanitizedPriceWithVat.value?.toNumber() ?? null,
+        vatRate: sanitizedVatRate.value?.toNumber() ?? null,
+        lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
+      };
+      const needsReview = forcedReview || needsItemReview(sanitizedItem);
 
       return {
-        ...item,
-        confidence: needsReview ? 0.65 : 0.85,
-        needsReview: true,
+        ...sanitizedItem,
+        confidence: forcedReview ? 0.5 : needsReview ? 0.65 : 0.85,
+        needsReview,
       };
     });
     let fallbackUsed = false;
@@ -112,17 +132,25 @@ export async function POST(request: Request, context: RouteContext) {
         fallbackItemsCount: fallbackItems.length,
       });
 
-      parsedItems = fallbackItems.map((item) => ({
-        name: item.productNameRaw,
-        quantity: item.quantity?.toNumber() ?? null,
-        unit: item.unit,
-        priceWithVat: item.priceWithVat?.toNumber() ?? null,
-        priceWithoutVat: null,
-        vatRate: null,
-        lineTotal: item.lineTotal?.toNumber() ?? null,
-        confidence: item.confidence,
-        needsReview: true,
-      }));
+      parsedItems = fallbackItems.map((item) => {
+        const sanitizedQuantity = sanitizeQuantity(item.quantity);
+        const sanitizedPriceWithVat = sanitizeMoney(item.priceWithVat);
+        const sanitizedLineTotal = sanitizeMoney(item.lineTotal);
+        const forcedReview =
+          sanitizedQuantity.forcedReview || sanitizedPriceWithVat.forcedReview || sanitizedLineTotal.forcedReview;
+
+        return {
+          name: item.productNameRaw,
+          quantity: sanitizedQuantity.value?.toNumber() ?? null,
+          unit: item.unit,
+          priceWithVat: sanitizedPriceWithVat.value?.toNumber() ?? null,
+          priceWithoutVat: null,
+          vatRate: null,
+          lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
+          confidence: forcedReview ? 0.5 : item.confidence,
+          needsReview: true,
+        };
+      });
 
       if (parsedItems.length === 0) {
         await prisma.invoiceDocument.update({
@@ -154,20 +182,50 @@ export async function POST(request: Request, context: RouteContext) {
       });
 
       for (const item of parsedItems) {
-        await tx.invoiceItem.create({
-          data: {
-            invoiceDocumentId: id,
-            productNameRaw: item.name ?? "",
-            quantity: item.quantity,
-            unit: item.unit,
-            priceWithoutVat: item.priceWithoutVat,
-            priceWithVat: item.priceWithVat,
-            vatRate: item.vatRate,
-            lineTotal: item.lineTotal,
-            confidence: item.confidence,
-            needsReview: item.needsReview,
-          },
-        });
+        const sanitizedQuantity = sanitizeQuantity(item.quantity);
+        const sanitizedPriceWithoutVat = sanitizeMoney(item.priceWithoutVat);
+        const sanitizedPriceWithVat = sanitizeMoney(item.priceWithVat);
+        const sanitizedVatRate = sanitizeVatRate(item.vatRate);
+        const sanitizedLineTotal = sanitizeMoney(item.lineTotal);
+        const forcedReview =
+          sanitizedQuantity.forcedReview ||
+          sanitizedPriceWithoutVat.forcedReview ||
+          sanitizedPriceWithVat.forcedReview ||
+          sanitizedVatRate.forcedReview ||
+          sanitizedLineTotal.forcedReview;
+        const payload = {
+          invoiceDocumentId: id,
+          productNameRaw: item.name ?? "",
+          quantity: sanitizedQuantity.value,
+          unit: item.unit,
+          priceWithoutVat: sanitizedPriceWithoutVat.value,
+          priceWithVat: sanitizedPriceWithVat.value,
+          vatRate: sanitizedVatRate.value,
+          lineTotal: sanitizedLineTotal.value,
+          confidence: forcedReview ? Math.min(item.confidence ?? 0.5, 0.5) : item.confidence,
+          needsReview: forcedReview || item.needsReview,
+        };
+
+        try {
+          await tx.invoiceItem.create({
+            data: payload,
+          });
+        } catch (error) {
+          console.error("[invoice-ai-parse:create-failed]", {
+            invoiceId: id,
+            itemIndex: parsedItems.indexOf(item),
+            payload: {
+              ...payload,
+              quantity: payload.quantity?.toString() ?? null,
+              priceWithoutVat: payload.priceWithoutVat?.toString() ?? null,
+              priceWithVat: payload.priceWithVat?.toString() ?? null,
+              vatRate: payload.vatRate?.toString() ?? null,
+              lineTotal: payload.lineTotal?.toString() ?? null,
+            },
+            message: error instanceof Error ? error.message : "Unknown error",
+          });
+          throw error;
+        }
       }
 
       console.info("[invoice-ai-parse:created]", {

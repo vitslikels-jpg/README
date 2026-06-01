@@ -1,5 +1,6 @@
 import { jsonUtf8 } from "@/lib/http";
 import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
+import { sanitizeMoney, sanitizeQuantity } from "@/lib/invoice-number-sanitize";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -211,6 +212,11 @@ export async function POST(request: Request, context: RouteContext) {
 
   const parsedItems = await Promise.all(
     invoiceLines.map(async (parsedItem) => {
+      const sanitizedQuantity = sanitizeQuantity(parsedItem.quantity);
+      const sanitizedPriceWithVat = sanitizeMoney(parsedItem.priceWithVat);
+      const sanitizedLineTotal = sanitizeMoney(parsedItem.lineTotal);
+      const forcedReview = sanitizedQuantity.forcedReview || sanitizedPriceWithVat.forcedReview || sanitizedLineTotal.forcedReview;
+
       const productMatch = await matchProduct({
         enterpriseId,
         supplierId: invoice.supplierId,
@@ -218,20 +224,27 @@ export async function POST(request: Request, context: RouteContext) {
       });
 
       const structuredParsed =
-        parsedItem.quantity !== null && Boolean(parsedItem.unit) && parsedItem.priceWithVat !== null;
+        sanitizedQuantity.value !== null && Boolean(parsedItem.unit) && sanitizedPriceWithVat.value !== null;
+
+      const baseItem = {
+        ...parsedItem,
+        quantity: sanitizedQuantity.value,
+        priceWithVat: sanitizedPriceWithVat.value,
+        lineTotal: sanitizedLineTotal.value,
+      };
 
       if (productMatch.matchStatus === "matched") {
         return {
-          ...parsedItem,
+          ...baseItem,
           matchedProductId: productMatch.matchedProductId,
-          confidence: structuredParsed ? 0.85 : 0.5,
-          needsReview: !structuredParsed,
+          confidence: forcedReview ? 0.5 : structuredParsed ? 0.85 : 0.5,
+          needsReview: forcedReview || !structuredParsed,
         };
       }
 
       if (productMatch.matchStatus === "ambiguous") {
         return {
-          ...parsedItem,
+          ...baseItem,
           matchedProductId: null,
           confidence: 0.5,
           needsReview: true,
@@ -239,9 +252,9 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       return {
-        ...parsedItem,
+        ...baseItem,
         matchedProductId: null,
-        confidence: Math.min(parsedItem.confidence, 0.35),
+        confidence: forcedReview ? 0.5 : Math.min(parsedItem.confidence, 0.35),
         needsReview: true,
       };
     }),

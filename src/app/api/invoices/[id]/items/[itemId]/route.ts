@@ -1,5 +1,5 @@
-import { Prisma } from "@prisma/client";
 import { jsonUtf8 } from "@/lib/http";
+import { sanitizeMoney, sanitizeQuantity, sanitizeVatRate } from "@/lib/invoice-number-sanitize";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -21,7 +21,7 @@ type PatchBody = {
   vatRate?: string | number | null;
 };
 
-function parseDecimalField(value: string | number | null | undefined, fieldName: string, scale: number) {
+function parseNumberishInput(value: string | number | null | undefined, fieldName: string) {
   if (value === undefined) {
     return undefined;
   }
@@ -30,18 +30,13 @@ function parseDecimalField(value: string | number | null | undefined, fieldName:
     return null;
   }
 
-  const normalized = typeof value === "number" ? String(value) : value.trim().replace(",", ".");
-  const numericValue = Number(normalized);
+  const normalized = typeof value === "number" ? value : Number(value.trim().replace(",", "."));
 
-  if (!Number.isFinite(numericValue)) {
+  if (!Number.isFinite(normalized)) {
     throw new Error(`Поле ${fieldName} должно быть числом.`);
   }
 
-  if (numericValue < 0) {
-    throw new Error(`Поле ${fieldName} не может быть отрицательным.`);
-  }
-
-  return new Prisma.Decimal(normalized).toDecimalPlaces(scale, Prisma.Decimal.ROUND_HALF_UP);
+  return normalized;
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -150,21 +145,35 @@ export async function PATCH(request: Request, context: RouteContext) {
   let lineTotal = item.lineTotal;
   let vatRate = item.vatRate;
 
+  let forcedReview = false;
+
   try {
     if (hasQuantity) {
-      quantity = parseDecimalField(body.quantity, "quantity", 3) ?? null;
+      const parsedQuantity = parseNumberishInput(body.quantity, "quantity");
+      const sanitizedQuantity = sanitizeQuantity(parsedQuantity);
+      quantity = sanitizedQuantity.value;
+      forcedReview = forcedReview || sanitizedQuantity.forcedReview;
     }
 
     if (hasPriceWithVat) {
-      priceWithVat = parseDecimalField(body.priceWithVat, "priceWithVat", 2) ?? null;
+      const parsedPriceWithVat = parseNumberishInput(body.priceWithVat, "priceWithVat");
+      const sanitizedPriceWithVat = sanitizeMoney(parsedPriceWithVat);
+      priceWithVat = sanitizedPriceWithVat.value;
+      forcedReview = forcedReview || sanitizedPriceWithVat.forcedReview;
     }
 
     if (hasLineTotal) {
-      lineTotal = parseDecimalField(body.lineTotal, "lineTotal", 2) ?? null;
+      const parsedLineTotal = parseNumberishInput(body.lineTotal, "lineTotal");
+      const sanitizedLineTotal = sanitizeMoney(parsedLineTotal);
+      lineTotal = sanitizedLineTotal.value;
+      forcedReview = forcedReview || sanitizedLineTotal.forcedReview;
     }
 
     if (hasVatRate) {
-      vatRate = parseDecimalField(body.vatRate, "vatRate", 2) ?? null;
+      const parsedVatRate = parseNumberishInput(body.vatRate, "vatRate");
+      const sanitizedVatRate = sanitizeVatRate(parsedVatRate);
+      vatRate = sanitizedVatRate.value;
+      forcedReview = forcedReview || sanitizedVatRate.forcedReview;
     }
   } catch (error) {
     return jsonUtf8(
@@ -175,14 +184,16 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const unit = hasUnit ? (typeof body.unit === "string" ? body.unit.trim() || null : null) : item.unit;
   const hasStructuredFields = quantity !== null && Boolean(unit) && priceWithVat !== null;
-  const needsReview = !(Boolean(matchedProductId) && hasStructuredFields);
-  const confidence = matchedProductId
-    ? needsReview
-      ? item.confidence
-      : Math.max(item.confidence ?? 0, 0.9)
-    : hasMatchedProductId
-      ? Math.min(item.confidence ?? 0.5, 0.5)
-      : item.confidence;
+  const needsReview = forcedReview || !(Boolean(matchedProductId) && hasStructuredFields);
+  const confidence = forcedReview
+    ? Math.min(item.confidence ?? 0.5, 0.5)
+    : matchedProductId
+      ? needsReview
+        ? item.confidence
+        : Math.max(item.confidence ?? 0, 0.9)
+      : hasMatchedProductId
+        ? Math.min(item.confidence ?? 0.5, 0.5)
+        : item.confidence;
 
   const updatedItem = await prisma.invoiceItem.update({
     where: {
