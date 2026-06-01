@@ -1329,6 +1329,42 @@ function serializeCoverage(coverage: CandidateCoverage | null | undefined): Orde
   };
 }
 
+function isMeasuredPriceUnit(unit: string | null) {
+  return unit === "кг" || unit === "г" || unit === "л" || unit === "мл";
+}
+
+function isDiscretePriceUnit(unit: string | null) {
+  return unit === "шт" || unit === "уп" || unit === "пач" || unit === "кор" || unit === "бут";
+}
+
+function calculateCoverageLineTotal(params: {
+  unitPrice: Prisma.Decimal | null | undefined;
+  priceUnit: string | null | undefined;
+  requiredUnit: string | null | undefined;
+  coverage: CandidateCoverage;
+}) {
+  if (!params.unitPrice) {
+    return null;
+  }
+
+  const priceUnit = normalizeOrderOptimizationUnit(params.priceUnit);
+  const requiredUnit = normalizeOrderOptimizationUnit(params.requiredUnit);
+
+  if (isMeasuredPriceUnit(priceUnit)) {
+    const coveredAmountInPriceUnit = convertAmountToUnit(params.coverage.totalCoveredAmount, requiredUnit, priceUnit);
+
+    if (coveredAmountInPriceUnit?.gt(ZERO)) {
+      return params.unitPrice.mul(coveredAmountInPriceUnit).toDecimalPlaces(2);
+    }
+  }
+
+  if (isDiscretePriceUnit(priceUnit)) {
+    return params.unitPrice.mul(params.coverage.suggestedPacksCount).toDecimalPlaces(2);
+  }
+
+  return params.unitPrice.mul(params.coverage.suggestedPacksCount).toDecimalPlaces(2);
+}
+
 function isUsefulCoverageVariant(variant: CandidateCoverage, unitPrice: Prisma.Decimal | null | undefined) {
   if (variant.suggestedPacksCount <= 0 || variant.totalCoveredAmount.lte(ZERO)) {
     return false;
@@ -2284,7 +2320,12 @@ function buildCandidateRows(
 
     for (const variant of selectedVariants) {
       const unitPrice = candidate.product.price;
-      const lineTotal = unitPrice ? unitPrice.mul(variant.suggestedPacksCount).toDecimalPlaces(2) : null;
+      const lineTotal = calculateCoverageLineTotal({
+        unitPrice,
+        priceUnit: candidate.product.unit,
+        requiredUnit: item.parsedUnit,
+        coverage: variant,
+      });
 
       rows.push({
         data: {
