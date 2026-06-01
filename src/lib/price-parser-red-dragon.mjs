@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { refineParsedProductIdentity } from "./product-identity-refiner.mjs";
+import { extractWeightPackFromNameOrRawData } from "./price-parser-packaging.mjs";
 
 export const RED_DRAGON_SUPPLIER_PROFILE_ID = "red-dragon";
 
@@ -146,6 +147,14 @@ function parseDecimal(value) {
   }
 
   return new Prisma.Decimal(numericValue);
+}
+
+function decimalFromExtractedPack(value) {
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return new Prisma.Decimal(value);
 }
 
 function buildHeaderCandidates(rows, rowIndex, rowSpan = 1) {
@@ -436,6 +445,16 @@ export async function parseRedDragonSheetRows(rows, options = {}) {
       rawData[header] = normalizeCellValue(row[index]);
     });
 
+    const extractedWeightPack = extractWeightPackFromNameOrRawData({
+      name,
+      packaging: packaging?.label ?? "",
+      rawData,
+    });
+
+    if (extractedWeightPack?.isWeighted) {
+      unitsPerPack = decimalFromExtractedPack(extractedWeightPack.unitsPerPack) ?? unitsPerPack;
+    }
+
     const shouldAskAi =
       (packaging === null || (unitsPerPack === null && unitsPerPackRaw.length > 0) || (price === null && priceRaw.length > 0));
 
@@ -487,6 +506,10 @@ export async function parseRedDragonSheetRows(rows, options = {}) {
       rawData.detectedPackagingUnit = packaging.unit;
     }
 
+    if (extractedWeightPack) {
+      rawData.weightPackSource = extractedWeightPack.source;
+    }
+
     if (!price) {
       rawData._issueUnitPrice = "true";
     }
@@ -519,11 +542,13 @@ export async function parseRedDragonSheetRows(rows, options = {}) {
       article: article || null,
       brand: finalIdentity.brand,
       country: finalIdentity.country,
-      unit: "\u0448\u0442",
+      unit: extractedWeightPack?.isWeighted ? extractedWeightPack.unit : "\u0448\u0442",
       unitsPerPack,
       minOrderQuantity: null,
       orderStep: null,
-      allowFractionalOrder: false,
+      allowFractionalOrder: extractedWeightPack?.isWeighted
+        ? extractedWeightPack.unit === "\u043a\u0433" || extractedWeightPack.unit === "\u043b"
+        : false,
       shipByBoxesOnly: false,
       price,
       stock: null,

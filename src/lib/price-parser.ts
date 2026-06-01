@@ -9,6 +9,7 @@ import { upsertDocumentQualityReport } from "@/lib/document-quality";
 import { loadProductIdentityRules, type LoadedProductIdentityRule } from "@/lib/product-identity-rules";
 import { isMeridianSupplierName, parseMeridianSheetRows } from "@/lib/price-parser-meridian.mjs";
 import { refineParsedProductIdentity } from "@/lib/product-identity-refiner.mjs";
+import { extractWeightPackFromNameOrRawData } from "@/lib/price-parser-packaging.mjs";
 import { isRedDragonSupplierName, parseRedDragonSheetRows } from "@/lib/price-parser-red-dragon.mjs";
 import { prisma } from "@/lib/prisma";
 
@@ -77,6 +78,13 @@ type NameParts = {
   name: string;
   brand: string | null;
   country: string | null;
+};
+
+type ExtractedWeightPack = {
+  unit: string;
+  unitsPerPack: number | null;
+  source: string;
+  isWeighted: boolean;
 };
 
 const headerSynonyms: Record<ParsedField, string[]> = {
@@ -601,6 +609,14 @@ function inferUnitsPerPackFromName(name: string) {
   }
 
   return new Prisma.Decimal(bracketMatch[1].replace(",", "."));
+}
+
+function decimalFromExtractedPack(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return new Prisma.Decimal(value);
 }
 
 function extractKnownInlineBrandCandidate(name: string, currentBrand: string | null) {
@@ -1965,6 +1981,11 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
     const rawNameValue = findRawNameValue(rawData, supplierProfile);
     const resolvedName =
       !nameValue || nameValue === articleValue || looksLikeOnlyDigits(nameValue) ? rawNameValue || nameValue : nameValue;
+    const extractedWeightPack = extractWeightPackFromNameOrRawData({
+      name: rawNameValue || resolvedName,
+      packaging: packagingValue || findRawFieldValue(rawData, "packaging", supplierProfile),
+      rawData,
+    }) as ExtractedWeightPack | null;
     const inferredUnitFromPackaging = inferUnitFromPackaging(packagingValue || findRawFieldValue(rawData, "packaging", supplierProfile));
     const inferredUnitFromName = inferUnitFromPackaging(rawNameValue || resolvedName);
     const inferredUnitFromPei = normalizeCellValue(
@@ -1973,12 +1994,17 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
       ? normalizeUnitValue("\u0428\u0422")
       : null;
     const unit =
+      (extractedWeightPack?.isWeighted ? extractedWeightPack.unit : null) ??
       normalizeUnitValue(unitValue || findRawFieldValue(rawData, "unit", supplierProfile)) ??
       inferredUnitFromPackaging ??
       inferredUnitFromName ??
       inferredUnitFromPei;
     const inferredUnitsPerPackFromName = inferUnitsPerPackFromName(resolvedName);
+    const extractedUnitsPerPack = extractedWeightPack?.isWeighted
+      ? decimalFromExtractedPack(extractedWeightPack.unitsPerPack)
+      : null;
     const unitsPerPack =
+      extractedUnitsPerPack ??
       parseDecimal(unitsPerPackValue) ??
       parseDecimal(findRawFieldValue(rawData, "unitsPerPack", supplierProfile)) ??
       inferredUnitsPerPackFromName;
@@ -2072,6 +2098,7 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
       rawData: {
         ...rawData,
         unitsPerPack: finalizedUnitsPerPack?.toString() ?? rawData.unitsPerPack ?? "",
+        weightPackSource: extractedWeightPack?.source ?? "",
         minOrderQuantity: product.minOrderQuantity?.toString() ?? rawData.minOrderQuantity ?? "",
         orderStep: product.orderStep?.toString() ?? "",
         allowFractionalOrder: product.allowFractionalOrder ? "true" : "false",

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { extractWeightPackFromNameOrRawData } from "./price-parser-packaging.mjs";
 
 export const MERIDIAN_SUPPLIER_PROFILE_ID = "meridian";
 
@@ -199,6 +200,14 @@ function inferUnitsPerPackFromName(name) {
   return new Prisma.Decimal(separatorMatch[1].replace(",", "."));
 }
 
+function decimalFromExtractedPack(value) {
+  if (value === null || value === undefined || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return new Prisma.Decimal(value);
+}
+
 function normalizeCountry(value) {
   const source = normalizeCellValue(value);
 
@@ -308,7 +317,12 @@ export async function parseMeridianSheetRows(rows) {
     }
 
     const price = parseDecimal(priceValue);
-    const unit = normalizeUnitValue(unitValue);
+    const extractedWeightPack = extractWeightPackFromNameOrRawData({
+      name: rawName,
+      packaging: rawUnitsPerPack,
+      rawData,
+    });
+    const unit = extractedWeightPack?.isWeighted ? extractedWeightPack.unit : normalizeUnitValue(unitValue);
 
     if (!rawName || (!articleValue && !price && !unit)) {
       skippedCount += 1;
@@ -317,7 +331,10 @@ export async function parseMeridianSheetRows(rows) {
 
     const brand = rawBrand || null;
     const country = normalizeCountry(rawCountry);
-    const unitsPerPack = parseDecimal(rawUnitsPerPack) ?? inferUnitsPerPackFromName(rawName);
+    const unitsPerPack =
+      (extractedWeightPack?.isWeighted ? decimalFromExtractedPack(extractedWeightPack.unitsPerPack) : null) ??
+      parseDecimal(rawUnitsPerPack) ??
+      inferUnitsPerPackFromName(rawName);
     const minOrderQuantity = parseDecimal(rawMinOrderQuantity);
     const shipByBoxesOnly = isTruthyFlag(rawShipByBoxesOnly);
     const cleanedName = cleanupName(rawName, brand, rawCountry || country);
@@ -339,6 +356,7 @@ export async function parseMeridianSheetRows(rows) {
       rawData: {
         ...rawData,
         unitsPerPack: unitsPerPack?.toString() ?? "",
+        weightPackSource: extractedWeightPack?.source ?? "",
         minOrderQuantity: minOrderQuantity?.toString() ?? "",
         orderStep: (shipByBoxesOnly ? unitsPerPack ?? minOrderQuantity : minOrderQuantity)?.toString() ?? "",
         allowFractionalOrder: unit === "кг" || unit === "л" ? "true" : "false",
