@@ -200,17 +200,17 @@ export default function InvoicesPage() {
   ];
 
   async function handleFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
 
-    if (!file || !activeEnterpriseId) {
+    if (files.length === 0 || !activeEnterpriseId) {
       return;
     }
 
-    const clientError = getClientFileError(file);
+    const invalidFile = files.find((file) => getClientFileError(file));
 
-    if (clientError) {
+    if (invalidFile) {
       setSuccessMessage("");
-      setErrorMessage(clientError);
+      setErrorMessage(`${invalidFile.name}: ${getClientFileError(invalidFile)}`);
       event.target.value = "";
       return;
     }
@@ -222,7 +222,10 @@ export default function InvoicesPage() {
     try {
       const formData = new FormData();
       formData.append("enterpriseId", activeEnterpriseId);
-      formData.append("file", file);
+
+      for (const file of files) {
+        formData.append("file", file);
+      }
 
       const response = await fetch("/api/invoices/upload", {
         method: "POST",
@@ -230,7 +233,7 @@ export default function InvoicesPage() {
       });
 
       const payload = (await response.json().catch(() => null)) as
-        | { invoice?: { id: string; originalFileName: string | null }; message?: string }
+        | { invoice?: { id: string; originalFileName: string | null }; invoices?: Array<{ id: string; originalFileName: string | null }>; message?: string }
         | null;
 
       if (!response.ok) {
@@ -238,11 +241,9 @@ export default function InvoicesPage() {
       }
 
       await loadInvoices(activeEnterpriseId);
-      setSuccessMessage(
-        payload?.invoice?.originalFileName
-          ? `Накладная «${payload.invoice.originalFileName}» загружена.`
-          : "Накладная загружена.",
-      );
+
+      const uploadedCount = payload?.invoices?.length ?? 1;
+      setSuccessMessage(uploadedCount === 1 ? "Накладная загружена." : `Загружено накладных: ${uploadedCount}.`);
     } catch (error) {
       setSuccessMessage("");
       setErrorMessage(error instanceof Error ? error.message : "Не удалось загрузить накладную.");
@@ -278,7 +279,7 @@ export default function InvoicesPage() {
               ref={fileInputRef}
               type="file"
               accept="image/*,application/pdf"
-              capture="environment"
+              multiple
               className="invoicesHiddenInput"
               onChange={(event) => void handleFileSelected(event)}
               disabled={!activeEnterpriseId || isUploading}
@@ -289,7 +290,7 @@ export default function InvoicesPage() {
               onClick={openFilePicker}
               disabled={!activeEnterpriseId || isUploading}
             >
-              {isUploading ? "Загружаем..." : "Загрузить накладную"}
+              {isUploading ? "Загружаем..." : "Загрузить накладные"}
             </button>
           </div>
         </div>

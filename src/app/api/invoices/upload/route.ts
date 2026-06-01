@@ -27,7 +27,7 @@ const extensionByMimeType: Record<string, string> = {
 export async function POST(request: Request) {
   const formData = await request.formData();
   const enterpriseId = String(formData.get("enterpriseId") ?? "").trim();
-  const file = formData.get("file");
+  const files = formData.getAll("file").filter((file): file is File => file instanceof File);
 
   if (!enterpriseId) {
     return jsonUtf8({ message: "Поле enterpriseId обязательно." }, { status: 400 });
@@ -39,52 +39,61 @@ export async function POST(request: Request) {
     return jsonUtf8({ message: "Предприятие не найдено." }, { status: 404 });
   }
 
-  if (!(file instanceof File)) {
+  if (files.length === 0) {
     return jsonUtf8({ message: "Файл обязателен." }, { status: 400 });
   }
 
-  if (file.size === 0) {
-    return jsonUtf8({ message: "Нельзя загрузить пустой файл." }, { status: 400 });
-  }
+  for (const file of files) {
+    if (file.size === 0) {
+      return jsonUtf8({ message: `Файл «${file.name || "без имени"}» пустой.` }, { status: 400 });
+    }
 
-  if (file.size > MAX_FILE_SIZE) {
-    return jsonUtf8({ message: "Файл слишком большой. Максимум 15 MB." }, { status: 400 });
-  }
+    if (file.size > MAX_FILE_SIZE) {
+      return jsonUtf8({ message: `Файл «${file.name || "без имени"}» слишком большой. Максимум 15 MB.` }, { status: 400 });
+    }
 
-  if (!allowedMimeTypes.has(file.type)) {
-    return jsonUtf8({ message: "Поддерживаются только JPG, PNG, WEBP и PDF." }, { status: 400 });
+    if (!allowedMimeTypes.has(file.type)) {
+      return jsonUtf8({ message: `Файл «${file.name || "без имени"}» не подходит. Поддерживаются только JPG, PNG, WEBP и PDF.` }, { status: 400 });
+    }
   }
 
   try {
-    const extension = extensionByMimeType[file.type];
-    const storedFileName = `invoice_${Date.now()}_${randomUUID()}${extension}`;
-    const storageKey = path.join("uploads", "invoices", storedFileName).replaceAll("\\", "/");
-    const fileUrl = `/${storageKey}`;
-    const absolutePath = path.join(UPLOAD_DIRECTORY, storedFileName);
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
     await mkdir(UPLOAD_DIRECTORY, { recursive: true });
-    await writeFile(absolutePath, buffer);
 
-    const invoice = await prisma.invoiceDocument.create({
-      data: {
-        enterpriseId,
-        originalFileName: file.name.trim() || storedFileName,
-        fileUrl,
-        storageKey,
-        status: "uploaded",
-      },
-      select: {
-        id: true,
-        status: true,
-        originalFileName: true,
-        fileUrl: true,
-        createdAt: true,
-      },
-    });
+    const invoices = [];
 
-    return jsonUtf8({ invoice }, { status: 201 });
+    for (const file of files) {
+      const extension = extensionByMimeType[file.type];
+      const storedFileName = `invoice_${Date.now()}_${randomUUID()}${extension}`;
+      const storageKey = path.join("uploads", "invoices", storedFileName).replaceAll("\\", "/");
+      const fileUrl = `/${storageKey}`;
+      const absolutePath = path.join(UPLOAD_DIRECTORY, storedFileName);
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+
+      await writeFile(absolutePath, buffer);
+
+      const invoice = await prisma.invoiceDocument.create({
+        data: {
+          enterpriseId,
+          originalFileName: file.name.trim() || storedFileName,
+          fileUrl,
+          storageKey,
+          status: "uploaded",
+        },
+        select: {
+          id: true,
+          status: true,
+          originalFileName: true,
+          fileUrl: true,
+          createdAt: true,
+        },
+      });
+
+      invoices.push(invoice);
+    }
+
+    return jsonUtf8({ invoice: invoices[0] ?? null, invoices }, { status: 201 });
   } catch {
     return jsonUtf8({ message: "Не удалось загрузить накладную." }, { status: 500 });
   }
