@@ -92,6 +92,10 @@ function isIgnoredInvoiceLine(line: string) {
     return true;
   }
 
+  if (/^-+\s*страница\s+\d+\s*-+$/iu.test(trimmed)) {
+    return true;
+  }
+
   const lower = trimmed.toLowerCase().replace(/ё/g, "е");
 
   return (
