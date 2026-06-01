@@ -1,4 +1,5 @@
-const WEIGHT_WORD_PATTERN = /(?:^|[^a-z\u0400-\u04ff])(?:\u0432\u0435\u0441|\u0441\u0440\.?\s*\u0432\u0435\u0441|\u0432\u0435\u0441\u043e\u0432\u0430\u044f|\u0432\u0435\u0441\u043e\u0432\u043e\u0439|\u043c\u043e\u043d\u043e\u043b\u0438\u0442)(?=$|[^a-z\u0400-\u04ff])/iu;
+const WEIGHT_WORD_PATTERN = /(?:^|[^a-z\u0400-\u04ff])(?:\u0441\u0440\.?\s*\u0432\u0435\u0441|\u0441\/\u043c\s*\u0432\u0435\u0441|\u0432\u0435\u0441\u043e\u0432\u0430\u044f|\u0432\u0435\u0441\u043e\u0432\u043e\u0439|\u043c\u043e\u043d\u043e\u043b\u0438\u0442)(?=$|[^a-z\u0400-\u04ff])/iu;
+const APPROX_WEIGHT_PATTERN = /(?:~|\u2248)\s*\d+(?:[.,]\d+)?\s*(?:\u043a\u0433|kg|\u0433\u0440?\.?|\u0433|g|\u043b|l|\u043c\u043b|ml)(?=$|[^a-z\u0400-\u04ff])/iu;
 const PACK_PATTERN =
   /(?:~|\u2248|\u0441\u0440\.?\s*\u0432\u0435\u0441\s*)?\s*(\d+(?:[.,]\d+)?)\s*(\u043a\u0433|kg|\u0433\u0440?\.?|\u0433|g|\u043b|l|\u043b\u0438\u0442\u0440(?:\u0430|\u043e\u0432|\u044b)?|\u043c\u043b|ml)(?=$|[^a-z\u0400-\u04ff])/giu;
 
@@ -16,7 +17,7 @@ function rawDataText(rawData) {
   }
 
   return Object.entries(rawData)
-    .map(([key, value]) => `${key} ${value ?? ""}`)
+    .map(([, value]) => `${value ?? ""}`)
     .join(" ");
 }
 
@@ -76,16 +77,13 @@ export function extractWeightPackFromNameOrRawData({ name, packaging, rawData } 
   ];
 
   const combinedText = normalizeText(sources.map((item) => item.text).join(" "));
-  const hasWeightWords = WEIGHT_WORD_PATTERN.test(combinedText);
+  const hasWeightWords = WEIGHT_WORD_PATTERN.test(combinedText) || APPROX_WEIGHT_PATTERN.test(combinedText);
 
   for (const source of sources) {
     const pack = findPack(source.text);
 
     if (pack) {
-      const isWeighted =
-        source.source === "packaging" ||
-        hasWeightWords ||
-        ((pack.unit === "\u043a\u0433" || pack.unit === "\u043b") && pack.unitsPerPack >= 1);
+      const isWeighted = hasWeightWords;
 
       if (!isWeighted) {
         continue;

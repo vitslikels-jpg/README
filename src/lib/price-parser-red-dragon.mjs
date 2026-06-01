@@ -447,7 +447,7 @@ export async function parseRedDragonSheetRows(rows, options = {}) {
 
     const extractedWeightPack = extractWeightPackFromNameOrRawData({
       name,
-      packaging: packaging?.label ?? "",
+      packaging: "",
       rawData,
     });
 
