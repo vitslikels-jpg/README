@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 export const runtime = "nodejs";
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const MAX_FILES_PER_UPLOAD = 10;
 const UPLOAD_DIRECTORY = path.join(/* turbopackIgnore: true */ process.cwd(), "public", "uploads", "invoices");
 
 const allowedMimeTypes = new Set([
@@ -27,7 +28,8 @@ const extensionByMimeType: Record<string, string> = {
 export async function POST(request: Request) {
   const formData = await request.formData();
   const enterpriseId = String(formData.get("enterpriseId") ?? "").trim();
-  const files = formData.getAll("file").filter((file): file is File => file instanceof File);
+  const files = [...formData.getAll("file"), ...formData.getAll("files")]
+    .filter((file): file is File => file instanceof File);
 
   if (!enterpriseId) {
     return jsonUtf8({ message: "Поле enterpriseId обязательно." }, { status: 400 });
@@ -41,6 +43,10 @@ export async function POST(request: Request) {
 
   if (files.length === 0) {
     return jsonUtf8({ message: "Файл обязателен." }, { status: 400 });
+  }
+
+  if (files.length > MAX_FILES_PER_UPLOAD) {
+    return jsonUtf8({ message: "За одну загрузку можно добавить максимум 10 файлов." }, { status: 400 });
   }
 
   for (const file of files) {
@@ -59,10 +65,9 @@ export async function POST(request: Request) {
 
   try {
     await mkdir(UPLOAD_DIRECTORY, { recursive: true });
+    const storedFiles = [];
 
-    const invoices = [];
-
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
       const extension = extensionByMimeType[file.type];
       const storedFileName = `invoice_${Date.now()}_${randomUUID()}${extension}`;
       const storageKey = path.join("uploads", "invoices", storedFileName).replaceAll("\\", "/");
@@ -72,28 +77,43 @@ export async function POST(request: Request) {
       const buffer = Buffer.from(bytes);
 
       await writeFile(absolutePath, buffer);
-
-      const invoice = await prisma.invoiceDocument.create({
-        data: {
-          enterpriseId,
-          originalFileName: file.name.trim() || storedFileName,
-          fileUrl,
-          storageKey,
-          status: "uploaded",
-        },
-        select: {
-          id: true,
-          status: true,
-          originalFileName: true,
-          fileUrl: true,
-          createdAt: true,
-        },
+      storedFiles.push({
+        fileUrl,
+        storageKey,
+        originalFileName: file.name.trim() || storedFileName,
+        mimeType: file.type || null,
+        pageIndex: index,
       });
-
-      invoices.push(invoice);
     }
 
-    return jsonUtf8({ invoice: invoices[0] ?? null, invoices }, { status: 201 });
+    const firstFile = storedFiles[0];
+
+    const invoice = await prisma.invoiceDocument.create({
+      data: {
+        enterpriseId,
+        originalFileName: firstFile?.originalFileName ?? null,
+        fileUrl: firstFile?.fileUrl ?? null,
+        storageKey: firstFile?.storageKey ?? null,
+        status: "uploaded",
+        files: {
+          create: storedFiles,
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    return jsonUtf8(
+      {
+        invoice: {
+          ...invoice,
+          filesCount: storedFiles.length,
+        },
+      },
+      { status: 201 },
+    );
   } catch {
     return jsonUtf8({ message: "Не удалось загрузить накладную." }, { status: 500 });
   }

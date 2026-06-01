@@ -22,6 +22,18 @@ export async function GET(request: Request) {
         enterpriseId,
       },
       include: {
+        files: {
+          select: {
+            id: true,
+            fileUrl: true,
+            originalFileName: true,
+            mimeType: true,
+            pageIndex: true,
+          },
+          orderBy: {
+            pageIndex: "asc",
+          },
+        },
         supplier: {
           select: {
             id: true,
@@ -87,6 +99,8 @@ export async function GET(request: Request) {
         vatAmount: document.vatAmount?.toString() ?? null,
         originalFileName: document.originalFileName,
         fileUrl: document.fileUrl,
+        files: document.files,
+        filesCount: document.files.length,
         createdAt: document.createdAt,
         itemsCount: document._count.items,
         priceChangesCount: document._count.priceChanges,

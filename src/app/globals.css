@@ -2080,6 +2080,12 @@ body.sidebarResizing * {
   background: var(--surface);
 }
 
+.invoiceCardPreview {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
 .invoiceCardLink:hover .invoiceCard,
 .invoiceCardLink:focus-visible .invoiceCard {
   border-color: rgba(29, 78, 216, 0.35);
@@ -2162,6 +2168,44 @@ body.sidebarResizing * {
   max-height: 780px;
   object-fit: contain;
   background: #ffffff;
+}
+
+.invoiceFilesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.invoiceFileTile {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-muted);
+}
+
+.invoiceFileTile span {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  word-break: break-word;
+}
+
+.invoiceDetailsPanel {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-muted);
+  padding: 12px 14px;
+}
+
+.invoiceDetailsPanel summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.invoiceDetailsPanel[open] summary {
+  margin-bottom: 12px;
 }
 
 .invoiceRawText {

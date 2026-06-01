@@ -30,6 +30,19 @@ export async function GET(request: Request, context: RouteContext) {
       enterpriseId,
     },
     include: {
+      files: {
+        select: {
+          id: true,
+          fileUrl: true,
+          storageKey: true,
+          originalFileName: true,
+          mimeType: true,
+          pageIndex: true,
+        },
+        orderBy: {
+          pageIndex: "asc",
+        },
+      },
       supplier: {
         select: {
           id: true,
@@ -44,6 +57,7 @@ export async function GET(request: Request, context: RouteContext) {
               name: true,
               article: true,
               brand: true,
+              price: true,
             },
           },
         },
@@ -96,6 +110,14 @@ export async function GET(request: Request, context: RouteContext) {
     vatAmount: invoice.vatAmount?.toString() ?? null,
     originalFileName: invoice.originalFileName,
     fileUrl: invoice.fileUrl,
+    files: invoice.files.map((file) => ({
+      id: file.id,
+      fileUrl: file.fileUrl,
+      storageKey: file.storageKey,
+      originalFileName: file.originalFileName,
+      mimeType: file.mimeType,
+      pageIndex: file.pageIndex,
+    })),
     rawText: invoice.rawText,
     createdAt: invoice.createdAt,
     updatedAt: invoice.updatedAt,
@@ -107,6 +129,7 @@ export async function GET(request: Request, context: RouteContext) {
       matchedProductName: item.matchedProduct?.name ?? null,
       matchedProductArticle: item.matchedProduct?.article ?? null,
       matchedProductBrand: item.matchedProduct?.brand ?? null,
+      matchedProductPrice: item.matchedProduct?.price?.toString() ?? null,
       quantity: item.quantity?.toString() ?? null,
       unit: item.unit,
       priceWithoutVat: item.priceWithoutVat?.toString() ?? null,

@@ -258,6 +258,7 @@ model InvoiceDocument {
 
   enterprise           Enterprise            @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
   supplier             Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  files                InvoiceDocumentFile[]
   items                InvoiceItem[]
   priceChanges         InvoicePriceChange[]
 
@@ -265,6 +266,22 @@ model InvoiceDocument {
   @@index([supplierId])
   @@index([status])
   @@index([createdAt])
+}
+
+model InvoiceDocumentFile {
+  id                String          @id @default(cuid())
+  invoiceDocumentId String
+  fileUrl           String
+  storageKey        String
+  originalFileName  String?
+  mimeType          String?
+  pageIndex         Int             @default(0)
+  createdAt         DateTime        @default(now())
+
+  invoiceDocument   InvoiceDocument @relation(fields: [invoiceDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceDocumentId])
+  @@index([pageIndex])
 }
 
 model InvoiceItem {

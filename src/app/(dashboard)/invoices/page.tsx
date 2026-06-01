@@ -7,6 +7,14 @@ import { useEnterprise } from "@/features/enterprises/components/enterprise-cont
 
 type InvoiceStatus = "uploaded" | "processing" | "needs_review" | "parsed" | "approved" | "failed";
 
+type InvoiceFile = {
+  id: string;
+  fileUrl: string;
+  originalFileName: string | null;
+  mimeType: string | null;
+  pageIndex: number;
+};
+
 type InvoiceListItem = {
   id: string;
   supplierId: string | null;
@@ -19,6 +27,8 @@ type InvoiceListItem = {
   vatAmount: string | null;
   originalFileName: string | null;
   fileUrl: string | null;
+  files: InvoiceFile[];
+  filesCount: number;
   createdAt: string;
   itemsCount: number;
   priceChangesCount: number;
@@ -27,6 +37,7 @@ type InvoiceListItem = {
 };
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
+const MAX_FILES_PER_UPLOAD = 10;
 const acceptedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 
 const statusLabels: Record<InvoiceStatus, string> = {
@@ -104,6 +115,10 @@ function getClientFileError(file: File) {
   }
 
   return "";
+}
+
+function isImageFile(file: InvoiceFile | null) {
+  return Boolean(file?.mimeType?.startsWith("image/") || /\.(jpg|jpeg|png|webp)\b/i.test(file?.fileUrl || ""));
 }
 
 export default function InvoicesPage() {
@@ -206,6 +221,13 @@ export default function InvoicesPage() {
       return;
     }
 
+    if (files.length > MAX_FILES_PER_UPLOAD) {
+      setSuccessMessage("");
+      setErrorMessage("За одну загрузку можно выбрать максимум 10 файлов.");
+      event.target.value = "";
+      return;
+    }
+
     const invalidFile = files.find((file) => getClientFileError(file));
 
     if (invalidFile) {
@@ -233,7 +255,7 @@ export default function InvoicesPage() {
       });
 
       const payload = (await response.json().catch(() => null)) as
-        | { invoice?: { id: string; originalFileName: string | null }; invoices?: Array<{ id: string; originalFileName: string | null }>; message?: string }
+        | { invoice?: { id: string; filesCount?: number }; message?: string }
         | null;
 
       if (!response.ok) {
@@ -242,8 +264,8 @@ export default function InvoicesPage() {
 
       await loadInvoices(activeEnterpriseId);
 
-      const uploadedCount = payload?.invoices?.length ?? 1;
-      setSuccessMessage(uploadedCount === 1 ? "Накладная загружена." : `Загружено накладных: ${uploadedCount}.`);
+      const uploadedCount = payload?.invoice?.filesCount ?? files.length;
+      setSuccessMessage(uploadedCount === 1 ? "Накладная загружена." : `Накладная загружена. Файлов: ${uploadedCount}.`);
     } catch (error) {
       setSuccessMessage("");
       setErrorMessage(error instanceof Error ? error.message : "Не удалось загрузить накладную.");
@@ -272,6 +294,7 @@ export default function InvoicesPage() {
               Загружайте фото или PDF накладных, чтобы находить изменения цен и обновлять внутренний накопитель после
               проверки.
             </p>
+            <p className="invoiceHint">Можно выбрать несколько фото одной накладной.</p>
           </div>
 
           <div className="invoicesHeroActions">
@@ -290,7 +313,7 @@ export default function InvoicesPage() {
               onClick={openFilePicker}
               disabled={!activeEnterpriseId || isUploading}
             >
-              {isUploading ? "Загружаем..." : "Загрузить накладные"}
+              {isUploading ? "Загружаем..." : "Загрузить накладную"}
             </button>
           </div>
         </div>
@@ -357,6 +380,27 @@ export default function InvoicesPage() {
               {invoices.map((invoice) => (
                 <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="invoiceCardLink">
                   <article className="invoiceCard">
+                  {(() => {
+                    const previewFile = invoice.files[0] ?? null;
+                    const extraFilesCount = Math.max(0, invoice.filesCount - 1);
+
+                    return (
+                      <div className="invoiceCardPreview">
+                        {isImageFile(previewFile) ? (
+                          <img
+                            src={previewFile?.fileUrl}
+                            alt={previewFile?.originalFileName || invoice.originalFileName || "Накладная"}
+                            className="invoicePreviewImage"
+                          />
+                        ) : (
+                          <span className="invoicesEmptyIcon" aria-hidden="true">
+                            <FileText size={28} strokeWidth={2} />
+                          </span>
+                        )}
+                        {extraFilesCount > 0 ? <span className="statusPill invoiceStatus-neutral">+{extraFilesCount} файла</span> : null}
+                      </div>
+                    );
+                  })()}
                   <div className="invoiceCardHeader">
                     <div className="invoiceCardTitleBlock">
                       <h3 className="invoiceCardTitle">{getSupplierName(invoice)}</h3>
@@ -403,6 +447,7 @@ export default function InvoicesPage() {
 
                   <div className="invoiceCardFooter">
                     <span>Загружена: {formatDateTime(invoice.createdAt)}</span>
+                    <span>Файлов: {invoice.filesCount}</span>
                     {invoice.detectedSupplierName && !invoice.supplierName ? (
                       <span>Распознанный поставщик: {invoice.detectedSupplierName}</span>
                     ) : null}

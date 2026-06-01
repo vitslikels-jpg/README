@@ -1,4 +1,4 @@
-import { extractInvoiceText } from "@/lib/invoice-ocr";
+import { extractInvoiceTextFromFiles } from "@/lib/invoice-ocr";
 import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
 import { jsonUtf8 } from "@/lib/http";
 import { ensureEnterpriseExists } from "@/lib/orders";
@@ -38,6 +38,17 @@ export async function POST(request: Request, context: RouteContext) {
       fileUrl: true,
       storageKey: true,
       originalFileName: true,
+      files: {
+        select: {
+          storageKey: true,
+          fileUrl: true,
+          originalFileName: true,
+          pageIndex: true,
+        },
+        orderBy: {
+          pageIndex: "asc",
+        },
+      },
     },
   });
 
@@ -45,7 +56,7 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonUtf8({ message: "Накладная не найдена." }, { status: 404 });
   }
 
-  if (!invoice.fileUrl && !invoice.storageKey) {
+  if (invoice.files.length === 0 && !invoice.fileUrl && !invoice.storageKey) {
     return jsonUtf8({ message: "У накладной нет загруженного файла." }, { status: 400 });
   }
 
@@ -59,7 +70,18 @@ export async function POST(request: Request, context: RouteContext) {
   });
 
   try {
-    const result = await extractInvoiceText(invoice.storageKey, invoice.fileUrl, invoice.originalFileName);
+    const result = await extractInvoiceTextFromFiles(
+      invoice.files.length > 0
+        ? invoice.files
+        : [
+            {
+              storageKey: invoice.storageKey,
+              fileUrl: invoice.fileUrl,
+              originalFileName: invoice.originalFileName,
+              pageIndex: 0,
+            },
+          ],
+    );
     const supplierMatch = await matchInvoiceSupplier(result.rawText, enterpriseId);
 
     const updatedInvoice = await prisma.invoiceDocument.update({

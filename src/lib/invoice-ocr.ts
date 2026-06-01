@@ -13,7 +13,14 @@ const TESSERACT_CORE_PATH = path.join(TESSERACT_CORE_DIRECTORY, "tesseract-core-
 
 type OcrResult = {
   rawText: string;
-  source: "image_ocr" | "pdf_text" | "pdf_ocr";
+  source: "image_ocr" | "pdf_text" | "pdf_ocr" | "mixed";
+};
+
+export type InvoiceOcrInputFile = {
+  storageKey: string | null;
+  fileUrl: string | null;
+  originalFileName: string | null;
+  pageIndex: number;
 };
 
 function normalizeExtractedText(text: string) {
@@ -184,4 +191,38 @@ export async function extractInvoiceText(storageKey: string | null, fileUrl: str
   }
 
   throw new Error("Неподдерживаемый тип файла накладной.");
+}
+
+export async function extractInvoiceTextFromFiles(files: InvoiceOcrInputFile[]): Promise<OcrResult> {
+  const normalizedFiles = files
+    .slice()
+    .sort((left, right) => left.pageIndex - right.pageIndex)
+    .filter((file) => file.storageKey || file.fileUrl);
+
+  if (normalizedFiles.length === 0) {
+    throw new Error("У накладной нет загруженных файлов.");
+  }
+
+  const results = [];
+
+  for (const [index, file] of normalizedFiles.entries()) {
+    const result = await extractInvoiceText(file.storageKey, file.fileUrl, file.originalFileName);
+    results.push({
+      ...result,
+      pageIndex: index,
+    });
+  }
+
+  const rawText = normalizeExtractedText(
+    results
+      .map((result) => `--- Страница ${result.pageIndex + 1} ---\n${result.rawText}`)
+      .join("\n\n"),
+  );
+
+  const sourceSet = new Set(results.map((result) => result.source));
+
+  return {
+    rawText,
+    source: sourceSet.size === 1 ? results[0].source : "mixed",
+  };
 }
