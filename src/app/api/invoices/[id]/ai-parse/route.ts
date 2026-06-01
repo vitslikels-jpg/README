@@ -38,6 +38,21 @@ function buildRowsPreview(rows: string[]) {
   return rows.join("\n").slice(0, 1000);
 }
 
+async function clearInvoiceParsedData(invoiceId: string) {
+  await prisma.$transaction([
+    prisma.invoicePriceChange.deleteMany({
+      where: {
+        invoiceDocumentId: invoiceId,
+      },
+    }),
+    prisma.invoiceItem.deleteMany({
+      where: {
+        invoiceDocumentId: invoiceId,
+      },
+    }),
+  ]);
+}
+
 function sanitizeParsedItem(item: {
   name: string | null;
   quantity: number | null;
@@ -138,6 +153,8 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     if (!structure.tableDetected || tableRows.length === 0) {
+      await clearInvoiceParsedData(id);
+
       await prisma.invoiceDocument.update({
         where: {
           id,
@@ -219,6 +236,8 @@ export async function POST(request: Request, context: RouteContext) {
       });
 
       if (parsedItems.length === 0) {
+        await clearInvoiceParsedData(id);
+
         await prisma.invoiceDocument.update({
           where: {
             id,
@@ -251,6 +270,12 @@ export async function POST(request: Request, context: RouteContext) {
     const createdItemsCount = parsedItems.length;
 
     await prisma.$transaction(async (tx) => {
+      await tx.invoicePriceChange.deleteMany({
+        where: {
+          invoiceDocumentId: id,
+        },
+      });
+
       await tx.invoiceItem.deleteMany({
         where: {
           invoiceDocumentId: id,
