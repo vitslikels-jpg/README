@@ -1667,7 +1667,13 @@ export function buildOrderOptimizationTitle(sourceText: string) {
 }
 
 function parseItemText(itemText: string, requestedSupplierName: string | null, sortOrder: number): ParsedSourceItem {
-  const sourceLine = itemText.trim().replace(/\s+/g, " ");
+  const sourceLine = itemText
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/сметна/giu, "сметана")
+    .replace(/слывоч/giu, "сливоч")
+    .replace(/слвоч/giu, "сливоч")
+    .replace(/(\d+(?:[.,]\d+)?)\s*кк\b/giu, "$1 кг");
   const quantityMatch = sourceLine.match(new RegExp(`^(.*?)\\s+(\\d+(?:[.,]\\d+)?)\\s*(${unitPattern})$`, "iu"));
 
   if (!quantityMatch) {

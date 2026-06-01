@@ -753,6 +753,28 @@ function getProductFallbackScoreAdjustment(searchText: string | null | undefined
 
   let score = getQueryClarifierPenalty(searchText, `${product.name} ${product.brand ?? ""} ${product.article ?? ""}`);
 
+  if (normalizedQuery === "сыр") {
+    const candidateWords = getNormalizedWords(product.name);
+    const hasSpecificCheeseKind = hasWordPrefix(candidateWords, [
+      "моцарел",
+      "чеддер",
+      "гауд",
+      "пармез",
+      "камамбер",
+      "маскарпон",
+      "рикотт",
+      "сулугуни",
+      "брынз",
+      "дорблю",
+      "фетакс",
+      "кремет",
+    ]);
+
+    if (hasSpecificCheeseKind) {
+      score -= 90;
+    }
+  }
+
   if (normalizedQuery === "сахар") {
     if (normalizedName.includes("сахар песок")) {
       score += 180;
@@ -1008,6 +1030,25 @@ function getCatalogNegativeScoreAdjustment(params: {
   }
 
   if (isCheeseQuery) {
+    const hasSpecificCheeseKind = hasWordPrefix(candidateWords, [
+      "моцарел",
+      "чеддер",
+      "гауд",
+      "пармез",
+      "камамбер",
+      "маскарпон",
+      "рикотт",
+      "сулугуни",
+      "брынз",
+      "дорблю",
+      "фетакс",
+      "кремет",
+    ]);
+
+    if (hasSpecificCheeseKind) {
+      penalty -= 120;
+    }
+
     if (!candidateWords[0]?.startsWith("сыр")) {
       penalty -= 140;
     }
@@ -2513,7 +2554,7 @@ function isStrongAutoCandidate(
   return true;
 }
 
-function chooseAutoSelectedIndex(rows: ItemCandidatePlan["rows"]) {
+function chooseAutoSelectedIndex(item: OrderOptimizationItem, rows: ItemCandidatePlan["rows"]) {
   if (rows.length === 0) {
     return null;
   }
@@ -2579,6 +2620,20 @@ function chooseAutoSelectedIndex(rows: ItemCandidatePlan["rows"]) {
   const best = sorted[0];
   const second = sorted[1];
 
+  if (normalizeSearchText(item.parsedName) === "сыр") {
+    return null;
+  }
+
+  if (
+    item.requestedSupplierName &&
+    best.row.supplierMatched &&
+    best.row.hasUnitSupport &&
+    best.row.firstTokenMatched &&
+    best.row.score >= 30
+  ) {
+    return best.index;
+  }
+
   return isStrongAutoCandidate(best.row, second?.row) ? best.index : null;
 }
 
@@ -2619,7 +2674,7 @@ export async function rebuildOrderOptimizationCandidates(optimizationId: string,
       itemId: item.id,
       rows,
       matchStatus: rows.length > 0 ? "review" : "not_found",
-      autoSelectedIndex: chooseAutoSelectedIndex(rows),
+      autoSelectedIndex: chooseAutoSelectedIndex(item, rows),
     });
   }
 
