@@ -242,6 +242,7 @@ export default function InvoiceDetailsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSavingRawText, setIsSavingRawText] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isAiParsingItems, setIsAiParsingItems] = useState(false);
   const [isParsingItems, setIsParsingItems] = useState(false);
   const [isDetectingPriceChanges, setIsDetectingPriceChanges] = useState(false);
   const [isApprovingInvoice, setIsApprovingInvoice] = useState(false);
@@ -549,6 +550,38 @@ export default function InvoiceDetailsPage() {
       setErrorMessage(error instanceof Error ? error.message : "Не удалось разобрать товары.");
     } finally {
       setIsParsingItems(false);
+    }
+  }
+
+  async function handleAiParseItems() {
+    if (!activeEnterpriseId || !params?.id) {
+      return;
+    }
+
+    setIsAiParsingItems(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
+      const response = await fetch(`/api/invoices/${params.id}/ai-parse?${query.toString()}`, {
+        method: "POST",
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | { createdItemsCount?: number; reviewItemsCount?: number; message?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Не удалось разобрать накладную через AI.");
+      }
+
+      await loadInvoice(activeEnterpriseId, params.id);
+      setSuccessMessage(`AI-разбор готов. Создано строк: ${payload?.createdItemsCount ?? 0}. Требуют проверки: ${payload?.reviewItemsCount ?? 0}.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось разобрать накладную через AI.");
+    } finally {
+      setIsAiParsingItems(false);
     }
   }
 
@@ -935,6 +968,7 @@ export default function InvoiceDetailsPage() {
   const isBusy =
     isSavingRawText ||
     isProcessing ||
+    isAiParsingItems ||
     isParsingItems ||
     isDetectingPriceChanges ||
     isApprovingInvoice ||
@@ -1156,9 +1190,16 @@ export default function InvoiceDetailsPage() {
             <p className="panelEyebrow">Шаг 3</p>
             <h2 className="sectionTitle">Товары</h2>
           </div>
-          <button type="button" className="secondaryButton compactButton" onClick={() => void handleParseItems()} disabled={isBusy || !hasRawText}>
-            {isParsingItems ? "Разбираем..." : "Разобрать товары"}
-          </button>
+          <div className="invoiceSupplierActions">
+            {hasRawText ? (
+              <button type="button" className="primaryButton compactButton" onClick={() => void handleAiParseItems()} disabled={isBusy}>
+                {isAiParsingItems ? "AI разбирает..." : "Разобрать накладную AI"}
+              </button>
+            ) : null}
+            <button type="button" className="secondaryButton compactButton" onClick={() => void handleParseItems()} disabled={isBusy || !hasRawText}>
+              {isParsingItems ? "Разбираем..." : "Разобрать без AI"}
+            </button>
+          </div>
         </div>
 
         {!hasRawText ? (
