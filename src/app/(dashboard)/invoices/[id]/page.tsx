@@ -238,6 +238,7 @@ export default function InvoiceDetailsPage() {
   const { activeEnterpriseId } = useEnterprise();
   const [invoice, setInvoice] = useState<InvoiceDetails | null>(null);
   const [draftRawText, setDraftRawText] = useState("");
+  const [isManualTextOpen, setIsManualTextOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSavingRawText, setIsSavingRawText] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -926,6 +927,11 @@ export default function InvoiceDetailsPage() {
   const fileKind = detectFileKind(invoice.fileUrl, invoice.originalFileName);
   const reviewItemsCount = invoice.items.filter((item) => item.needsReview).length;
   const pendingPriceChangesCount = invoice.priceChanges.filter((change) => change.status === "pending").length;
+  const hasRawText = Boolean(invoice.rawText?.trim());
+  const hasSupplier = Boolean(invoice.supplierId);
+  const hasItems = invoice.items.length > 0;
+  const hasPriceChanges = invoice.priceChanges.length > 0;
+  const priceChangesChecked = hasItems && pendingPriceChangesCount === 0;
   const isBusy =
     isSavingRawText ||
     isProcessing ||
@@ -936,6 +942,14 @@ export default function InvoiceDetailsPage() {
     isSavingSupplier ||
     isSavingProduct ||
     updatingPriceChangeId !== null;
+  const processSteps = [
+    { label: "Файл загружен", done: Boolean(invoice.fileUrl) },
+    { label: "Текст распознан", done: hasRawText },
+    { label: "Поставщик выбран", done: hasSupplier },
+    { label: "Товары разобраны", done: hasItems },
+    { label: "Цены проверены", done: priceChangesChecked },
+    { label: "Завершено", done: invoice.status === "approved" },
+  ];
 
   return (
     <div className="pageStack">
@@ -950,91 +964,24 @@ export default function InvoiceDetailsPage() {
             <p className="panelEyebrow">Накладная</p>
             <h2 className="pageTitle">Накладная</h2>
             <p className="pageDescription">
-              Здесь собраны файл, текст, строки и найденные изменения цен по загруженной накладной.
+              Проверьте накладную по шагам: файл, поставщик, товары, цены и завершение.
             </p>
           </div>
           <div className="invoiceHeaderActions">
-            <div className="invoiceApprovalHints">
-              <span>Строк на проверке: {reviewItemsCount}</span>
-              <span>Изменений цен на проверке: {pendingPriceChangesCount}</span>
-            </div>
-            <button type="button" className="primaryButton compactButton" onClick={() => void handleApproveInvoice()} disabled={isBusy}>
-              {isApprovingInvoice ? "Завершаем..." : "Завершить накладную"}
-            </button>
             <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
           </div>
         </div>
 
-        <div className="invoiceMetaGrid">
-          <div className="supplierMetaItem">
-            <span>Поставщик</span>
-            <strong>{getSupplierName(invoice)}</strong>
-            {invoice.supplierId && invoice.confidence !== null && invoice.supplierMatchType ? (
-              <span className="invoiceHint">
-                {supplierMatchTypeLabels[invoice.supplierMatchType]} · уверенность {formatNumber(String(invoice.confidence), 2)}
-              </span>
-            ) : invoice.supplierId && invoice.confidence !== null ? (
-              <span className="invoiceHint">Выбран вручную · уверенность {formatNumber(String(invoice.confidence), 2)}</span>
-            ) : null}
-            <div className="invoiceSupplierActions">
-              <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
-                {invoice.supplierId ? "Изменить" : "Выбрать поставщика"}
-              </button>
-              {invoice.supplierId ? (
-                <button
-                  type="button"
-                  className="secondaryButton compactButton"
-                  onClick={() => void handleSelectSupplier(null)}
-                  disabled={isBusy}
-                >
-                  Сбросить
-                </button>
-              ) : null}
+        <div className="invoiceProgressSteps">
+          {processSteps.map((step, index) => (
+            <div key={step.label} className={`invoiceProgressStep ${step.done ? "invoiceProgressStepDone" : ""}`}>
+              <span>{index + 1}</span>
+              <strong>{step.label}</strong>
             </div>
-            {isSupplierSearchOpen ? (
-              <div className="invoiceItemSearchPanel invoiceSupplierSearchPanel">
-                <label className="field">
-                  <span>Поиск поставщика</span>
-                  <input
-                    type="text"
-                    value={supplierSearchQuery}
-                    onChange={(event) => setSupplierSearchQuery(event.target.value)}
-                    placeholder="Начните вводить название поставщика"
-                    disabled={isBusy}
-                  />
-                </label>
+          ))}
+        </div>
 
-                <div className="invoiceItemSearchActions">
-                  <button type="button" className="secondaryButton compactButton" onClick={handleCloseSupplierSearch} disabled={isBusy}>
-                    Закрыть
-                  </button>
-                </div>
-
-                {supplierSearchError ? <p className="errorText">{supplierSearchError}</p> : null}
-                {isSearchingSuppliers ? <p className="invoiceHint">Ищем поставщиков...</p> : null}
-                {!isSearchingSuppliers && supplierSearchQuery.trim() && supplierSearchResults.length === 0 ? (
-                  <p className="invoiceHint">Поставщики не найдены</p>
-                ) : null}
-
-                {supplierSearchResults.length > 0 ? (
-                  <div className="invoiceItemSearchResults">
-                    {supplierSearchResults.map((supplier) => (
-                      <button
-                        key={supplier.id}
-                        type="button"
-                        className="invoiceItemSearchResult"
-                        onClick={() => void handleSelectSupplier(supplier.id)}
-                        disabled={isBusy}
-                      >
-                        <strong>{supplier.name}</strong>
-                        <span>{supplier.email || supplier.phone || "Без контактов"}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
+        <div className="invoiceMetaGrid invoiceMetaGridCompact">
           <div className="supplierMetaItem">
             <span>Номер</span>
             <strong>{invoice.invoiceNumber || "—"}</strong>
@@ -1069,10 +1016,16 @@ export default function InvoiceDetailsPage() {
       <section className="card">
         <div className="cardHeader">
           <div>
-            <p className="panelEyebrow">Файл</p>
-            <h2 className="sectionTitle">Файл накладной</h2>
+            <p className="panelEyebrow">Шаг 1</p>
+            <h2 className="sectionTitle">Файл</h2>
           </div>
+          <button type="button" className="primaryButton compactButton" onClick={() => void handleProcessInvoice()} disabled={isBusy || !invoice.fileUrl}>
+            {isProcessing ? "Идёт распознавание..." : "Распознать накладную"}
+          </button>
         </div>
+
+        {errorMessage ? <p className="errorText">{errorMessage}</p> : null}
+        {successMessage ? <p className="successText">{successMessage}</p> : null}
 
         {!invoice.fileUrl ? (
           <div className="emptyState">
@@ -1089,59 +1042,128 @@ export default function InvoiceDetailsPage() {
             {fileKind === "pdf" ? "Открыть PDF" : "Открыть файл"}
           </a>
         )}
+
+        {invoice.status === "failed" && !hasRawText ? (
+          <p className="errorText">Не удалось прочитать текст. Попробуйте фото четче или вставьте текст вручную.</p>
+        ) : hasRawText ? (
+          <p className="successText">Текст накладной есть. Можно переходить к поставщику и товарам.</p>
+        ) : (
+          <p className="invoiceHint">После распознавания здесь появится текст для разбора товаров.</p>
+        )}
+
+        <div className="invoiceTextActions">
+          <button
+            type="button"
+            className="secondaryButton compactButton"
+            onClick={() => setIsManualTextOpen((current) => !current)}
+            disabled={isBusy}
+          >
+            {isManualTextOpen ? "Скрыть ручной текст" : "Вставить текст вручную"}
+          </button>
+        </div>
+
+        {isManualTextOpen ? (
+          <div className="invoiceManualTextPanel">
+            <textarea
+              className="fieldTextarea"
+              rows={8}
+              value={draftRawText}
+              onChange={(event) => setDraftRawText(event.target.value)}
+              placeholder="Вставьте текст накладной вручную"
+              disabled={isBusy}
+            />
+            <button type="button" className="primaryButton compactButton" onClick={() => void handleSaveRawText()} disabled={isBusy}>
+              {isSavingRawText ? "Сохраняем..." : "Сохранить текст"}
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <section className="card">
         <div className="cardHeader">
           <div>
-            <p className="panelEyebrow">Текст</p>
-            <h2 className="sectionTitle">Распознанный текст</h2>
+            <p className="panelEyebrow">Шаг 2</p>
+            <h2 className="sectionTitle">Поставщик</h2>
+          </div>
+          <div className="invoiceSupplierActions">
+            <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
+              {invoice.supplierId ? "Изменить" : "Выбрать поставщика"}
+            </button>
+            {invoice.supplierId ? (
+              <button type="button" className="secondaryButton compactButton" onClick={() => void handleSelectSupplier(null)} disabled={isBusy}>
+                Сбросить
+              </button>
+            ) : null}
           </div>
         </div>
 
-        {errorMessage ? <p className="errorText">{errorMessage}</p> : null}
-        {successMessage ? <p className="successText">{successMessage}</p> : null}
+        <div className="invoiceStepSummary">
+          <FileText size={20} strokeWidth={2} />
+          <div>
+            <strong>{invoice.supplierId ? getSupplierName(invoice) : "Поставщик не найден"}</strong>
+            <p>{invoice.supplierId ? "Поставщик выбран для этой накладной." : "Выберите поставщика, чтобы поиск товаров был точнее."}</p>
+          </div>
+        </div>
 
-        <p className="invoiceHint">Можно распознать текст из файла или вставить его вручную и потом поправить.</p>
+        {isSupplierSearchOpen ? (
+          <div className="invoiceItemSearchPanel invoiceSupplierSearchPanel">
+            <label className="field">
+              <span>Поиск поставщика</span>
+              <input
+                type="text"
+                value={supplierSearchQuery}
+                onChange={(event) => setSupplierSearchQuery(event.target.value)}
+                placeholder="Начните вводить название поставщика"
+                disabled={isBusy}
+              />
+            </label>
 
-        <textarea
-          className="fieldTextarea"
-          rows={12}
-          value={draftRawText}
-          onChange={(event) => setDraftRawText(event.target.value)}
-          placeholder="Вставьте текст накладной вручную"
-          disabled={isBusy}
-        />
+            <div className="invoiceItemSearchActions">
+              <button type="button" className="secondaryButton compactButton" onClick={handleCloseSupplierSearch} disabled={isBusy}>
+                Закрыть
+              </button>
+            </div>
 
-        <div className="invoiceTextActions">
-          <button type="button" className="primaryButton compactButton" onClick={() => void handleSaveRawText()} disabled={isBusy}>
-            {isSavingRawText ? "Сохраняем..." : "Сохранить текст"}
-          </button>
-          <button type="button" className="secondaryButton compactButton" onClick={() => void handleProcessInvoice()} disabled={isBusy}>
-            {isProcessing ? "Идёт распознавание..." : "Распознать"}
-          </button>
-          <button type="button" className="secondaryButton compactButton" onClick={() => void handleParseItems()} disabled={isBusy}>
+            {supplierSearchError ? <p className="errorText">{supplierSearchError}</p> : null}
+            {isSearchingSuppliers ? <p className="invoiceHint">Ищем поставщиков...</p> : null}
+            {!isSearchingSuppliers && supplierSearchQuery.trim() && supplierSearchResults.length === 0 ? (
+              <p className="invoiceHint">Поставщики не найдены</p>
+            ) : null}
+
+            {supplierSearchResults.length > 0 ? (
+              <div className="invoiceItemSearchResults">
+                {supplierSearchResults.map((supplier) => (
+                  <button
+                    key={supplier.id}
+                    type="button"
+                    className="invoiceItemSearchResult"
+                    onClick={() => void handleSelectSupplier(supplier.id)}
+                    disabled={isBusy}
+                  >
+                    <strong>{supplier.name}</strong>
+                    <span>{supplier.email || supplier.phone || "Без контактов"}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="card">
+        <div className="cardHeader">
+          <div>
+            <p className="panelEyebrow">Шаг 3</p>
+            <h2 className="sectionTitle">Товары</h2>
+          </div>
+          <button type="button" className="secondaryButton compactButton" onClick={() => void handleParseItems()} disabled={isBusy || !hasRawText}>
             {isParsingItems ? "Разбираем..." : "Разобрать товары"}
           </button>
         </div>
 
-        {invoice.rawText ? (
-          <pre className="invoiceRawText">{invoice.rawText}</pre>
-        ) : (
-          <div className="emptyState">
-            <p className="emptyStateTitle">Текст ещё не распознан</p>
-            <p className="emptyStateText">Нажмите «Распознать» или вставьте текст вручную и сохраните его.</p>
-          </div>
-        )}
-      </section>
-
-      <section className="card">
-        <div className="cardHeader">
-          <div>
-            <p className="panelEyebrow">Товары</p>
-            <h2 className="sectionTitle">Товары из накладной</h2>
-          </div>
-        </div>
+        {!hasRawText ? (
+          <p className="invoiceHint">Сначала распознайте накладную или вставьте текст вручную.</p>
+        ) : null}
 
         {invoice.items.length === 0 ? (
           <div className="emptyState">
@@ -1209,7 +1231,6 @@ export default function InvoiceDetailsPage() {
                       <td>{formatMoney(item.priceWithoutVat)}</td>
                       <td>
                         <strong>{formatMoney(item.priceWithVat)}</strong>
-                        <span>Confidence: {item.confidence !== null ? formatNumber(String(item.confidence), 2) : "—"}</span>
                       </td>
                       <td>{formatPercent(item.vatRate)}</td>
                       <td>{formatMoney(item.lineTotal)}</td>
@@ -1363,10 +1384,11 @@ export default function InvoiceDetailsPage() {
         )}
       </section>
 
+      {hasItems ? (
       <section className="card">
         <div className="cardHeader">
           <div>
-            <p className="panelEyebrow">Цены</p>
+            <p className="panelEyebrow">Шаг 4</p>
             <h2 className="sectionTitle">Изменения цен</h2>
           </div>
           <button type="button" className="secondaryButton compactButton" onClick={() => void handleDetectPriceChanges()} disabled={isBusy}>
@@ -1375,10 +1397,7 @@ export default function InvoiceDetailsPage() {
         </div>
 
         {invoice.priceChanges.length === 0 ? (
-          <div className="emptyState">
-            <p className="emptyStateTitle">Изменений цен пока нет</p>
-            <p className="emptyStateText">В этой задаче цены не рассчитываются, поэтому блок пока пустой.</p>
-          </div>
+          <p className="invoiceHint">Нажмите «Найти изменения цен», когда товары сопоставлены с внутренним накопителем.</p>
         ) : (
           <div className="orderItemsTableWrap">
             <table className="orderItemsTable">
@@ -1439,6 +1458,27 @@ export default function InvoiceDetailsPage() {
             </table>
           </div>
         )}
+      </section>
+      ) : null}
+
+      <section className="card">
+        <div className="cardHeader">
+          <div>
+            <p className="panelEyebrow">Шаг 5</p>
+            <h2 className="sectionTitle">Завершение</h2>
+          </div>
+          <button type="button" className="primaryButton compactButton" onClick={() => void handleApproveInvoice()} disabled={isBusy}>
+            {isApprovingInvoice ? "Завершаем..." : "Завершить накладную"}
+          </button>
+        </div>
+
+        <div className="invoiceCompletionChecks">
+          <span>Строк на проверке: <strong>{reviewItemsCount}</strong></span>
+          <span>Изменений цен на проверке: <strong>{pendingPriceChangesCount}</strong></span>
+        </div>
+        {(reviewItemsCount > 0 || pendingPriceChangesCount > 0) && invoice.status !== "approved" ? (
+          <p className="invoiceHint">Сначала проверьте строки и изменения цен.</p>
+        ) : null}
       </section>
     </div>
   );
