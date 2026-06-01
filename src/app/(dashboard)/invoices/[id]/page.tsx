@@ -317,6 +317,7 @@ export default function InvoiceDetailsPage() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemDraft, setEditItemDraft] = useState<EditInvoiceItemDraft | null>(null);
   const [isSavingItemEdit, setIsSavingItemEdit] = useState(false);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
 
   const loadInvoice = useCallback(
     async (enterpriseId: string, id: string, signal?: AbortSignal) => {
@@ -990,6 +991,45 @@ export default function InvoiceDetailsPage() {
     }
   }
 
+  async function handleDeleteItem(itemId: string) {
+    if (!activeEnterpriseId || !params?.id) {
+      return;
+    }
+
+    if (!window.confirm("Удалить эту строку из накладной?")) {
+      return;
+    }
+
+    setDeletingItemId(itemId);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const response = await fetch(`/api/invoices/${params.id}/items/${itemId}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          enterpriseId: activeEnterpriseId,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Не удалось удалить строку накладной.");
+      }
+
+      await loadInvoice(activeEnterpriseId, params.id);
+      setSuccessMessage("Строка накладной удалена.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось удалить строку накладной.");
+    } finally {
+      setDeletingItemId(null);
+    }
+  }
+
   async function handleSelectSupplier(supplierId: string | null) {
     if (!activeEnterpriseId || !params?.id) {
       return;
@@ -1111,6 +1151,7 @@ export default function InvoiceDetailsPage() {
     isDetectingPriceChanges ||
     isApprovingInvoice ||
     isSavingItemEdit ||
+    deletingItemId !== null ||
     isSavingSupplier ||
     isSavingProduct ||
     updatingPriceChangeId !== null;
@@ -1483,35 +1524,53 @@ export default function InvoiceDetailsPage() {
                       </td>
                       <td>
                         <div className="compactProductActions invoiceItemRowActions">
-                          {priceChange?.status === "pending" ? (
-                            <>
-                              <button
-                                type="button"
-                                className="primaryButton compactButton"
+                            {priceChange?.status === "pending" ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="primaryButton compactButton"
                                 onClick={() => void handleUpdatePriceChange(priceChange.id, "approve")}
                                 disabled={isBusy}
                               >
                                 {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Подтвердить цену"}
                               </button>
-                              <button
-                                type="button"
-                                className="secondaryButton compactButton"
-                                onClick={() => void handleUpdatePriceChange(priceChange.id, "reject")}
-                                disabled={isBusy}
-                              >
-                                {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Отклонить"}
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              className="secondaryButton compactButton"
-                              onClick={() => handleOpenItemEdit(item)}
-                              disabled={isBusy}
-                            >
-                              Редактировать
-                            </button>
-                          )}
+                                <button
+                                  type="button"
+                                  className="secondaryButton compactButton"
+                                  onClick={() => void handleUpdatePriceChange(priceChange.id, "reject")}
+                                  disabled={isBusy}
+                                >
+                                  {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Отклонить"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondaryButton compactButton"
+                                  onClick={() => void handleDeleteItem(item.id)}
+                                  disabled={isBusy}
+                                >
+                                  {deletingItemId === item.id ? "Удаляем..." : "Удалить строку"}
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="secondaryButton compactButton"
+                                  onClick={() => handleOpenItemEdit(item)}
+                                  disabled={isBusy}
+                                >
+                                  Редактировать
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondaryButton compactButton"
+                                  onClick={() => void handleDeleteItem(item.id)}
+                                  disabled={isBusy}
+                                >
+                                  {deletingItemId === item.id ? "Удаляем..." : "Удалить строку"}
+                                </button>
+                              </>
+                            )}
                         </div>
                       </td>
                     </tr>

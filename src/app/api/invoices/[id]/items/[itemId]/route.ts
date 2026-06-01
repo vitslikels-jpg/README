@@ -21,6 +21,32 @@ type PatchBody = {
   vatRate?: string | number | null;
 };
 
+async function recalculateInvoiceStatus(invoiceId: string) {
+  const [reviewItemsCount, pendingPriceChangesCount] = await Promise.all([
+    prisma.invoiceItem.count({
+      where: {
+        invoiceDocumentId: invoiceId,
+        needsReview: true,
+      },
+    }),
+    prisma.invoicePriceChange.count({
+      where: {
+        invoiceDocumentId: invoiceId,
+        status: "pending",
+      },
+    }),
+  ]);
+
+  await prisma.invoiceDocument.update({
+    where: {
+      id: invoiceId,
+    },
+    data: {
+      status: reviewItemsCount > 0 || pendingPriceChangesCount > 0 ? "needs_review" : "parsed",
+    },
+  });
+}
+
 function parseNumberishInput(value: string | number | null | undefined, fieldName: string) {
   if (value === undefined) {
     return undefined;
@@ -238,5 +264,60 @@ export async function PATCH(request: Request, context: RouteContext) {
       confidence: updatedItem.confidence,
       needsReview: updatedItem.needsReview,
     },
+  });
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  const { id, itemId } = await context.params;
+  const body = (await request.json().catch(() => ({}))) as { enterpriseId?: string };
+  const enterpriseId = body.enterpriseId?.trim();
+
+  if (!enterpriseId) {
+    return jsonUtf8({ message: "Поле enterpriseId обязательно." }, { status: 400 });
+  }
+
+  const enterprise = await ensureEnterpriseExists(enterpriseId);
+
+  if (!enterprise) {
+    return jsonUtf8({ message: "Предприятие не найдено." }, { status: 404 });
+  }
+
+  const item = await prisma.invoiceItem.findFirst({
+    where: {
+      id: itemId,
+      invoiceDocumentId: id,
+      invoiceDocument: {
+        enterpriseId,
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!item) {
+    return jsonUtf8({ message: "Строка накладной не найдена." }, { status: 404 });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.invoicePriceChange.deleteMany({
+      where: {
+        invoiceDocumentId: id,
+        invoiceItemId: itemId,
+        status: "pending",
+      },
+    });
+
+    await tx.invoiceItem.delete({
+      where: {
+        id: itemId,
+      },
+    });
+  });
+
+  await recalculateInvoiceStatus(id);
+
+  return jsonUtf8({
+    deleted: true,
   });
 }
