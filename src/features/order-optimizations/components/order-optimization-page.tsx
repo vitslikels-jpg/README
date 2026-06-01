@@ -72,6 +72,129 @@ function formatAmount(quantity: string | null | undefined, unit: string | null |
   return [quantity, unit].filter(Boolean).join(" ");
 }
 
+function parseFiniteNumber(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function normalizePickerQuery(item: OrderOptimizationItem) {
+  const parsedName = item.parsedName?.trim();
+
+  if (parsedName) {
+    return parsedName;
+  }
+
+  return item.sourceLine
+    .trim()
+    .replace(/^[^:]+:\s*/u, "")
+    .replace(
+      /\s+\d+(?:[.,]\d+)?\s*(\u043a\u0433|\u0433|\u043b|\u043c\u043b|\u0448\u0442|\u0443\u043f|\u043f\u0430\u0447|\u043a\u043e\u0440|\u0431\u0443\u0442)\s*$/iu,
+      "",
+    )
+    .trim();
+}
+
+function getRequestedAmountText(item: Pick<OrderOptimizationItem, "parsedQuantity" | "parsedUnit">) {
+  return formatAmount(item.parsedQuantity, item.parsedUnit);
+}
+
+function getCandidateDisplayUnit(
+  item: Pick<OrderOptimizationItem, "parsedUnit">,
+  result: Pick<OrderOptimizationResult, "selectedProduct">,
+) {
+  return result.selectedProduct?.unit ?? item.parsedUnit ?? "\u0448\u0442";
+}
+
+function getCandidatePackText(
+  item: Pick<OrderOptimizationItem, "parsedUnit">,
+  result: Pick<OrderOptimizationResult, "coverage" | "selectedProduct">,
+) {
+  const unitText = result.selectedProduct?.unit ?? item.parsedUnit ?? "\u0448\u0442";
+
+  if (result.selectedProduct?.unitsPerPack) {
+    return `${result.selectedProduct.unitsPerPack} ${unitText}`;
+  }
+
+  if (result.coverage?.packSize) {
+    return `${result.coverage.packSize} ${item.parsedUnit ?? unitText}`.trim();
+  }
+
+  return "—";
+}
+
+function getCandidateBaseUnitPrice(
+  item: Pick<OrderOptimizationItem, "parsedUnit">,
+  result: Pick<OrderOptimizationResult, "optimizedUnitPrice" | "coverage" | "selectedProduct">,
+) {
+  const unitPrice = parseFiniteNumber(result.optimizedUnitPrice);
+
+  if (unitPrice === null) {
+    return { value: null, label: "—" };
+  }
+
+  const packSize = parseFiniteNumber(result.coverage?.packSize);
+  const displayUnit = getCandidateDisplayUnit(item, result);
+
+  if (packSize && packSize > 0) {
+    return {
+      value: unitPrice / packSize,
+      label: `\u0437\u0430 1 ${displayUnit}`,
+    };
+  }
+
+  return {
+    value: unitPrice,
+    label: `\u0437\u0430 1 ${displayUnit}`,
+  };
+}
+
+function sortPickerCandidates(
+  item: Pick<OrderOptimizationItem, "parsedUnit">,
+  results: OrderOptimizationResult[],
+) {
+  return [...results].sort((left, right) => {
+    const leftBasePrice = getCandidateBaseUnitPrice(item, left).value;
+    const rightBasePrice = getCandidateBaseUnitPrice(item, right).value;
+
+    if (leftBasePrice !== null || rightBasePrice !== null) {
+      if (leftBasePrice === null) {
+        return 1;
+      }
+
+      if (rightBasePrice === null) {
+        return -1;
+      }
+
+      if (leftBasePrice !== rightBasePrice) {
+        return leftBasePrice - rightBasePrice;
+      }
+    }
+
+    const leftLineTotal = parseFiniteNumber(left.optimizedLineTotal);
+    const rightLineTotal = parseFiniteNumber(right.optimizedLineTotal);
+
+    if (leftLineTotal !== null || rightLineTotal !== null) {
+      if (leftLineTotal === null) {
+        return 1;
+      }
+
+      if (rightLineTotal === null) {
+        return -1;
+      }
+
+      if (leftLineTotal !== rightLineTotal) {
+        return leftLineTotal - rightLineTotal;
+      }
+    }
+
+    return String(left.selectedProduct?.name ?? "").localeCompare(String(right.selectedProduct?.name ?? ""), "ru");
+  });
+}
+
 function getSelectedCandidate(item: OrderOptimizationItem) {
   return item.results.find((result) => result.id === item.selectedCandidateId) ?? null;
 }
@@ -96,8 +219,7 @@ function buildSmartOrderGroups(items: OrderOptimizationItem[]) {
       candidate?.selectedSupplier?.name?.trim() ||
       item.requestedSupplierName?.trim() ||
       "Нужно подобрать";
-    const packsCount = candidate?.coverage?.suggestedPacksCount;
-    const quantityText = packsCount ? `${packsCount} уп` : formatAmount(item.parsedQuantity, item.parsedUnit);
+    const quantityText = getRequestedAmountText(item);
     const line: SmartOrderLine = {
       item,
       productName: candidate?.selectedProduct?.name?.trim() || item.parsedName?.trim() || item.sourceLine,
@@ -630,10 +752,10 @@ export function OrderOptimizationPage() {
     }
 
     if (!debouncedQuery) {
-      return pickerItem.results;
+      return sortPickerCandidates(pickerItem, pickerItem.results);
     }
 
-    return searchResults ?? [];
+    return sortPickerCandidates(pickerItem, searchResults ?? []);
   }, [debouncedQuery, pickerItem, searchResults]);
 
   useEffect(() => {
@@ -896,11 +1018,10 @@ export function OrderOptimizationPage() {
   }
 
   function openPicker(item: OrderOptimizationItem) {
-    const selectedCandidate = getSelectedCandidate(item);
     setSearchResults(null);
     setPicker({
       itemId: item.id,
-      query: selectedCandidate?.selectedProduct?.name?.trim() || item.parsedName?.trim() || "",
+      query: normalizePickerQuery(item),
     });
   }
 
@@ -1480,15 +1601,11 @@ export function OrderOptimizationPage() {
               <div className="smartOrderModalResults">
                 {filteredCandidates.map((result) => {
                   const isSelected = pickerItem.selectedCandidateId === result.id;
-                  const quantityText = result.coverage?.suggestedPacksCount
-                    ? `${result.coverage.suggestedPacksCount} уп`
-                    : formatAmount(pickerItem.parsedQuantity, pickerItem.parsedUnit);
-                  const unitText = result.selectedProduct?.unit ?? "—";
-                  const packText = result.selectedProduct?.unitsPerPack
-                    ? `${result.selectedProduct.unitsPerPack} ${unitText}`
-                    : result.coverage?.packSize
-                      ? `${result.coverage.packSize} ${pickerItem.parsedUnit ?? ""}`.trim()
-                      : "—";
+                  const quantityText = getRequestedAmountText(pickerItem);
+                  const unitText = getCandidateDisplayUnit(pickerItem, result);
+                  const packText = getCandidatePackText(pickerItem, result);
+                  const baseUnitPrice = getCandidateBaseUnitPrice(pickerItem, result);
+                  const totalText = formatMoney(result.optimizedLineTotal) ?? "\u2014";
 
                   return (
                     <button
@@ -1500,17 +1617,20 @@ export function OrderOptimizationPage() {
                     >
                       <div className="smartOrderCandidateHead">
                         <div>
-                          <strong>{result.selectedProduct?.name ?? "Товар не найден"}</strong>
-                          <span>{result.selectedSupplier?.name ?? "Поставщик не указан"}</span>
+                          <strong>{result.selectedProduct?.name ?? "\u0422\u043e\u0432\u0430\u0440 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d"}</strong>
+                          <span>{result.selectedSupplier?.name ?? "\u041f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a \u043d\u0435 \u0443\u043a\u0430\u0437\u0430\u043d"}</span>
                         </div>
-                        <strong>{formatMoney(result.optimizedLineTotal) ?? "—"}</strong>
+                        <strong>
+                          {baseUnitPrice.value === null ? "\u2014" : formatMoney(baseUnitPrice.value) ?? "\u2014"}
+                          <span className="smartOrderCandidatePriceHint"> {baseUnitPrice.label}</span>
+                        </strong>
                       </div>
 
                       <div className="smartOrderCandidateMeta">
-                        <span>Цена: {formatMoney(result.optimizedUnitPrice) ?? "—"}</span>
-                        <span>Ед.: {unitText}</span>
-                        <span>Фасовка: {packText}</span>
-                        <span>Купить: {quantityText}</span>
+                        <span>{"\u041d\u0430 \u0437\u0430\u043a\u0430\u0437"}: {totalText}</span>
+                        <span>{"\u0415\u0434."}: {unitText}</span>
+                        <span>{"\u0424\u0430\u0441\u043e\u0432\u043a\u0430"}: {packText}</span>
+                        <span>{"\u0417\u0430\u043a\u0430\u0437\u0430\u043d\u043e"}: {quantityText}</span>
                       </div>
                     </button>
                   );

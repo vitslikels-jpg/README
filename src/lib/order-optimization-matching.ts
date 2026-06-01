@@ -449,7 +449,21 @@ function getStrictDangerousQueryDecision(normalizedQuery: string, normalizedCand
   }
 
   if (normalizedQuery === "картофель") {
-    if (containsAnyFragment(normalizedCandidateText, ["крахмал", "ньокки", "чипсы", "специи"])) {
+    if (
+      containsAnyFragment(normalizedCandidateText, [
+        "крахмал",
+        "ньокки",
+        "чипсы",
+        "специи",
+        "диппер",
+        "дольк",
+        "пюре",
+        "шар",
+        "фри",
+        "в панировке",
+        "по деревенски",
+      ])
+    ) {
       return false;
     }
 
@@ -457,7 +471,7 @@ function getStrictDangerousQueryDecision(normalizedQuery: string, normalizedCand
   }
 
   if (normalizedQuery === "сахар") {
-    if (containsAnyFragment(normalizedCandidateText, ["соус", "с сахаром", "ваниль", "пудр"])) {
+    if (containsAnyFragment(normalizedCandidateText, ["соус", "с сахаром", "ваниль", "пудр", "томат", "резан", "кубик", "sahar"])) {
       return false;
     }
 
@@ -492,6 +506,25 @@ function getStrictDangerousQueryDecision(normalizedQuery: string, normalizedCand
     return hasButterWord && hasCreamyWord && hasPrefixInRange(candidateWords, ["масл", "сливоч"], 3);
   }
 
+  if (normalizedQuery.startsWith("сливки 33")) {
+    if (containsAnyFragment(normalizedCandidateText, ["кокос", "пирож", "десерт", "клубника со сливками"])) {
+      return false;
+    }
+
+    return hasWordInRange(candidateWords, /^сливк(?:и|а|у|е|ой|ами)?$/u, 2) && normalizedCandidateText.includes("33");
+  }
+
+  if (normalizedQuery === "говядина оковалок") {
+    if (containsAnyFragment(normalizedCandidateText, ["лапша", "со вкусом", "приправа", "соус"])) {
+      return false;
+    }
+
+    return (
+      hasWordInRange(candidateWords, /^говядин(?:а|ы|е|у|ой)?$/u, 2) &&
+      hasPrefixInRange(candidateWords, ["оковал"], 4)
+    );
+  }
+
   return null;
 }
 
@@ -507,6 +540,8 @@ function isStrictDangerousQuery(normalizedQuery: string) {
     "рис",
     "масло",
     "масло сливочное",
+    "сливки 33",
+    "говядина оковалок",
   ]).has(normalizedQuery);
 }
 
