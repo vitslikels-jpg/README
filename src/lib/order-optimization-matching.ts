@@ -1454,7 +1454,7 @@ function scoreProduct(item: OrderOptimizationItem, product: ProductCandidate) {
   const coverageVariants = buildCoverageVariants(item.parsedQuantity, packSize);
   const noShortageVariant = coverageVariants.find((variant) => variant.mode === "no_shortage");
   const unitScore = itemUnit && (productUnit === itemUnit || packSize) ? 30 : 0;
-  const supplierScore = requestedSupplier && supplierName.includes(requestedSupplier) ? 12 : 0;
+  const supplierScore = requestedSupplier && supplierName.includes(requestedSupplier) ? 120 : 0;
   const priceScore = product.price ? 3 : 0;
   const coverageScore = noShortageVariant ? Math.max(0, 10 - Number(noShortageVariant.overage.toString())) : 0;
 
@@ -2559,6 +2559,10 @@ function chooseAutoSelectedIndex(item: OrderOptimizationItem, rows: ItemCandidat
     return null;
   }
 
+  if (normalizeSearchText(item.parsedName) === "сыр") {
+    return null;
+  }
+
   const manualSelectionRows = rows
     .map((row, index) => ({ row, index }))
     .filter(
@@ -2620,18 +2624,17 @@ function chooseAutoSelectedIndex(item: OrderOptimizationItem, rows: ItemCandidat
   const best = sorted[0];
   const second = sorted[1];
 
-  if (normalizeSearchText(item.parsedName) === "сыр") {
-    return null;
-  }
-
   if (
     item.requestedSupplierName &&
-    best.row.supplierMatched &&
-    best.row.hasUnitSupport &&
-    best.row.firstTokenMatched &&
-    best.row.score >= 30
+    sorted.find(
+      ({ row }) => row.supplierMatched && row.hasUnitSupport && row.firstTokenMatched && row.score >= 30,
+    )
   ) {
-    return best.index;
+    return (
+      sorted.find(
+        ({ row }) => row.supplierMatched && row.hasUnitSupport && row.firstTokenMatched && row.score >= 30,
+      )?.index ?? null
+    );
   }
 
   return isStrongAutoCandidate(best.row, second?.row) ? best.index : null;
