@@ -5,6 +5,7 @@ import {
   type InvoiceVisionInputFile,
 } from "@/lib/invoice-gemini-vision-parser";
 import { jsonUtf8 } from "@/lib/http";
+import { filterInvoiceItems } from "@/lib/invoice-item-filter";
 import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
 import { sanitizeMoney, sanitizeQuantity, sanitizeVatRate } from "@/lib/invoice-number-sanitize";
 import { ensureEnterpriseExists } from "@/lib/orders";
@@ -323,6 +324,8 @@ export async function POST(request: Request, context: RouteContext) {
     let visionItemsCount = 0;
     let fallbackUsed = false;
     let visionUsed = false;
+    let itemsBeforeFilter = 0;
+    let rejectedItems: Array<{ name: string; reason: string }> = [];
     let columns: Record<string, string | null> | undefined;
 
     let metadata = {
@@ -452,6 +455,24 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
 
+    itemsBeforeFilter = parsedItems.length;
+    const filterResult = filterInvoiceItems(parsedItems);
+    parsedItems = filterResult.accepted;
+    rejectedItems = filterResult.rejected;
+
+    console.info("[invoice-ai-parse:filter]", {
+      invoiceId: id,
+      rawTextLength: rawText.length,
+      tableDetected: textTableDetected,
+      tableRowsCount,
+      textParsedItemsCount,
+      visionAttempted,
+      visionItemsCount,
+      itemsBeforeFilter,
+      filteredItemsCount: parsedItems.length,
+      rejectedItemsCount: rejectedItems.length,
+    });
+
     if (parsedItems.length === 0) {
       await clearInvoiceParsedData(id);
       await updateInvoiceMetadata(id, {
@@ -467,17 +488,23 @@ export async function POST(request: Request, context: RouteContext) {
         textParsedItemsCount,
         visionAttempted,
         visionItemsCount,
+        itemsBeforeFilter,
+        filteredItemsCount: 0,
+        rejectedItemsCount: rejectedItems.length,
       });
 
       return jsonUtf8(
         {
-          message: "Не удалось разобрать товары. Попробуйте более чёткое фото или внесите строки вручную.",
+          message: "???????? ?????? ?? ???????. ?????????? ????? ?????? ???? ??? ??????? ?????? ???????.",
           rawTextPreview,
           tableDetected: textTableDetected,
           tableRowsCount,
           textParsedItemsCount,
           visionAttempted,
           visionItemsCount,
+          itemsBeforeFilter,
+          filteredItemsCount: 0,
+          rejectedItems,
           columns,
         },
         { status: 400 },
@@ -494,6 +521,9 @@ export async function POST(request: Request, context: RouteContext) {
       textParsedItemsCount,
       visionAttempted,
       visionItemsCount,
+      itemsBeforeFilter,
+      filteredItemsCount: createdItemsCount,
+      rejectedItemsCount: rejectedItems.length,
       createdItemsCount,
       reviewItemsCount,
     });
@@ -514,6 +544,9 @@ export async function POST(request: Request, context: RouteContext) {
       textParsedItemsCount,
       visionAttempted,
       visionItemsCount,
+      itemsBeforeFilter,
+      filteredItemsCount: createdItemsCount,
+      rejectedItems,
       columns,
       message: visionUsed
         ? "Текст OCR был плохой, товары разобраны по изображению."

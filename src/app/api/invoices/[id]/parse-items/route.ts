@@ -1,4 +1,5 @@
 import { jsonUtf8 } from "@/lib/http";
+import { filterInvoiceItems } from "@/lib/invoice-item-filter";
 import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
 import { sanitizeMoney, sanitizeQuantity } from "@/lib/invoice-number-sanitize";
 import { ensureEnterpriseExists } from "@/lib/orders";
@@ -209,9 +210,37 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const invoiceLines = parseInvoiceItemsFromText(rawText);
+  const filteredLines = filterInvoiceItems(invoiceLines);
+
+  if (filteredLines.accepted.length === 0) {
+    await prisma.invoiceItem.deleteMany({
+      where: {
+        invoiceDocumentId: id,
+      },
+    });
+
+    await prisma.invoiceDocument.update({
+      where: {
+        id,
+      },
+      data: {
+        status: "needs_review",
+      },
+    });
+
+    return jsonUtf8(
+      {
+        message: "Товарные строки не найдены. Попробуйте более чёткое фото или внесите строки вручную.",
+        itemsBeforeFilter: invoiceLines.length,
+        filteredItemsCount: 0,
+        rejectedItems: filteredLines.rejected,
+      },
+      { status: 400 },
+    );
+  }
 
   const parsedItems = await Promise.all(
-    invoiceLines.map(async (parsedItem) => {
+    filteredLines.accepted.map(async (parsedItem) => {
       const sanitizedQuantity = sanitizeQuantity(parsedItem.quantity);
       const sanitizedPriceWithVat = sanitizeMoney(parsedItem.priceWithVat);
       const sanitizedLineTotal = sanitizeMoney(parsedItem.lineTotal);
@@ -299,5 +328,8 @@ export async function POST(request: Request, context: RouteContext) {
     invoiceId: id,
     createdItemsCount: parsedItems.length,
     reviewItemsCount,
+    itemsBeforeFilter: invoiceLines.length,
+    filteredItemsCount: parsedItems.length,
+    rejectedItems: filteredLines.rejected,
   });
 }

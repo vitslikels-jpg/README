@@ -97,6 +97,19 @@ type InvoiceDetails = {
   priceChanges: InvoicePriceChange[];
 };
 
+type InvoiceParseDebugInfo = {
+  tableDetected?: boolean;
+  tableRowsCount?: number;
+  textParsedItemsCount?: number;
+  visionItemsCount?: number;
+  itemsBeforeFilter?: number;
+  filteredItemsCount?: number;
+  rejectedItems?: Array<{
+    name: string;
+    reason: string;
+  }>;
+};
+
 const statusLabels: Record<InvoiceStatus, string> = {
   uploaded: "Загружена",
   processing: "Обрабатывается",
@@ -302,6 +315,7 @@ export default function InvoiceDetailsPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [debugRawTextPreview, setDebugRawTextPreview] = useState("");
+  const [debugParseInfo, setDebugParseInfo] = useState<InvoiceParseDebugInfo | null>(null);
   const [isNotFound, setIsNotFound] = useState(false);
   const [productSearchItemId, setProductSearchItemId] = useState<string | null>(null);
   const [productSearchQuery, setProductSearchQuery] = useState("");
@@ -375,6 +389,7 @@ export default function InvoiceDetailsPage() {
       setErrorMessage("");
       setSuccessMessage("");
       setDebugRawTextPreview("");
+    setDebugParseInfo(null);
       setIsNotFound(false);
       return;
     }
@@ -522,6 +537,7 @@ export default function InvoiceDetailsPage() {
     setErrorMessage("");
     setSuccessMessage("");
     setDebugRawTextPreview("");
+    setDebugParseInfo(null);
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -559,6 +575,7 @@ export default function InvoiceDetailsPage() {
     setErrorMessage("");
     setSuccessMessage("");
     setDebugRawTextPreview("");
+    setDebugParseInfo(null);
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -590,6 +607,7 @@ export default function InvoiceDetailsPage() {
     setErrorMessage("");
     setSuccessMessage("");
     setDebugRawTextPreview("");
+    setDebugParseInfo(null);
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -598,7 +616,7 @@ export default function InvoiceDetailsPage() {
       });
 
       const payload = (await response.json().catch(() => null)) as
-        | { createdItemsCount?: number; reviewItemsCount?: number; message?: string }
+        | ({ createdItemsCount?: number; reviewItemsCount?: number; message?: string } & InvoiceParseDebugInfo)
         | null;
 
       if (!response.ok) {
@@ -623,6 +641,7 @@ export default function InvoiceDetailsPage() {
     setErrorMessage("");
     setSuccessMessage("");
     setDebugRawTextPreview("");
+    setDebugParseInfo(null);
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -631,14 +650,14 @@ export default function InvoiceDetailsPage() {
       });
 
       const payload = (await response.json().catch(() => null)) as
-        | {
+        | ({
             createdItemsCount?: number;
             reviewItemsCount?: number;
             fallbackUsed?: boolean;
             visionUsed?: boolean;
             message?: string;
             rawTextPreview?: string;
-          }
+          } & InvoiceParseDebugInfo)
         | null;
 
       if (!response.ok) {
@@ -670,6 +689,7 @@ export default function InvoiceDetailsPage() {
     setErrorMessage("");
     setSuccessMessage("");
     setDebugRawTextPreview("");
+    setDebugParseInfo(null);
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -687,14 +707,14 @@ export default function InvoiceDetailsPage() {
         method: "POST",
       });
       const aiPayload = (await aiResponse.json().catch(() => null)) as
-        | {
+        | ({
             message?: string;
             fallbackUsed?: boolean;
             visionUsed?: boolean;
             rawTextPreview?: string;
             createdItemsCount?: number;
             reviewItemsCount?: number;
-          }
+          } & InvoiceParseDebugInfo)
         | null;
 
       if (!aiResponse.ok) {
@@ -1369,6 +1389,27 @@ export default function InvoiceDetailsPage() {
             <pre className="invoiceRawText">
               {debugRawTextPreview || draftRawText.slice(0, 4000)}
             </pre>
+          </details>
+        ) : null}
+        {debugParseInfo ? (
+          <details className="invoiceDetailsPanel">
+            <summary>Показать детали разбора товаров</summary>
+            <div className="invoiceCompletionChecks">
+              <span>AI нашёл таблицу: <strong>{debugParseInfo.tableDetected ? "да" : "нет"}</strong></span>
+              <span>Строк таблицы найдено: <strong>{debugParseInfo.tableRowsCount ?? 0}</strong></span>
+              <span>Строк до фильтра: <strong>{debugParseInfo.itemsBeforeFilter ?? debugParseInfo.textParsedItemsCount ?? debugParseInfo.visionItemsCount ?? 0}</strong></span>
+              <span>Товаров после фильтра: <strong>{debugParseInfo.filteredItemsCount ?? 0}</strong></span>
+            </div>
+            {debugParseInfo.rejectedItems?.length ? (
+              <div className="invoiceItemSearchResults">
+                {debugParseInfo.rejectedItems.slice(0, 50).map((item, index) => (
+                  <div key={`${item.reason}-${index}`} className="invoiceItemSearchResult">
+                    <strong>{item.name || "Пустая строка"}</strong>
+                    <span>{item.reason}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </details>
         ) : null}
         {successMessage ? <p className="successText">{successMessage}</p> : null}
