@@ -11,14 +11,14 @@ function normalizeText(value) {
     .replace(/\s+/gu, " ");
 }
 
-function rawDataText(rawData) {
+function rawDataValues(rawData) {
   if (!rawData || typeof rawData !== "object") {
-    return "";
+    return [];
   }
 
   return Object.entries(rawData)
     .map(([, value]) => `${value ?? ""}`)
-    .join(" ");
+    .filter((value) => value.trim());
 }
 
 function normalizePackMatch(quantity, unit) {
@@ -73,7 +73,7 @@ export function extractWeightPackFromNameOrRawData({ name, packaging, rawData } 
   const sources = [
     { source: "packaging", text: packaging },
     { source: "name", text: name },
-    { source: "rawData", text: rawDataText(rawData) },
+    ...rawDataValues(rawData).map((text) => ({ source: "rawData", text })),
   ];
 
   const combinedText = normalizeText(sources.map((item) => item.text).join(" "));
