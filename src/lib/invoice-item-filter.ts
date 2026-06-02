@@ -113,7 +113,7 @@ function getRejectReason(item: InvoiceItemFilterInput) {
     return "мало букв";
   }
 
-  if (looksLikeDateOrNumber(name)) {
+  if (looksLikeDateOrNumber(name) && lettersCount < 8) {
     return "похоже на номер или дату";
   }
 
