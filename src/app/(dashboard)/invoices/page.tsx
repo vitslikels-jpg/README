@@ -127,6 +127,7 @@ export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -283,6 +284,40 @@ export default function InvoicesPage() {
     fileInputRef.current?.click();
   }
 
+  async function handleDeleteInvoice(invoiceId: string) {
+    if (!activeEnterpriseId) {
+      return;
+    }
+
+    if (!window.confirm("Удалить накладную? Это действие нельзя отменить.")) {
+      return;
+    }
+
+    setDeletingInvoiceId(invoiceId);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
+      const response = await fetch(`/api/invoices/${invoiceId}?${query.toString()}`, {
+        method: "DELETE",
+      });
+
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Не удалось удалить накладную.");
+      }
+
+      await loadInvoices(activeEnterpriseId);
+      setSuccessMessage("Накладная удалена.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось удалить накладную.");
+    } finally {
+      setDeletingInvoiceId(null);
+    }
+  }
+
   return (
     <div className="pageStack">
       <section className="card invoicesHero">
@@ -404,10 +439,24 @@ export default function InvoicesPage() {
                   <div className="invoiceCardHeader">
                     <div className="invoiceCardTitleBlock">
                       <h3 className="invoiceCardTitle">{getSupplierName(invoice)}</h3>
-                      <p className="invoiceCardFileName">{invoice.originalFileName || "Файл без имени"}</p>
+                      <p className="invoiceCardFileName">{invoice.originalFileName || "???? ??? ?????"}</p>
                     </div>
 
-                    <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
+                    <div className="invoiceHeaderActions">
+                      <button
+                        type="button"
+                        className="secondaryButton compactButton"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void handleDeleteInvoice(invoice.id);
+                        }}
+                        disabled={deletingInvoiceId === invoice.id}
+                      >
+                        {deletingInvoiceId === invoice.id ? "???????..." : "???????"}
+                      </button>
+                      <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
+                    </div>
                   </div>
 
                   <div className="invoiceMetaGrid">

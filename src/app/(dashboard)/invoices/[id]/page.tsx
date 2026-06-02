@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ExternalLink, FileText } from "lucide-react";
 import { useEnterprise } from "@/features/enterprises/components/enterprise-context";
 
@@ -287,6 +287,7 @@ function buildItemEditDraft(item: InvoiceItem): EditInvoiceItemDraft {
 
 export default function InvoiceDetailsPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const { activeEnterpriseId } = useEnterprise();
   const [invoice, setInvoice] = useState<InvoiceDetails | null>(null);
   const [draftRawText, setDraftRawText] = useState("");
@@ -318,6 +319,7 @@ export default function InvoiceDetailsPage() {
   const [editItemDraft, setEditItemDraft] = useState<EditInvoiceItemDraft | null>(null);
   const [isSavingItemEdit, setIsSavingItemEdit] = useState(false);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  const [isDeletingInvoice, setIsDeletingInvoice] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [isBulkDeletingItems, setIsBulkDeletingItems] = useState(false);
 
@@ -1050,6 +1052,39 @@ export default function InvoiceDetailsPage() {
     }
   }
 
+  async function handleDeleteInvoice() {
+    if (!activeEnterpriseId || !params?.id) {
+      return;
+    }
+
+    if (!window.confirm("Удалить накладную? Это действие нельзя отменить.")) {
+      return;
+    }
+
+    setIsDeletingInvoice(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
+      const response = await fetch(`/api/invoices/${params.id}?${query.toString()}`, {
+        method: "DELETE",
+      });
+
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Не удалось удалить накладную.");
+      }
+
+      router.push("/invoices");
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось удалить накладную.");
+      setIsDeletingInvoice(false);
+    }
+  }
+
   function handleToggleItemSelection(itemId: string) {
     setSelectedItemIds((current) =>
       current.includes(itemId) ? current.filter((selectedId) => selectedId !== itemId) : [...current, itemId],
@@ -1226,6 +1261,7 @@ export default function InvoiceDetailsPage() {
     isParsingItems ||
     isDetectingPriceChanges ||
     isApprovingInvoice ||
+    isDeletingInvoice ||
     isSavingItemEdit ||
     isBulkDeletingItems ||
     deletingItemId !== null ||
@@ -1260,9 +1296,12 @@ export default function InvoiceDetailsPage() {
           <div className="invoiceHeaderActions">
             {!invoice.supplierId ? (
               <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
-                Выбрать поставщика
+                ??????? ??????????
               </button>
             ) : null}
+            <button type="button" className="secondaryButton compactButton" onClick={() => void handleDeleteInvoice()} disabled={isBusy || isDeletingInvoice}>
+              {isDeletingInvoice ? "???????..." : "??????? ?????????"}
+            </button>
             <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
           </div>
         </div>
