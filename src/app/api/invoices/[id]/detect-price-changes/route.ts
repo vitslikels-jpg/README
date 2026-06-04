@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { jsonUtf8 } from "@/lib/http";
+import { comparePricesSafely } from "@/lib/invoice-price-normalizer";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -8,14 +9,6 @@ type RouteContext = {
     id: string;
   }>;
 };
-
-function pricesAreEqual(left: Prisma.Decimal | null, right: Prisma.Decimal) {
-  if (!left) {
-    return false;
-  }
-
-  return left.toDecimalPlaces(2).equals(right.toDecimalPlaces(2));
-}
 
 export async function POST(request: Request, context: RouteContext) {
   const { id } = await context.params;
@@ -54,8 +47,27 @@ export async function POST(request: Request, context: RouteContext) {
           matchedProduct: {
             select: {
               id: true,
+              name: true,
               supplierId: true,
               price: true,
+              unit: true,
+              unitsPerPack: true,
+              rawData: true,
+              priceSnapshots: {
+                where: {
+                  isCurrent: true,
+                },
+                take: 1,
+                select: {
+                  legacyUnit: true,
+                  supplierOffer: {
+                    select: {
+                      unitsPerPack: true,
+                      legacyUnit: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -102,12 +114,34 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       const oldPrice = item.matchedProduct.price;
-      const newPrice = item.priceWithVat;
+      const comparison = comparePricesSafely(
+        {
+          productNameRaw: item.productNameRaw,
+          unit: item.unit,
+          priceWithVat: item.priceWithVat,
+        },
+        item.matchedProduct,
+        item.matchedProduct.priceSnapshots[0]?.supplierOffer ?? null,
+      );
 
-      if (pricesAreEqual(oldPrice, newPrice)) {
+      if (!comparison.canCompare || !comparison.newPrice) {
+        skippedItemsCount += 1;
+        await tx.invoiceItem.update({
+          where: {
+            id: item.id,
+          },
+          data: {
+            needsReview: true,
+          },
+        });
         continue;
       }
 
+      if (!comparison.changed) {
+        continue;
+      }
+
+      const newPrice = comparison.newPrice;
       const differenceAmount = oldPrice ? newPrice.minus(oldPrice).toDecimalPlaces(2) : null;
       const differencePercent =
         oldPrice && oldPrice.gt(0)

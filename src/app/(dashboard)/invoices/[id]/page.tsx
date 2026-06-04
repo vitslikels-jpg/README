@@ -37,6 +37,9 @@ type InvoiceItem = {
   lineTotal: string | null;
   confidence: number | null;
   needsReview: boolean;
+  priceComparisonNote: string | null;
+  priceComparisonNeedsReview: boolean;
+  normalizedComparisonPrice: string | null;
 };
 
 type InvoicePriceChange = {
@@ -48,6 +51,7 @@ type InvoicePriceChange = {
   newPrice: string;
   differenceAmount: string | null;
   differencePercent: string | null;
+  comparisonNote: string | null;
   status: PriceChangeStatus;
 };
 
@@ -1709,8 +1713,9 @@ export default function InvoiceDetailsPage() {
                   const priceChange = priceChangesByItemId.get(item.id) ?? null;
                   const oldPrice = item.matchedProductPrice;
                   const newPrice = item.priceWithVat;
+                  const comparisonPrice = item.normalizedComparisonPrice ?? newPrice;
                   const oldPriceNumber = oldPrice ? Number(oldPrice) : null;
-                  const newPriceNumber = newPrice ? Number(newPrice) : null;
+                  const newPriceNumber = comparisonPrice ? Number(comparisonPrice) : null;
                   const differenceAmount =
                     oldPriceNumber !== null && Number.isFinite(oldPriceNumber) && newPriceNumber !== null && Number.isFinite(newPriceNumber)
                       ? String(newPriceNumber - oldPriceNumber)
@@ -1748,6 +1753,7 @@ export default function InvoiceDetailsPage() {
                         <td>
                           <strong>{formatMoney(newPrice)}</strong>
                           <span>{oldPrice ? `Было: ${formatMoney(oldPrice)}` : "—"}</span>
+                          {item.priceComparisonNote ? <span>{item.priceComparisonNote}</span> : null}
                         </td>
                         <td>
                           <strong>{formatMoney(lineTotal)}</strong>
@@ -2011,7 +2017,10 @@ export default function InvoiceDetailsPage() {
                     <tr key={change.id}>
                       <td><strong>{change.productName}</strong></td>
                       <td>{formatMoney(change.oldPrice)}</td>
-                      <td>{formatMoney(change.newPrice)}</td>
+                      <td>
+                        <strong>{formatMoney(change.newPrice)}</strong>
+                        {change.comparisonNote ? <span>{change.comparisonNote}</span> : null}
+                      </td>
                       <td>
                         <strong>{formatMoney(change.differenceAmount)}</strong>
                         <span>{formatPercent(change.differencePercent)}</span>

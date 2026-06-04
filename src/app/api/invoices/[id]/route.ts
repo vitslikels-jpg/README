@@ -1,6 +1,7 @@
 import { unlink } from "fs/promises";
 import path from "path";
 import { jsonUtf8 } from "@/lib/http";
+import { comparePricesSafely } from "@/lib/invoice-price-normalizer";
 import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
 import { matchInvoiceProduct } from "@/lib/invoice-product-match";
 import { ensureEnterpriseExists } from "@/lib/orders";
@@ -13,6 +14,68 @@ type RouteContext = {
 };
 
 const INVOICE_UPLOAD_DIRECTORY = path.join(process.cwd(), "public", "uploads", "invoices");
+
+function formatMoneyValue(value: { toString(): string } | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const amount = Number(value.toString());
+
+  if (!Number.isFinite(amount)) {
+    return value.toString();
+  }
+
+  return new Intl.NumberFormat("ru-RU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function formatPackSizeValue(value: { toString(): string } | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const amount = Number(value.toString());
+
+  if (!Number.isFinite(amount)) {
+    return value.toString();
+  }
+
+  return new Intl.NumberFormat("ru-RU", {
+    minimumFractionDigits: amount % 1 === 0 ? 0 : 3,
+    maximumFractionDigits: 3,
+  }).format(amount);
+}
+
+function buildPriceComparisonNote(comparison: ReturnType<typeof comparePricesSafely>) {
+  if (comparison.reason) {
+    return comparison.reason;
+  }
+
+  if (!comparison.normalized || !comparison.packSize || !comparison.invoicePrice || !comparison.newPrice) {
+    return null;
+  }
+
+  const invoicePrice = formatMoneyValue(comparison.invoicePrice);
+  const normalizedPrice = formatMoneyValue(comparison.newPrice);
+  const packSize = formatPackSizeValue(comparison.packSize);
+
+  if (!invoicePrice || !normalizedPrice || !packSize) {
+    return null;
+  }
+
+  if (comparison.normalizationMode === "invoice_unit_to_pack") {
+    return `${invoicePrice} ₽/шт, упаковка ${packSize} шт = ${normalizedPrice} ₽`;
+  }
+
+  if (comparison.normalizationMode === "invoice_pack_to_unit") {
+    return `${invoicePrice} ₽ за упаковку ${packSize} шт = ${normalizedPrice} ₽/шт`;
+  }
+
+  return null;
+}
 
 function getSafeInvoiceFilePath(storageKey: string | null, fileUrl: string | null) {
   const normalizedKey = (storageKey || fileUrl?.replace(/^\/+/u, "") || "").replaceAll("\\", "/");
@@ -103,6 +166,24 @@ export async function GET(request: Request, context: RouteContext) {
               article: true,
               brand: true,
               price: true,
+              unit: true,
+              unitsPerPack: true,
+              rawData: true,
+              priceSnapshots: {
+                where: {
+                  isCurrent: true,
+                },
+                take: 1,
+                select: {
+                  legacyUnit: true,
+                  supplierOffer: {
+                    select: {
+                      unitsPerPack: true,
+                      legacyUnit: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -172,9 +253,39 @@ export async function GET(request: Request, context: RouteContext) {
                 article: true,
                 brand: true,
                 price: true,
+                unit: true,
+                unitsPerPack: true,
+                rawData: true,
+                priceSnapshots: {
+                  where: {
+                    isCurrent: true,
+                  },
+                  take: 1,
+                  select: {
+                    legacyUnit: true,
+                    supplierOffer: {
+                      select: {
+                        unitsPerPack: true,
+                        legacyUnit: true,
+                      },
+                    },
+                  },
+                },
               },
             })
           : null);
+
+      const priceComparison = resolvedMatchedProduct
+        ? comparePricesSafely(
+            {
+              productNameRaw: item.productNameRaw,
+              unit: item.unit,
+              priceWithVat: item.priceWithVat,
+            },
+            resolvedMatchedProduct,
+            resolvedMatchedProduct.priceSnapshots?.[0]?.supplierOffer ?? null,
+          )
+        : null;
 
       return {
         id: item.id,
@@ -194,11 +305,15 @@ export async function GET(request: Request, context: RouteContext) {
         lineTotal: item.lineTotal?.toString() ?? null,
         confidence: item.confidence,
         needsReview: item.needsReview,
+        priceComparisonNote: priceComparison ? buildPriceComparisonNote(priceComparison) : null,
+        priceComparisonNeedsReview: priceComparison?.needsReview ?? false,
+        normalizedComparisonPrice: priceComparison?.newPrice?.toString() ?? null,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
       };
     }),
   );
+  const invoiceItemsById = new Map(invoiceItems.map((item) => [item.id, item]));
 
   return jsonUtf8({
     id: invoice.id,
@@ -235,6 +350,7 @@ export async function GET(request: Request, context: RouteContext) {
       newPrice: change.newPrice.toString(),
       differenceAmount: change.differenceAmount?.toString() ?? null,
       differencePercent: change.differencePercent?.toString() ?? null,
+      comparisonNote: invoiceItemsById.get(change.invoiceItemId)?.priceComparisonNote ?? null,
       status: change.status,
       createdAt: change.createdAt,
       approvedAt: change.approvedAt,
