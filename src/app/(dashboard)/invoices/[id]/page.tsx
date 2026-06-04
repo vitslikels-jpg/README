@@ -112,12 +112,12 @@ type InvoiceParseDebugInfo = {
 };
 
 const statusLabels: Record<InvoiceStatus, string> = {
-  uploaded: "Загружена",
-  processing: "Обрабатывается",
-  needs_review: "Требует проверки",
-  parsed: "Разобрана",
-  approved: "Подтверждена",
-  failed: "Ошибка",
+  uploaded: "\u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043d\u0430",
+  processing: "\u041e\u0431\u0440\u0430\u0431\u0430\u0442\u044b\u0432\u0430\u0435\u0442\u0441\u044f",
+  needs_review: "\u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438",
+  parsed: "\u0420\u0430\u0437\u043e\u0431\u0440\u0430\u043d\u0430",
+  approved: "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0430",
+  failed: "\u041e\u0448\u0438\u0431\u043a\u0430",
 };
 
 const statusClassNames: Record<InvoiceStatus, string> = {
@@ -130,9 +130,9 @@ const statusClassNames: Record<InvoiceStatus, string> = {
 };
 
 const priceChangeStatusLabels: Record<PriceChangeStatus, string> = {
-  pending: "На проверке",
-  approved: "Подтверждено",
-  rejected: "Отклонено",
+  pending: "\u041d\u0430 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0435",
+  approved: "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u043e",
+  rejected: "\u041e\u0442\u043a\u043b\u043e\u043d\u0435\u043d\u043e",
 };
 
 const priceChangeStatusClassNames: Record<PriceChangeStatus, string> = {
@@ -140,10 +140,9 @@ const priceChangeStatusClassNames: Record<PriceChangeStatus, string> = {
   approved: "invoiceStatus-approved",
   rejected: "invoiceStatus-failed",
 };
-
 function formatMoney(value: string | null) {
   if (!value) {
-    return "—";
+    return "\u2014";
   }
 
   const amount = Number(value);
@@ -155,12 +154,12 @@ function formatMoney(value: string | null) {
   return `${new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount)} ₽`;
+  }).format(amount)} \u20BD`;
 }
 
 function formatNumber(value: string | null, digits = 3) {
   if (!value) {
-    return "—";
+    return "\u2014";
   }
 
   const amount = Number(value);
@@ -177,7 +176,7 @@ function formatNumber(value: string | null, digits = 3) {
 
 function formatPercent(value: string | null) {
   if (!value) {
-    return "—";
+    return "\u2014";
   }
 
   const amount = Number(value);
@@ -194,7 +193,7 @@ function formatPercent(value: string | null) {
 
 function formatDate(value: string | null) {
   if (!value) {
-    return "—";
+    return "\u2014";
   }
 
   return new Date(value).toLocaleDateString("ru-RU", {
@@ -213,9 +212,8 @@ function formatDateTime(value: string) {
     minute: "2-digit",
   });
 }
-
 function getSupplierName(invoice: InvoiceDetails) {
-  return invoice.supplierName || invoice.detectedSupplierName || "Поставщик не определён";
+  return invoice.supplierName || invoice.detectedSupplierName || "\u041f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a \u043d\u0435 \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0451\u043d";
 }
 
 function getInvoiceFiles(invoice: InvoiceDetails) {
@@ -255,37 +253,35 @@ function detectFileKind(fileUrl: string | null, fileName: string | null) {
 
 function getMatchedProductLabel(item: InvoiceItem) {
   if (!item.matchedProductName) {
-    return item.matchedProductStatus === "ambiguous" ? "Требует выбора" : "Не найден";
+    return item.matchedProductStatus === "ambiguous"
+      ? "\u041d\u0443\u0436\u043d\u043e \u0432\u044b\u0431\u0440\u0430\u0442\u044c \u0442\u043e\u0432\u0430\u0440"
+      : "\u041d\u0435 \u0441\u043e\u043f\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d";
   }
 
-  return [item.matchedProductName, item.matchedProductArticle, item.matchedProductBrand].filter(Boolean).join(" • ");
+  return [item.matchedProductName, item.matchedProductArticle, item.matchedProductBrand].filter(Boolean).join(" \u2022 ");
 }
 
 function getInvoiceItemStatus(item: InvoiceItem, change: InvoicePriceChange | null) {
   if (!item.matchedProductId) {
-    return "Нужно выбрать товар";
-  }
-
-  if (item.needsReview) {
-    return "Нужно проверить";
+    return "\u041d\u0435 \u0441\u043e\u043f\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d";
   }
 
   if (change?.status === "pending") {
-    return "Нужно подтвердить цену";
+    return "\u0426\u0435\u043d\u0430 \u0438\u0437\u043c\u0435\u043d\u0438\u043b\u0430\u0441\u044c";
   }
 
-  if (change?.status === "rejected") {
-    return "Цена отклонена";
+  if (item.needsReview || change?.status === "rejected") {
+    return "\u041f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c";
   }
 
-  return "Готово";
+  return "\u0413\u043e\u0442\u043e\u0432\u043e";
 }
 
 const supplierMatchTypeLabels: Record<SupplierMatchType, string> = {
-  phone: "Совпадение по телефону",
-  email: "Совпадение по email",
-  exact_name: "Точное совпадение названия",
-  contains_name: "Совпадение по названию",
+  phone: "\u0421\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043f\u043e \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0443",
+  email: "\u0421\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043f\u043e email",
+  exact_name: "\u0422\u043e\u0447\u043d\u043e\u0435 \u0441\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044f",
+  contains_name: "\u0421\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043f\u043e \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044e",
 };
 
 function buildItemEditDraft(item: InvoiceItem): EditInvoiceItemDraft {
@@ -741,21 +737,21 @@ export default function InvoiceDetailsPage() {
         await loadInvoice(activeEnterpriseId, params.id);
         setSuccessMessage(
           aiPayload?.visionUsed
-            ? "????? OCR ??? ??????, ?????? ????????? ?? ???????????. ????????? ??? ?? ????????????."
+            ? "\u0422\u0435\u043a\u0441\u0442 OCR \u0431\u044b\u043b \u043f\u043b\u043e\u0445\u043e\u0439, \u0442\u043e\u0432\u0430\u0440\u044b \u0440\u0430\u0437\u043e\u0431\u0440\u0430\u043d\u044b \u043f\u043e \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044e. \u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u0446\u0435\u043d\u044b \u0438 \u0441\u0442\u0440\u043e\u043a\u0438."
             : aiPayload?.fallbackUsed
-              ? "AI ???? ?????????? ????????????, ?????????????????????? ?????????????? ????????????. ?????????????????? ?????? ???? ????????????????????????."
-              : "???????????? ??????????????, ???? ?????????????????? ?????? ???? ????????????????????????.",
+              ? "AI \u043d\u0435 \u0441\u043c\u043e\u0433 \u043d\u0430\u0434\u0451\u0436\u043d\u043e \u0440\u0430\u0437\u043e\u0431\u0440\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443, \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d \u043f\u0440\u043e\u0441\u0442\u043e\u0439 \u0440\u0430\u0437\u0431\u043e\u0440. \u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u0441\u0442\u0440\u043e\u043a\u0438 \u0432\u0440\u0443\u0447\u043d\u0443\u044e."
+              : "\u0422\u043e\u0432\u0430\u0440\u044b \u0441\u043e\u0437\u0434\u0430\u043d\u044b, \u043d\u043e \u043f\u043e\u0438\u0441\u043a \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0439 \u0446\u0435\u043d \u043d\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043b\u0441\u044f.",
         );
-        throw new Error(detectPayload?.message ?? "???????????? ??????????????, ???? ?????????????????? ?????? ???? ????????????????????????.");
+        throw new Error(detectPayload?.message ?? "\u0422\u043e\u0432\u0430\u0440\u044b \u0441\u043e\u0437\u0434\u0430\u043d\u044b, \u043d\u043e \u043f\u043e\u0438\u0441\u043a \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0439 \u0446\u0435\u043d \u043d\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043b\u0441\u044f.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
       setSuccessMessage(
         aiPayload?.visionUsed
-          ? "????? OCR ??? ??????, ?????? ????????? ?? ???????????. ????????? ?????????."
+          ? "\u0422\u0435\u043a\u0441\u0442 OCR \u0431\u044b\u043b \u043f\u043b\u043e\u0445\u043e\u0439, \u0442\u043e\u0432\u0430\u0440\u044b \u0440\u0430\u0437\u043e\u0431\u0440\u0430\u043d\u044b \u043f\u043e \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044e. \u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043d\u0443\u0436\u043d\u0430."
           : aiPayload?.fallbackUsed
-            ? "AI ???? ?????????? ????????????, ?????????????????????? ?????????????? ????????????. ?????????????????? ??????????????????."
-            : "?????????????????? ????????????????????, ?????????????????? ?? ?????????????????? ???? ?????????????????? ??????.",
+            ? "AI \u043d\u0435 \u0441\u043c\u043e\u0433 \u043d\u0430\u0434\u0451\u0436\u043d\u043e \u0440\u0430\u0437\u043e\u0431\u0440\u0430\u0442\u044c \u0442\u0430\u0431\u043b\u0438\u0446\u0443, \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043d \u043f\u0440\u043e\u0441\u0442\u043e\u0439 \u0440\u0430\u0437\u0431\u043e\u0440."
+            : "\u041d\u0430\u043a\u043b\u0430\u0434\u043d\u0430\u044f \u0440\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u043d\u0430, \u0442\u043e\u0432\u0430\u0440\u044b \u0438 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u044f \u0446\u0435\u043d \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u044b.",
       );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Не удалось выполнить полный разбор накладной.");
@@ -1300,16 +1296,16 @@ export default function InvoiceDetailsPage() {
 
   return (
     <div className="pageStack">
-      <section className="heroCard">
+      <section className="heroCard invoiceHeroCompact">
         <Link className="secondaryButton compactButton invoicesBackLink" href="/invoices">
           <ArrowLeft size={16} strokeWidth={2} />
-          Назад к накладным
+          {"Назад к накладным"}
         </Link>
 
         <div className="invoiceDetailsHeader">
           <div>
-            <p className="panelEyebrow">Накладная</p>
-            <h2 className="pageTitle">Накладная</h2>
+            <p className="panelEyebrow">{"Накладная"}</p>
+            <h2 className="pageTitle">{"Накладная"}</h2>
             <p className="pageDescription">
               Проверьте накладную по шагам: файл, поставщик, товары, цены и завершение.
             </p>
@@ -1317,11 +1313,11 @@ export default function InvoiceDetailsPage() {
           <div className="invoiceHeaderActions">
             {!invoice.supplierId ? (
               <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
-                ??????? ??????????
+                {"Выбрать поставщика"}
               </button>
             ) : null}
             <button type="button" className="secondaryButton compactButton" onClick={() => void handleDeleteInvoice()} disabled={isBusy || isDeletingInvoice}>
-              {isDeletingInvoice ? "???????..." : "??????? ?????????"}
+              {isDeletingInvoice ? "Удаляем..." : "Удалить накладную"}
             </button>
             <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
           </div>
@@ -1336,37 +1332,37 @@ export default function InvoiceDetailsPage() {
           ))}
         </div>
 
-        <div className="invoiceMetaGrid invoiceMetaGridCompact">
+        <div className="invoiceMetaGrid invoiceMetaGridCompact invoiceMetaGridSummary">
           <div className="supplierMetaItem">
-            <span>Номер</span>
+            <span>{"Номер"}</span>
             <strong>{invoice.invoiceNumber || "—"}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>Дата накладной</span>
+            <span>{"Дата"}</span>
             <strong>{formatDate(invoice.invoiceDate)}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>Сумма</span>
+            <span>{"Сумма"}</span>
             <strong>{formatMoney(invoice.totalAmount)}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>НДС</span>
+            <span>{"НДС"}</span>
             <strong>{formatMoney(invoice.vatAmount)}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>Поставщик</span>
+            <span>{"Поставщик"}</span>
             <strong>{getSupplierName(invoice)}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>Файлов</span>
+            <span>{"Файлов"}</span>
             <strong>{invoiceFiles.length}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>Загружена</span>
+            <span>{"Загружена"}</span>
             <strong>{formatDateTime(invoice.createdAt)}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>Обновлена</span>
+            <span>{"Обновлена"}</span>
             <strong>{formatDateTime(invoice.updatedAt)}</strong>
           </div>
         </div>
@@ -1375,8 +1371,8 @@ export default function InvoiceDetailsPage() {
       <section className="card">
         <div className="cardHeader">
           <div>
-            <p className="panelEyebrow">Шаг 1</p>
-            <h2 className="sectionTitle">Файлы</h2>
+            <p className="panelEyebrow">{"Файл"}</p>
+            <h2 className="sectionTitle">{"Файлы накладной"}</h2>
           </div>
           <button type="button" className="primaryButton compactButton" onClick={() => void handleProcessAndParseInvoice()} disabled={isBusy || invoiceFiles.length === 0}>
             {isProcessing || isAiParsingItems || isDetectingPriceChanges ? "Обрабатываем..." : "Распознать и разобрать"}
@@ -1386,7 +1382,7 @@ export default function InvoiceDetailsPage() {
         {errorMessage ? <p className="errorText">{errorMessage}</p> : null}
         {errorMessage && (debugRawTextPreview || draftRawText.trim()) ? (
           <details className="invoiceDetailsPanel">
-            <summary>Показать распознанный текст</summary>
+            <summary>{"Показать распознанный текст"}</summary>
             <pre className="invoiceRawText">
               {debugRawTextPreview || draftRawText.slice(0, 4000)}
             </pre>
@@ -1394,12 +1390,12 @@ export default function InvoiceDetailsPage() {
         ) : null}
         {debugParseInfo ? (
           <details className="invoiceDetailsPanel">
-            <summary>Показать детали разбора товаров</summary>
+            <summary>{"Показать детали разбора товаров"}</summary>
             <div className="invoiceCompletionChecks">
-              <span>AI нашёл таблицу: <strong>{debugParseInfo.tableDetected ? "да" : "нет"}</strong></span>
-              <span>Строк таблицы найдено: <strong>{debugParseInfo.tableRowsCount ?? 0}</strong></span>
-              <span>Строк до фильтра: <strong>{debugParseInfo.itemsBeforeFilter ?? debugParseInfo.textParsedItemsCount ?? debugParseInfo.visionItemsCount ?? 0}</strong></span>
-              <span>Товаров после фильтра: <strong>{debugParseInfo.filteredItemsCount ?? 0}</strong></span>
+              <span>{"AI нашёл таблицу: "}<strong>{debugParseInfo.tableDetected ? "да" : "нет"}</strong></span>
+              <span>{"Строк таблицы найдено: "}<strong>{debugParseInfo.tableRowsCount ?? 0}</strong></span>
+              <span>{"Строк до фильтра: "}<strong>{debugParseInfo.itemsBeforeFilter ?? debugParseInfo.textParsedItemsCount ?? debugParseInfo.visionItemsCount ?? 0}</strong></span>
+              <span>{"Товаров после фильтра: "}<strong>{debugParseInfo.filteredItemsCount ?? 0}</strong></span>
             </div>
             {debugParseInfo.rejectedItems?.length ? (
               <div className="invoiceItemSearchResults">
@@ -1611,7 +1607,7 @@ export default function InvoiceDetailsPage() {
           </div>
         ) : (
           <div className="orderItemsTableWrap">
-            <table className="orderItemsTable">
+            <table className="orderItemsTable invoiceItemsTable">
               <thead>
                 <tr>
                   <th>
@@ -1623,15 +1619,15 @@ export default function InvoiceDetailsPage() {
                       aria-label={"Выбрать все строки"}
                     />
                   </th>
-                  <th>Товар в приложении</th>
-                  <th>Товар из накладной</th>
-                  <th>Количество</th>
-                  <th>Ед.</th>
-                  <th>Старая цена</th>
-                  <th>Новая цена</th>
-                  <th>Изменение</th>
-                  <th>Статус</th>
-                  <th>Действие</th>
+                  <th>{"Товар"}</th>
+                  <th>{"Из накладной"}</th>
+                  <th>{"Кол-во"}</th>
+                  <th>{"Ед."}</th>
+                  <th>{"Старая цена"}</th>
+                  <th>{"Цена"}</th>
+                  <th>{"Изменение"}</th>
+                  <th>{"Статус"}</th>
+                  <th>{"Действия"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1665,7 +1661,7 @@ export default function InvoiceDetailsPage() {
                       </td>
                       <td>
                         <div className="invoiceMatchedProductCell">
-                          <span>{item.matchedProductName || "Нужно выбрать товар"}</span>
+                          <span>{item.matchedProductName || "Не сопоставлен"}</span>
                           <div className="compactProductActions invoiceItemRowActions">
                             <button
                               type="button"
@@ -1673,7 +1669,7 @@ export default function InvoiceDetailsPage() {
                               onClick={() => handleOpenProductSearch(item)}
                               disabled={isBusy}
                             >
-                              {item.matchedProductId ? "Изменить" : "Выбрать"}
+                              {item.matchedProductId ? "Изменить" : "Выбрать товар"}
                             </button>
                             {item.matchedProductId ? (
                               <button
@@ -1682,7 +1678,7 @@ export default function InvoiceDetailsPage() {
                                 onClick={() => void handleSelectProduct(item.id, null)}
                                 disabled={isBusy}
                               >
-                                Сбросить
+                                {"Сбросить"}
                               </button>
                             ) : null}
                           </div>
@@ -1698,7 +1694,7 @@ export default function InvoiceDetailsPage() {
                                   title={[candidate.name, candidate.brand, candidate.article].filter(Boolean).join(" / ")}
                                 >
                                   <span>{candidate.name}</span>
-                                  <strong>Это он</strong>
+                                  <strong>{"Выбрать"}</strong>
                                 </button>
                               ))}
                             </div>
@@ -1721,9 +1717,9 @@ export default function InvoiceDetailsPage() {
                           className={`statusPill ${
                             itemStatus === "Готово"
                               ? "invoiceStatus-approved"
-                              : itemStatus === "Цена отклонена"
-                                ? "invoiceStatus-failed"
-                                : "invoiceStatus-review"
+                              : itemStatus === "Цена изменилась"
+                                ? "invoiceStatus-review"
+                                : "invoiceStatus-neutral"
                           }`}
                         >
                           {itemStatus}
@@ -1755,7 +1751,7 @@ export default function InvoiceDetailsPage() {
                                   onClick={() => void handleDeleteItem(item.id)}
                                   disabled={isBusy}
                                 >
-                                  {deletingItemId === item.id ? "Удаляем..." : "Удалить строку"}
+                                  {deletingItemId === item.id ? "Удаляем..." : "Удалить"}
                                 </button>
                               </>
                             ) : (
@@ -1766,7 +1762,7 @@ export default function InvoiceDetailsPage() {
                                   onClick={() => handleOpenItemEdit(item)}
                                   disabled={isBusy}
                                 >
-                                  Редактировать
+                                  {"Редактировать"}
                                 </button>
                                 <button
                                   type="button"
@@ -1774,7 +1770,7 @@ export default function InvoiceDetailsPage() {
                                   onClick={() => void handleDeleteItem(item.id)}
                                   disabled={isBusy}
                                 >
-                                  {deletingItemId === item.id ? "Удаляем..." : "Удалить строку"}
+                                  {deletingItemId === item.id ? "Удаляем..." : "Удалить"}
                                 </button>
                               </>
                             )}
@@ -1787,12 +1783,12 @@ export default function InvoiceDetailsPage() {
                         <td colSpan={10}>
                           <div className="invoiceItemSearchPanel">
                             <div className="field">
-                              <span>Поиск товара</span>
+                              <span>{"Поиск товара"}</span>
                               <input
                                 type="text"
                                 value={productSearchQuery}
                                 onChange={(event) => setProductSearchQuery(event.target.value)}
-                                placeholder="Начните вводить название товара"
+                                placeholder={"Начните вводить название товара"}
                                 disabled={isBusy}
                               />
                             </div>
@@ -1803,10 +1799,10 @@ export default function InvoiceDetailsPage() {
                               </button>
                             </div>
 
-                            {productSearchError ? <p className="errorText">{productSearchError}</p> : null}
-                            {isSearchingProducts ? <p className="invoiceHint">Ищем товары...</p> : null}
+                                {"Закрыть"}
+                            {isSearchingProducts ? <p className="invoiceHint">{"Ищем товары..."}</p> : null}
                             {!isSearchingProducts && productSearchQuery.trim() && productSearchResults.length === 0 ? (
-                              <p className="invoiceHint">Товары не найдены</p>
+                              <p className="invoiceHint">{"Товары не найдены"}</p>
                             ) : null}
 
                             {productSearchResults.length > 0 ? (
@@ -1836,7 +1832,7 @@ export default function InvoiceDetailsPage() {
                           <div className="invoiceItemSearchPanel invoiceItemEditPanel">
                             <div className="invoiceItemEditGrid">
                               <label className="field">
-                                <span>Название</span>
+                                <span>{"Название"}</span>
                                 <input
                                   type="text"
                                   value={editItemDraft.productNameRaw}
@@ -1845,7 +1841,7 @@ export default function InvoiceDetailsPage() {
                                 />
                               </label>
                               <label className="field">
-                                <span>Количество</span>
+                                <span>{"Количество"}</span>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -1855,7 +1851,7 @@ export default function InvoiceDetailsPage() {
                                 />
                               </label>
                               <label className="field">
-                                <span>Единица</span>
+                                <span>{"Единица"}</span>
                                 <input
                                   type="text"
                                   value={editItemDraft.unit}
@@ -1864,7 +1860,7 @@ export default function InvoiceDetailsPage() {
                                 />
                               </label>
                               <label className="field">
-                                <span>Цена</span>
+                                <span>{"Цена"}</span>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -1874,7 +1870,7 @@ export default function InvoiceDetailsPage() {
                                 />
                               </label>
                               <label className="field">
-                                <span>Сумма</span>
+                                <span>{"Сумма"}</span>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -1884,7 +1880,7 @@ export default function InvoiceDetailsPage() {
                                 />
                               </label>
                               <label className="field">
-                                <span>НДС %</span>
+                                <span>{"НДС %"}</span>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -1910,7 +1906,7 @@ export default function InvoiceDetailsPage() {
                                 onClick={handleCloseItemEdit}
                                 disabled={isBusy}
                               >
-                                Отмена
+                                {"Отмена"}
                               </button>
                             </div>
                           </div>

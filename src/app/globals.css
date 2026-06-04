@@ -2283,6 +2283,16 @@ body.sidebarResizing * {
   color: #15803d;
 }
 
+.invoiceHeroCompact .pageDescription,
+.invoiceHeroCompact .invoiceProgressSteps {
+  display: none;
+}
+
+.invoiceMetaGridSummary {
+  margin-top: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
 .invoiceManualTextPanel {
   display: grid;
   gap: 12px;
@@ -2334,8 +2344,8 @@ body.sidebarResizing * {
 .invoiceMatchedProductCell {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-width: 220px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .invoiceItemSearchRow td {
@@ -3135,11 +3145,19 @@ body.sidebarResizing * {
   border-radius: 18px;
 }
 
+.invoiceItemsTableWrap {
+  max-width: 100%;
+}
+
 .orderItemsTable {
   width: 100%;
   min-width: 680px;
   border-collapse: collapse;
   background: var(--surface);
+}
+
+.invoiceItemsTable {
+  min-width: 980px;
 }
 
 .orderItemsTable th,
@@ -3159,6 +3177,13 @@ body.sidebarResizing * {
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.invoiceItemsTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
 }
 
 .orderItemsTable td {
@@ -4500,6 +4525,22 @@ body.sidebarResizing * {
 
 .invoiceItemRowActions {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.invoiceItemsTable .invoiceItemRowActions,
+.invoiceItemsTable .compactProductActions {
+  grid-template-columns: 1fr;
+  width: auto;
+  justify-self: start;
+}
+
+.invoiceItemsTable .compactButton {
+  width: 100%;
+  justify-content: center;
+}
+
+.invoiceItemsTable .invoiceItemSearchResult {
+  width: 100%;
 }
 
 .compactQuantityControl {
