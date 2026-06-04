@@ -142,27 +142,31 @@ export async function GET(request: Request, context: RouteContext) {
     invoice.rawText && invoice.supplierId ? await matchInvoiceSupplier(invoice.rawText, enterpriseId).catch(() => null) : null;
   const invoiceItems = await Promise.all(
     invoice.items.map(async (item) => {
-      const productCandidates = item.matchedProductId
-        ? []
-        : (
-            await matchInvoiceProduct({
-              enterpriseId,
-              supplierId: invoice.supplierId,
-              productNameRaw: item.productNameRaw,
-              limit: 3,
-            }).catch(() => ({ candidates: [] }))
-          ).candidates;
+      const productMatch = item.matchedProductId
+        ? { matchedProductId: item.matchedProductId, status: "matched" as const, candidates: [] }
+        : await matchInvoiceProduct({
+            enterpriseId,
+            supplierId: invoice.supplierId,
+            productNameRaw: item.productNameRaw,
+            limit: 3,
+          }).catch(() => ({ matchedProductId: null, status: "not_found" as const, candidates: [] }));
+
+      const productMatchStatus = item.matchedProductId
+        ? "matched"
+        : productMatch.status === "ambiguous"
+          ? "ambiguous"
+          : "new";
 
       return {
         id: item.id,
         productNameRaw: item.productNameRaw,
         matchedProductId: item.matchedProductId,
-        matchedProductStatus: item.matchedProductId ? "matched" : item.confidence !== null && item.confidence >= 0.5 ? "ambiguous" : "not_found",
+        matchedProductStatus: productMatchStatus,
         matchedProductName: item.matchedProduct?.name ?? null,
         matchedProductArticle: item.matchedProduct?.article ?? null,
         matchedProductBrand: item.matchedProduct?.brand ?? null,
         matchedProductPrice: item.matchedProduct?.price?.toString() ?? null,
-        productCandidates,
+        productCandidates: productMatchStatus === "ambiguous" ? productMatch.candidates : [],
         quantity: item.quantity?.toString() ?? null,
         unit: item.unit,
         priceWithoutVat: item.priceWithoutVat?.toString() ?? null,

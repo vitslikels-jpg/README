@@ -23,7 +23,7 @@ type InvoiceItem = {
   id: string;
   productNameRaw: string;
   matchedProductId: string | null;
-  matchedProductStatus: "matched" | "ambiguous" | "not_found";
+  matchedProductStatus: "matched" | "ambiguous" | "not_found" | "new";
   matchedProductName: string | null;
   matchedProductArticle: string | null;
   matchedProductBrand: string | null;
@@ -253,28 +253,69 @@ function detectFileKind(fileUrl: string | null, fileName: string | null) {
 
 function getMatchedProductLabel(item: InvoiceItem) {
   if (!item.matchedProductName) {
-    return item.matchedProductStatus === "ambiguous"
-      ? "\u041d\u0443\u0436\u043d\u043e \u0432\u044b\u0431\u0440\u0430\u0442\u044c \u0442\u043e\u0432\u0430\u0440"
-      : "\u041d\u0435 \u0441\u043e\u043f\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d";
+    if (item.matchedProductStatus === "ambiguous") {
+      return "Нужно выбрать товар";
+    }
+
+    if (item.matchedProductStatus === "new") {
+      return "Новая позиция";
+    }
+
+    return "Не сопоставлен";
   }
 
   return [item.matchedProductName, item.matchedProductArticle, item.matchedProductBrand].filter(Boolean).join(" \u2022 ");
 }
 
 function getInvoiceItemStatus(item: InvoiceItem, change: InvoicePriceChange | null) {
+  if (item.matchedProductStatus === "new") {
+    return "Новая позиция";
+  }
+
   if (!item.matchedProductId) {
-    return "\u041d\u0435 \u0441\u043e\u043f\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d";
+    return "Не сопоставлен";
   }
 
   if (change?.status === "pending") {
-    return "\u0426\u0435\u043d\u0430 \u0438\u0437\u043c\u0435\u043d\u0438\u043b\u0430\u0441\u044c";
+    return "Цена изменилась";
   }
 
   if (item.needsReview || change?.status === "rejected") {
-    return "\u041f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c";
+    return "Проверить";
   }
 
-  return "\u0413\u043e\u0442\u043e\u0432\u043e";
+  return "Готово";
+}
+
+function getInvoiceItemStatusClassName(itemStatus: string) {
+  if (itemStatus === "Готово") {
+    return "invoiceStatus-approved";
+  }
+
+  if (itemStatus === "Цена изменилась" || itemStatus === "Проверить") {
+    return "invoiceStatus-review";
+  }
+
+  if (itemStatus === "Новая позиция") {
+    return "invoiceStatus-new";
+  }
+
+  return "invoiceStatus-neutral";
+}
+
+function getCalculatedLineTotal(item: InvoiceItem) {
+  if (item.lineTotal) {
+    return item.lineTotal;
+  }
+
+  const quantity = item.quantity ? Number(item.quantity) : null;
+  const priceWithVat = item.priceWithVat ? Number(item.priceWithVat) : null;
+
+  if (quantity === null || priceWithVat === null || !Number.isFinite(quantity) || !Number.isFinite(priceWithVat)) {
+    return null;
+  }
+
+  return String(quantity * priceWithVat);
 }
 
 const supplierMatchTypeLabels: Record<SupplierMatchType, string> = {
@@ -318,6 +359,7 @@ export default function InvoiceDetailsPage() {
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [productSearchResults, setProductSearchResults] = useState<ProductSearchResult[]>([]);
   const [productSearchError, setProductSearchError] = useState("");
+  const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null);
   const [isSearchingProducts, setIsSearchingProducts] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [isSupplierSearchOpen, setIsSupplierSearchOpen] = useState(false);
@@ -881,8 +923,8 @@ export default function InvoiceDetailsPage() {
 
   function handleOpenProductSearch(item: InvoiceItem) {
     setProductSearchItemId(item.id);
-    setProductSearchQuery(item.productNameRaw);
-    setProductSearchResults([]);
+    setProductSearchQuery("");
+    setProductSearchResults(item.productCandidates);
     setProductSearchError("");
     setEditingItemId(null);
     setEditItemDraft(null);
@@ -1299,23 +1341,18 @@ export default function InvoiceDetailsPage() {
       <section className="heroCard invoiceHeroCompact">
         <Link className="secondaryButton compactButton invoicesBackLink" href="/invoices">
           <ArrowLeft size={16} strokeWidth={2} />
-          {"Назад к накладным"}
+          Назад к накладным
         </Link>
 
         <div className="invoiceDetailsHeader">
           <div>
-            <p className="panelEyebrow">{"Накладная"}</p>
-            <h2 className="pageTitle">{"Накладная"}</h2>
-            <p className="pageDescription">
-              Проверьте накладную по шагам: файл, поставщик, товары, цены и завершение.
-            </p>
+            <p className="panelEyebrow">Накладная</p>
+            <h2 className="pageTitle">Накладная</h2>
           </div>
           <div className="invoiceHeaderActions">
-            {!invoice.supplierId ? (
-              <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
-                {"Выбрать поставщика"}
-              </button>
-            ) : null}
+            <button type="button" className="primaryButton compactButton" onClick={() => void handleProcessAndParseInvoice()} disabled={isBusy || invoiceFiles.length === 0}>
+              {isProcessing || isAiParsingItems || isDetectingPriceChanges ? "Обрабатываем..." : "Распознать и разобрать"}
+            </button>
             <button type="button" className="secondaryButton compactButton" onClick={() => void handleDeleteInvoice()} disabled={isBusy || isDeletingInvoice}>
               {isDeletingInvoice ? "Удаляем..." : "Удалить накладную"}
             </button>
@@ -1334,36 +1371,20 @@ export default function InvoiceDetailsPage() {
 
         <div className="invoiceMetaGrid invoiceMetaGridCompact invoiceMetaGridSummary">
           <div className="supplierMetaItem">
-            <span>{"Номер"}</span>
-            <strong>{invoice.invoiceNumber || "—"}</strong>
-          </div>
-          <div className="supplierMetaItem">
-            <span>{"Дата"}</span>
-            <strong>{formatDate(invoice.invoiceDate)}</strong>
-          </div>
-          <div className="supplierMetaItem">
-            <span>{"Сумма"}</span>
-            <strong>{formatMoney(invoice.totalAmount)}</strong>
-          </div>
-          <div className="supplierMetaItem">
-            <span>{"НДС"}</span>
-            <strong>{formatMoney(invoice.vatAmount)}</strong>
-          </div>
-          <div className="supplierMetaItem">
-            <span>{"Поставщик"}</span>
+            <span>Поставщик</span>
             <strong>{getSupplierName(invoice)}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>{"Файлов"}</span>
+            <span>Номер</span>
+            <strong>{invoice.invoiceNumber || "—"}</strong>
+          </div>
+          <div className="supplierMetaItem">
+            <span>Сумма</span>
+            <strong>{formatMoney(invoice.totalAmount)}</strong>
+          </div>
+          <div className="supplierMetaItem">
+            <span>Файлов</span>
             <strong>{invoiceFiles.length}</strong>
-          </div>
-          <div className="supplierMetaItem">
-            <span>{"Загружена"}</span>
-            <strong>{formatDateTime(invoice.createdAt)}</strong>
-          </div>
-          <div className="supplierMetaItem">
-            <span>{"Обновлена"}</span>
-            <strong>{formatDateTime(invoice.updatedAt)}</strong>
           </div>
         </div>
       </section>
@@ -1371,8 +1392,8 @@ export default function InvoiceDetailsPage() {
       <section className="card">
         <div className="cardHeader">
           <div>
-            <p className="panelEyebrow">{"Файл"}</p>
-            <h2 className="sectionTitle">{"Файлы накладной"}</h2>
+            <p className="panelEyebrow">Файл</p>
+            <h2 className="sectionTitle">Файлы накладной</h2>
           </div>
           <button type="button" className="primaryButton compactButton" onClick={() => void handleProcessAndParseInvoice()} disabled={isBusy || invoiceFiles.length === 0}>
             {isProcessing || isAiParsingItems || isDetectingPriceChanges ? "Обрабатываем..." : "Распознать и разобрать"}
@@ -1382,20 +1403,18 @@ export default function InvoiceDetailsPage() {
         {errorMessage ? <p className="errorText">{errorMessage}</p> : null}
         {errorMessage && (debugRawTextPreview || draftRawText.trim()) ? (
           <details className="invoiceDetailsPanel">
-            <summary>{"Показать распознанный текст"}</summary>
-            <pre className="invoiceRawText">
-              {debugRawTextPreview || draftRawText.slice(0, 4000)}
-            </pre>
+            <summary>Показать распознанный текст</summary>
+            <pre className="invoiceRawText">{debugRawTextPreview || draftRawText.slice(0, 4000)}</pre>
           </details>
         ) : null}
         {debugParseInfo ? (
           <details className="invoiceDetailsPanel">
-            <summary>{"Показать детали разбора товаров"}</summary>
+            <summary>Показать детали разбора товаров</summary>
             <div className="invoiceCompletionChecks">
-              <span>{"AI нашёл таблицу: "}<strong>{debugParseInfo.tableDetected ? "да" : "нет"}</strong></span>
-              <span>{"Строк таблицы найдено: "}<strong>{debugParseInfo.tableRowsCount ?? 0}</strong></span>
-              <span>{"Строк до фильтра: "}<strong>{debugParseInfo.itemsBeforeFilter ?? debugParseInfo.textParsedItemsCount ?? debugParseInfo.visionItemsCount ?? 0}</strong></span>
-              <span>{"Товаров после фильтра: "}<strong>{debugParseInfo.filteredItemsCount ?? 0}</strong></span>
+              <span>AI нашёл таблицу: <strong>{debugParseInfo.tableDetected ? "да" : "нет"}</strong></span>
+              <span>Строк таблицы найдено: <strong>{debugParseInfo.tableRowsCount ?? 0}</strong></span>
+              <span>Строк до фильтра: <strong>{debugParseInfo.itemsBeforeFilter ?? debugParseInfo.textParsedItemsCount ?? debugParseInfo.visionItemsCount ?? 0}</strong></span>
+              <span>Товаров после фильтра: <strong>{debugParseInfo.filteredItemsCount ?? 0}</strong></span>
             </div>
             {debugParseInfo.rejectedItems?.length ? (
               <div className="invoiceItemSearchResults">
@@ -1420,14 +1439,23 @@ export default function InvoiceDetailsPage() {
           <div className="invoiceFilesGrid">
             {invoiceFiles.map((file) => {
               const currentFileKind = detectFileKind(file.fileUrl, file.originalFileName);
+              const previewAlt = file.originalFileName || `Страница ${file.pageIndex + 1}`;
 
               return (
                 <div key={file.id} className="invoiceFileTile">
                   <strong>Страница {file.pageIndex + 1}</strong>
-                  {currentFileKind === "image" ? (
-                    <div className="invoiceFilePreview">
-                      <img src={file.fileUrl || ""} alt={file.originalFileName || `Страница ${file.pageIndex + 1}`} className="invoicePreviewImage" />
-                    </div>
+                  {currentFileKind === "image" && file.fileUrl ? (
+                    <>
+                      <button type="button" className="invoicePreviewButton" onClick={() => setPreviewImage({ src: file.fileUrl!, alt: previewAlt })}>
+                        <div className="invoiceFilePreview">
+                          <img src={file.fileUrl} alt={previewAlt} className="invoicePreviewImage" />
+                        </div>
+                      </button>
+                      <a className="secondaryButton compactButton invoicesFileLink" href={file.fileUrl} target="_blank" rel="noreferrer">
+                        <ExternalLink size={16} strokeWidth={2} />
+                        Открыть крупно
+                      </a>
+                    </>
                   ) : (
                     <a className="secondaryButton compactButton invoicesFileLink" href={file.fileUrl || "#"} target="_blank" rel="noreferrer">
                       <ExternalLink size={16} strokeWidth={2} />
@@ -1442,7 +1470,7 @@ export default function InvoiceDetailsPage() {
         )}
 
         {invoice.status === "failed" && !hasRawText ? (
-          <p className="errorText">Не удалось прочитать текст. Попробуйте фото четче или вставьте текст вручную.</p>
+          <p className="errorText">Не удалось прочитать текст. Попробуйте фото чётче или вставьте текст вручную.</p>
         ) : hasRawText ? (
           <p className="successText">Текст накладной есть. Можно переходить к поставщику и товарам.</p>
         ) : (
@@ -1584,7 +1612,7 @@ export default function InvoiceDetailsPage() {
 
         {hasItems ? (
           <div className="invoiceItemEditActions">
-            <span className="invoiceHint">{`Выбрано строк: ${selectedItemIds.length}`}</span>
+            <span className="invoiceHint">Выбрано строк: {selectedItemIds.length}</span>
             <button
               type="button"
               className="secondaryButton compactButton"
@@ -1596,9 +1624,7 @@ export default function InvoiceDetailsPage() {
           </div>
         ) : null}
 
-        {!hasRawText ? (
-          <p className="invoiceHint">Сначала распознайте накладную или вставьте текст вручную.</p>
-        ) : null}
+        {!hasRawText ? <p className="invoiceHint">Сначала распознайте накладную или вставьте текст вручную.</p> : null}
 
         {invoice.items.length === 0 ? (
           <div className="emptyState">
@@ -1606,7 +1632,7 @@ export default function InvoiceDetailsPage() {
             <p className="emptyStateText">После разбора здесь появятся строки накладной.</p>
           </div>
         ) : (
-          <div className="orderItemsTableWrap">
+          <div className="orderItemsTableWrap invoiceItemsTableWrap">
             <table className="orderItemsTable invoiceItemsTable">
               <thead>
                 <tr>
@@ -1616,18 +1642,16 @@ export default function InvoiceDetailsPage() {
                       checked={areAllItemsSelected}
                       onChange={handleToggleAllItems}
                       disabled={isBusy || !hasItems}
-                      aria-label={"Выбрать все строки"}
+                      aria-label="Выбрать все строки"
                     />
                   </th>
-                  <th>{"Товар"}</th>
-                  <th>{"Из накладной"}</th>
-                  <th>{"Кол-во"}</th>
-                  <th>{"Ед."}</th>
-                  <th>{"Старая цена"}</th>
-                  <th>{"Цена"}</th>
-                  <th>{"Изменение"}</th>
-                  <th>{"Статус"}</th>
-                  <th>{"Действия"}</th>
+                  <th>Товар</th>
+                  <th>Кол-во</th>
+                  <th>Цена</th>
+                  <th>Сумма</th>
+                  <th>Изменение</th>
+                  <th>Статус</th>
+                  <th>Действия</th>
                 </tr>
               </thead>
               <tbody>
@@ -1646,274 +1670,255 @@ export default function InvoiceDetailsPage() {
                       ? String(((newPriceNumber - oldPriceNumber) / oldPriceNumber) * 100)
                       : null;
                   const itemStatus = getInvoiceItemStatus(item, priceChange);
+                  const lineTotal = getCalculatedLineTotal(item);
 
                   return (
-                  <Fragment key={item.id}>
-                    <tr>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selectedItemIds.includes(item.id)}
-                          onChange={() => handleToggleItemSelection(item.id)}
-                          disabled={isBusy}
-                          aria-label={"Выбрать строку"}
-                        />
-                      </td>
-                      <td>
-                        <div className="invoiceMatchedProductCell">
-                          <span>{item.matchedProductName || "Не сопоставлен"}</span>
+                    <Fragment key={item.id}>
+                      <tr className={item.matchedProductStatus === "new" ? "invoiceItemRowNew" : undefined}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selectedItemIds.includes(item.id)}
+                            onChange={() => handleToggleItemSelection(item.id)}
+                            disabled={isBusy}
+                            aria-label="Выбрать строку"
+                          />
+                        </td>
+                        <td>
+                          <div className={`invoiceProductCell ${item.matchedProductStatus === "new" ? "invoiceProductCellNew" : ""}`}>
+                            <strong>{item.productNameRaw}</strong>
+                            <span>{getMatchedProductLabel(item)}</span>
+                            {item.matchedProductStatus === "new" ? <span className="invoiceProductWarning">Такого товара нет в прайсе</span> : null}
+                          </div>
+                        </td>
+                        <td>
+                          <strong>{formatNumber(item.quantity)}</strong>
+                          <span>{item.unit || "—"}</span>
+                        </td>
+                        <td>
+                          <strong>{formatMoney(newPrice)}</strong>
+                          <span>{oldPrice ? `Было: ${formatMoney(oldPrice)}` : "—"}</span>
+                        </td>
+                        <td>
+                          <strong>{formatMoney(lineTotal)}</strong>
+                          {!item.lineTotal && lineTotal ? <span>Расчётная сумма</span> : null}
+                        </td>
+                        <td>
+                          <strong>{formatMoney(priceChange?.differenceAmount ?? differenceAmount)}</strong>
+                          <span>{formatPercent(priceChange?.differencePercent ?? differencePercent)}</span>
+                        </td>
+                        <td>
+                          <span className={`statusPill ${getInvoiceItemStatusClassName(itemStatus)}`}>
+                            {itemStatus}
+                          </span>
+                        </td>
+                        <td>
                           <div className="compactProductActions invoiceItemRowActions">
-                            <button
-                              type="button"
-                              className="secondaryButton compactButton"
-                              onClick={() => handleOpenProductSearch(item)}
-                              disabled={isBusy}
-                            >
-                              {item.matchedProductId ? "Изменить" : "Выбрать товар"}
-                            </button>
-                            {item.matchedProductId ? (
+                            {!item.matchedProductId ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="secondaryButton compactButton"
+                                  onClick={() => handleOpenProductSearch(item)}
+                                  disabled={isBusy}
+                                >
+                                  {item.productCandidates.length > 0 ? "Показать варианты" : "Выбрать вручную"}
+                                </button>
+                                {item.matchedProductStatus === "new" ? (
+                                  <button type="button" className="secondaryButton compactButton" disabled title="Скоро будет доступно">
+                                    Создать товар
+                                  </button>
+                                ) : null}
+                              </>
+                            ) : (
                               <button
                                 type="button"
                                 className="secondaryButton compactButton"
-                                onClick={() => void handleSelectProduct(item.id, null)}
+                                onClick={() => handleOpenProductSearch(item)}
                                 disabled={isBusy}
                               >
-                                {"Сбросить"}
+                                Изменить товар
                               </button>
-                            ) : null}
-                          </div>
-                          {!item.matchedProductId && item.productCandidates.length > 0 ? (
-                            <div className="compactProductActions invoiceItemRowActions">
-                              {item.productCandidates.slice(0, 3).map((candidate) => (
-                                <button
-                                  key={candidate.id}
-                                  type="button"
-                                  className="secondaryButton compactButton"
-                                  onClick={() => void handleSelectProduct(item.id, candidate.id)}
-                                  disabled={isBusy}
-                                  title={[candidate.name, candidate.brand, candidate.article].filter(Boolean).join(" / ")}
-                                >
-                                  <span>{candidate.name}</span>
-                                  <strong>{"Выбрать"}</strong>
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td>
-                        <strong>{item.productNameRaw}</strong>
-                      </td>
-                      <td>{formatNumber(item.quantity)}</td>
-                      <td>{item.unit || "—"}</td>
-                      <td>{formatMoney(oldPrice)}</td>
-                      <td><strong>{formatMoney(newPrice)}</strong></td>
-                      <td>
-                        <strong>{formatMoney(priceChange?.differenceAmount ?? differenceAmount)}</strong>
-                        <span>{formatPercent(priceChange?.differencePercent ?? differencePercent)}</span>
-                      </td>
-                      <td>
-                        <span
-                          className={`statusPill ${
-                            itemStatus === "Готово"
-                              ? "invoiceStatus-approved"
-                              : itemStatus === "Цена изменилась"
-                                ? "invoiceStatus-review"
-                                : "invoiceStatus-neutral"
-                          }`}
-                        >
-                          {itemStatus}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="compactProductActions invoiceItemRowActions">
+                            )}
+
                             {priceChange?.status === "pending" ? (
                               <>
                                 <button
                                   type="button"
                                   className="primaryButton compactButton"
-                                onClick={() => void handleUpdatePriceChange(priceChange.id, "approve")}
-                                disabled={isBusy}
-                              >
-                                {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Подтвердить цену"}
-                              </button>
+                                  onClick={() => void handleUpdatePriceChange(priceChange.id, "approve")}
+                                  disabled={isBusy}
+                                >
+                                  {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Подтвердить цену"}
+                                </button>
                                 <button
                                   type="button"
                                   className="secondaryButton compactButton"
                                   onClick={() => void handleUpdatePriceChange(priceChange.id, "reject")}
                                   disabled={isBusy}
                                 >
-                                  {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Отклонить"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="secondaryButton compactButton"
-                                  onClick={() => void handleDeleteItem(item.id)}
-                                  disabled={isBusy}
-                                >
-                                  {deletingItemId === item.id ? "Удаляем..." : "Удалить"}
+                                  {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Отклонить цену"}
                                 </button>
                               </>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  className="secondaryButton compactButton"
-                                  onClick={() => handleOpenItemEdit(item)}
-                                  disabled={isBusy}
-                                >
-                                  {"Редактировать"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="secondaryButton compactButton"
-                                  onClick={() => void handleDeleteItem(item.id)}
-                                  disabled={isBusy}
-                                >
-                                  {deletingItemId === item.id ? "Удаляем..." : "Удалить"}
-                                </button>
-                              </>
-                            )}
-                        </div>
-                      </td>
-                    </tr>
-
-                    {productSearchItemId === item.id ? (
-                      <tr className="invoiceItemSearchRow">
-                        <td colSpan={10}>
-                          <div className="invoiceItemSearchPanel">
-                            <div className="field">
-                              <span>{"Поиск товара"}</span>
-                              <input
-                                type="text"
-                                value={productSearchQuery}
-                                onChange={(event) => setProductSearchQuery(event.target.value)}
-                                placeholder={"Начните вводить название товара"}
-                                disabled={isBusy}
-                              />
-                            </div>
-
-                            <div className="invoiceItemSearchActions">
-                              <button type="button" className="secondaryButton compactButton" onClick={handleCloseProductSearch} disabled={isBusy}>
-                                Закрыть
-                              </button>
-                            </div>
-
-                                {"Закрыть"}
-                            {isSearchingProducts ? <p className="invoiceHint">{"Ищем товары..."}</p> : null}
-                            {!isSearchingProducts && productSearchQuery.trim() && productSearchResults.length === 0 ? (
-                              <p className="invoiceHint">{"Товары не найдены"}</p>
                             ) : null}
 
-                            {productSearchResults.length > 0 ? (
-                              <div className="invoiceItemSearchResults">
-                                {productSearchResults.map((product) => (
-                                  <button
-                                    key={product.id}
-                                    type="button"
-                                    className="invoiceItemSearchResult"
-                                    onClick={() => void handleSelectProduct(item.id, product.id)}
-                                    disabled={isBusy}
-                                  >
-                                    <strong>{product.name}</strong>
-                                    <span>{[product.brand, product.article, product.supplierName].filter(Boolean).join(" / ") || "Без поставщика"}</span>
-                                  </button>
-                                ))}
+                            <button
+                              type="button"
+                              className="secondaryButton compactButton"
+                              onClick={() => handleOpenItemEdit(item)}
+                              disabled={isBusy}
+                            >
+                              Редактировать
+                            </button>
+                            <button
+                              type="button"
+                              className="secondaryButton compactButton"
+                              onClick={() => void handleDeleteItem(item.id)}
+                              disabled={isBusy}
+                            >
+                              {deletingItemId === item.id ? "Удаляем..." : "Удалить"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {productSearchItemId === item.id ? (
+                        <tr className="invoiceItemSearchRow">
+                          <td colSpan={8}>
+                            <div className="invoiceItemSearchPanel">
+                              <div className="field">
+                                <span>Поиск товара</span>
+                                <input
+                                  type="text"
+                                  value={productSearchQuery}
+                                  onChange={(event) => setProductSearchQuery(event.target.value)}
+                                  placeholder="Начните вводить название товара"
+                                  disabled={isBusy}
+                                />
                               </div>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    ) : null}
 
-                    {editingItemId === item.id && editItemDraft ? (
-                      <tr className="invoiceItemSearchRow">
-                        <td colSpan={10}>
-                          <div className="invoiceItemSearchPanel invoiceItemEditPanel">
-                            <div className="invoiceItemEditGrid">
-                              <label className="field">
-                                <span>{"Название"}</span>
-                                <input
-                                  type="text"
-                                  value={editItemDraft.productNameRaw}
-                                  onChange={(event) => handleChangeItemDraft("productNameRaw", event.target.value)}
-                                  disabled={isBusy}
-                                />
-                              </label>
-                              <label className="field">
-                                <span>{"Количество"}</span>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={editItemDraft.quantity}
-                                  onChange={(event) => handleChangeItemDraft("quantity", event.target.value)}
-                                  disabled={isBusy}
-                                />
-                              </label>
-                              <label className="field">
-                                <span>{"Единица"}</span>
-                                <input
-                                  type="text"
-                                  value={editItemDraft.unit}
-                                  onChange={(event) => handleChangeItemDraft("unit", event.target.value)}
-                                  disabled={isBusy}
-                                />
-                              </label>
-                              <label className="field">
-                                <span>{"Цена"}</span>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={editItemDraft.priceWithVat}
-                                  onChange={(event) => handleChangeItemDraft("priceWithVat", event.target.value)}
-                                  disabled={isBusy}
-                                />
-                              </label>
-                              <label className="field">
-                                <span>{"Сумма"}</span>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={editItemDraft.lineTotal}
-                                  onChange={(event) => handleChangeItemDraft("lineTotal", event.target.value)}
-                                  disabled={isBusy}
-                                />
-                              </label>
-                              <label className="field">
-                                <span>{"НДС %"}</span>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={editItemDraft.vatRate}
-                                  onChange={(event) => handleChangeItemDraft("vatRate", event.target.value)}
-                                  disabled={isBusy}
-                                />
-                              </label>
-                            </div>
+                              <div className="invoiceItemSearchActions">
+                                <button type="button" className="secondaryButton compactButton" onClick={handleCloseProductSearch} disabled={isBusy}>
+                                  Закрыть
+                                </button>
+                              </div>
 
-                            <div className="invoiceItemEditActions">
-                              <button
-                                type="button"
-                                className="primaryButton compactButton"
-                                onClick={() => void handleSaveItemEdit(item.id)}
-                                disabled={isBusy}
-                              >
-                                {isSavingItemEdit ? "Сохраняем..." : "Сохранить"}
-                              </button>
-                              <button
-                                type="button"
-                                className="secondaryButton compactButton"
-                                onClick={handleCloseItemEdit}
-                                disabled={isBusy}
-                              >
-                                {"Отмена"}
-                              </button>
+                              {item.matchedProductStatus === "new" ? <p className="invoiceHint">Такого товара нет в прайсе. Можно выбрать вручную из каталога.</p> : null}
+                              {productSearchError ? <p className="errorText">{productSearchError}</p> : null}
+                              {isSearchingProducts ? <p className="invoiceHint">Ищем товары...</p> : null}
+                              {!isSearchingProducts && productSearchQuery.trim() && productSearchResults.length === 0 ? (
+                                <p className="invoiceHint">Товары не найдены</p>
+                              ) : null}
+
+                              {productSearchResults.length > 0 ? (
+                                <div className="invoiceItemSearchResults">
+                                  {productSearchResults.slice(0, 3).map((product) => (
+                                    <button
+                                      key={product.id}
+                                      type="button"
+                                      className="invoiceItemSearchResult"
+                                      onClick={() => void handleSelectProduct(item.id, product.id)}
+                                      disabled={isBusy}
+                                    >
+                                      <strong>{product.name}</strong>
+                                      <span>{[product.brand, product.article, product.supplierName].filter(Boolean).join(" / ") || "Без поставщика"}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
+                          </td>
+                        </tr>
+                      ) : null}
+
+                      {editingItemId === item.id && editItemDraft ? (
+                        <tr className="invoiceItemSearchRow">
+                          <td colSpan={8}>
+                            <div className="invoiceItemSearchPanel invoiceItemEditPanel">
+                              <div className="invoiceItemEditGrid">
+                                <label className="field">
+                                  <span>Название</span>
+                                  <input
+                                    type="text"
+                                    value={editItemDraft.productNameRaw}
+                                    onChange={(event) => handleChangeItemDraft("productNameRaw", event.target.value)}
+                                    disabled={isBusy}
+                                  />
+                                </label>
+                                <label className="field">
+                                  <span>Количество</span>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={editItemDraft.quantity}
+                                    onChange={(event) => handleChangeItemDraft("quantity", event.target.value)}
+                                    disabled={isBusy}
+                                  />
+                                </label>
+                                <label className="field">
+                                  <span>Единица</span>
+                                  <input
+                                    type="text"
+                                    value={editItemDraft.unit}
+                                    onChange={(event) => handleChangeItemDraft("unit", event.target.value)}
+                                    disabled={isBusy}
+                                  />
+                                </label>
+                                <label className="field">
+                                  <span>Цена</span>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={editItemDraft.priceWithVat}
+                                    onChange={(event) => handleChangeItemDraft("priceWithVat", event.target.value)}
+                                    disabled={isBusy}
+                                  />
+                                </label>
+                                <label className="field">
+                                  <span>Сумма</span>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={editItemDraft.lineTotal}
+                                    onChange={(event) => handleChangeItemDraft("lineTotal", event.target.value)}
+                                    disabled={isBusy}
+                                  />
+                                </label>
+                                <label className="field">
+                                  <span>НДС %</span>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={editItemDraft.vatRate}
+                                    onChange={(event) => handleChangeItemDraft("vatRate", event.target.value)}
+                                    disabled={isBusy}
+                                  />
+                                </label>
+                              </div>
+
+                              <div className="invoiceItemEditActions">
+                                <button
+                                  type="button"
+                                  className="primaryButton compactButton"
+                                  onClick={() => void handleSaveItemEdit(item.id)}
+                                  disabled={isBusy}
+                                >
+                                  {isSavingItemEdit ? "Сохраняем..." : "Сохранить"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondaryButton compactButton"
+                                  onClick={handleCloseItemEdit}
+                                  disabled={isBusy}
+                                >
+                                  Отмена
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -1923,52 +1928,48 @@ export default function InvoiceDetailsPage() {
       </section>
 
       {hasItems ? (
-      <section className="card">
-        <div className="cardHeader">
-          <div>
-            <p className="panelEyebrow">Шаг 4</p>
-            <h2 className="sectionTitle">Изменения цен</h2>
+        <section className="card">
+          <div className="cardHeader">
+            <div>
+              <p className="panelEyebrow">Шаг 4</p>
+              <h2 className="sectionTitle">Изменения цен</h2>
+            </div>
           </div>
-        </div>
 
-        {invoice.priceChanges.length === 0 ? (
-          <p className="invoiceHint">Изменений цен пока нет. Запустите поиск через блок «Дополнительные действия».</p>
-        ) : (
-          <div className="orderItemsTableWrap">
-            <table className="orderItemsTable">
-              <thead>
-                <tr>
-                  <th>Товар</th>
-                  <th>Старая цена</th>
-                  <th>Новая цена</th>
-                  <th>Разница</th>
-                  <th>Статус</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoice.priceChanges.map((change) => (
-                  <tr key={change.id}>
-                    <td>
-                      <strong>{change.productName}</strong>
-                    </td>
-                    <td>{formatMoney(change.oldPrice)}</td>
-                    <td>{formatMoney(change.newPrice)}</td>
-                    <td>
-                      <strong>{formatMoney(change.differenceAmount)}</strong>
-                      <span>{formatPercent(change.differencePercent)}</span>
-                    </td>
-                    <td>
-                      <span className={`statusPill ${priceChangeStatusClassNames[change.status]}`}>
-                        {priceChangeStatusLabels[change.status]}
-                      </span>
-                    </td>
+          {invoice.priceChanges.length === 0 ? (
+            <p className="invoiceHint">Изменений цен пока нет.</p>
+          ) : (
+            <div className="orderItemsTableWrap">
+              <table className="orderItemsTable">
+                <thead>
+                  <tr>
+                    <th>Товар</th>
+                    <th>Старая цена</th>
+                    <th>Новая цена</th>
+                    <th>Разница</th>
+                    <th>Статус</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {invoice.priceChanges.map((change) => (
+                    <tr key={change.id}>
+                      <td><strong>{change.productName}</strong></td>
+                      <td>{formatMoney(change.oldPrice)}</td>
+                      <td>{formatMoney(change.newPrice)}</td>
+                      <td>
+                        <strong>{formatMoney(change.differenceAmount)}</strong>
+                        <span>{formatPercent(change.differencePercent)}</span>
+                      </td>
+                      <td>
+                        <span className={`statusPill ${priceChangeStatusClassNames[change.status]}`}>{priceChangeStatusLabels[change.status]}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       ) : null}
 
       <section className="card">
@@ -1990,6 +1991,17 @@ export default function InvoiceDetailsPage() {
           <p className="invoiceHint">Сначала проверьте строки и изменения цен.</p>
         ) : null}
       </section>
+
+      {previewImage ? (
+        <div className="invoicePreviewModal" onClick={() => setPreviewImage(null)} role="presentation">
+          <div className="invoicePreviewModalBody" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="secondaryButton compactButton invoicePreviewModalClose" onClick={() => setPreviewImage(null)}>
+              Закрыть
+            </button>
+            <img src={previewImage.src} alt={previewImage.alt} className="invoicePreviewModalImage" />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

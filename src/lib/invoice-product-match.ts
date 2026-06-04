@@ -94,6 +94,10 @@ function buildSearchWords(productNameRaw: string) {
     .slice(0, 8);
 }
 
+function sortCandidates(left: InvoiceProductCandidate, right: InvoiceProductCandidate) {
+  return right.score - left.score || left.name.localeCompare(right.name, "ru");
+}
+
 export async function matchInvoiceProduct(params: {
   enterpriseId: string;
   supplierId: string | null;
@@ -105,6 +109,76 @@ export async function matchInvoiceProduct(params: {
 
   if (!normalizedQuery || queryWords.length === 0) {
     return { matchedProductId: null, status: "not_found", candidates: [] };
+  }
+
+  const exactProducts = await prisma.product.findMany({
+    where: {
+      enterpriseId: params.enterpriseId,
+    },
+    select: {
+      id: true,
+      name: true,
+      article: true,
+      brand: true,
+      supplierId: true,
+      supplier: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
+
+  const exactMatches = exactProducts
+    .filter((product) => normalize(product.name) === normalizedQuery)
+    .map(
+      (product) =>
+        ({
+          id: product.id,
+          name: product.name,
+          article: product.article,
+          brand: product.brand,
+          supplierId: product.supplierId,
+          supplierName: product.supplier?.name ?? null,
+          score: product.supplierId === params.supplierId ? 1_000 : 900,
+        }) satisfies InvoiceProductCandidate,
+    )
+    .sort(sortCandidates);
+
+  if (exactMatches.length > 0) {
+    const supplierExactMatches = params.supplierId
+      ? exactMatches.filter((candidate) => candidate.supplierId === params.supplierId)
+      : [];
+
+    if (supplierExactMatches.length === 1) {
+      return {
+        matchedProductId: supplierExactMatches[0].id,
+        status: "matched",
+        candidates: [],
+      };
+    }
+
+    if (supplierExactMatches.length > 1) {
+      return {
+        matchedProductId: null,
+        status: "ambiguous",
+        candidates: supplierExactMatches.slice(0, params.limit ?? 3),
+      };
+    }
+
+    if (exactMatches.length === 1) {
+      return {
+        matchedProductId: exactMatches[0].id,
+        status: "matched",
+        candidates: [],
+      };
+    }
+
+    return {
+      matchedProductId: null,
+      status: "ambiguous",
+      candidates: exactMatches.slice(0, params.limit ?? 3),
+    };
   }
 
   const identityRules = await loadProductIdentityRules(params.enterpriseId, params.supplierId ?? "").catch(() => []);
@@ -206,9 +280,13 @@ export async function matchInvoiceProduct(params: {
       } satisfies InvoiceProductCandidate;
     })
     .filter((candidate) => candidate.score >= 8)
-    .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name, "ru"));
+    .sort(sortCandidates);
 
-  const candidates = scored.slice(0, params.limit ?? 3);
+  const prioritizedCandidates = params.supplierId
+    ? [...scored.filter((candidate) => candidate.supplierId === params.supplierId), ...scored.filter((candidate) => candidate.supplierId !== params.supplierId)]
+    : scored;
+
+  const candidates = prioritizedCandidates.slice(0, params.limit ?? 3);
 
   if (candidates.length === 0) {
     return { matchedProductId: null, status: "not_found", candidates: [] };
@@ -219,11 +297,11 @@ export async function matchInvoiceProduct(params: {
   const isConfident =
     (best.score >= 55 && (!second || best.score - second.score >= 18)) ||
     (best.score >= 18 && (!second || best.score - second.score >= 10)) ||
-    (best.score >= 8 && candidates.length === 1);
+    (best.score >= 14 && candidates.length === 1);
 
   return {
     matchedProductId: isConfident ? best.id : null,
-    status: isConfident ? "matched" : "ambiguous",
-    candidates,
+    status: isConfident ? "matched" : candidates.length >= 2 ? "ambiguous" : "not_found",
+    candidates: isConfident ? [] : candidates.length >= 2 ? candidates : [],
   };
 }
