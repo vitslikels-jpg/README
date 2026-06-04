@@ -267,7 +267,7 @@ export async function POST(request: Request, context: RouteContext) {
         return {
           ...baseItem,
           matchedProductId: productMatch.matchedProductId,
-          confidence: forcedReview ? 0.5 : structuredParsed ? 0.85 : 0.5,
+          confidence: forcedReview ? 0.5 : structuredParsed ? (productMatch.confidence ?? 0.85) : 0.5,
           needsReview: forcedReview || !structuredParsed,
         };
       }

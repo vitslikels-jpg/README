@@ -223,7 +223,9 @@ async function createInvoiceItems(params: {
 
       if (productMatch.status === "matched" && productMatch.matchedProductId) {
         payload.matchedProductId = productMatch.matchedProductId;
-        payload.confidence = forcedReview ? Math.min(payload.confidence ?? 0.5, 0.5) : Math.max(payload.confidence ?? 0, 0.9);
+        payload.confidence = forcedReview
+          ? Math.min(payload.confidence ?? 0.5, 0.5)
+          : Math.max(payload.confidence ?? 0, productMatch.confidence ?? 0.9);
         payload.needsReview = forcedReview || !hasStructuredFields;
         matchedItemsCount += 1;
       } else if (productMatch.status === "ambiguous") {
