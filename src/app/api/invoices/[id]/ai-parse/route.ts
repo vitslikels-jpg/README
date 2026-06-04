@@ -8,6 +8,7 @@ import { jsonUtf8 } from "@/lib/http";
 import { filterInvoiceItems } from "@/lib/invoice-item-filter";
 import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
 import { sanitizeMoney, sanitizeQuantity, sanitizeVatRate } from "@/lib/invoice-number-sanitize";
+import { matchInvoiceProduct } from "@/lib/invoice-product-match";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -161,9 +162,16 @@ function buildFallbackDraftItems(tableRows: string[]) {
   };
 }
 
-async function createInvoiceItems(invoiceId: string, items: ParsedItemDraft[]) {
-  const reviewItemsCount = items.filter((item) => item.needsReview).length;
+async function createInvoiceItems(params: {
+  invoiceId: string;
+  enterpriseId: string;
+  supplierId: string | null;
+  items: ParsedItemDraft[];
+}) {
+  const { invoiceId, enterpriseId, supplierId, items } = params;
   const createdItemsCount = items.length;
+  let reviewItemsCount = 0;
+  let matchedItemsCount = 0;
 
   await prisma.$transaction(async (tx) => {
     await tx.invoicePriceChange.deleteMany({
@@ -195,6 +203,7 @@ async function createInvoiceItems(invoiceId: string, items: ParsedItemDraft[]) {
       const payload = {
         invoiceDocumentId: invoiceId,
         productNameRaw: item.name ?? "",
+        matchedProductId: null as string | null,
         quantity: sanitizedQuantity.value,
         unit: item.unit,
         priceWithoutVat: sanitizedPriceWithoutVat.value,
@@ -204,6 +213,27 @@ async function createInvoiceItems(invoiceId: string, items: ParsedItemDraft[]) {
         confidence: forcedReview ? Math.min(item.confidence ?? 0.5, 0.5) : item.confidence,
         needsReview: forcedReview || item.needsReview,
       };
+
+      const productMatch = await matchInvoiceProduct({
+        enterpriseId,
+        supplierId,
+        productNameRaw: payload.productNameRaw,
+      });
+      const hasStructuredFields = payload.quantity !== null && Boolean(payload.unit) && payload.priceWithVat !== null;
+
+      if (productMatch.status === "matched" && productMatch.matchedProductId) {
+        payload.matchedProductId = productMatch.matchedProductId;
+        payload.confidence = forcedReview ? Math.min(payload.confidence ?? 0.5, 0.5) : Math.max(payload.confidence ?? 0, 0.9);
+        payload.needsReview = forcedReview || !hasStructuredFields;
+        matchedItemsCount += 1;
+      } else if (productMatch.status === "ambiguous") {
+        payload.confidence = Math.min(payload.confidence ?? 0.5, 0.5);
+        payload.needsReview = true;
+      }
+
+      if (payload.needsReview) {
+        reviewItemsCount += 1;
+      }
 
       try {
         await tx.invoiceItem.create({
@@ -231,6 +261,7 @@ async function createInvoiceItems(invoiceId: string, items: ParsedItemDraft[]) {
   return {
     createdItemsCount,
     reviewItemsCount,
+    matchedItemsCount,
   };
 }
 
@@ -280,6 +311,7 @@ export async function POST(request: Request, context: RouteContext) {
     select: {
       id: true,
       rawText: true,
+      supplierId: true,
       files: {
         select: {
           fileUrl: true,
@@ -511,7 +543,12 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const { createdItemsCount, reviewItemsCount } = await createInvoiceItems(id, parsedItems);
+    const { createdItemsCount, reviewItemsCount, matchedItemsCount } = await createInvoiceItems({
+      invoiceId: id,
+      enterpriseId,
+      supplierId: invoice.supplierId,
+      items: parsedItems,
+    });
 
     console.info("[invoice-ai-parse:created]", {
       invoiceId: id,
@@ -526,6 +563,7 @@ export async function POST(request: Request, context: RouteContext) {
       rejectedItemsCount: rejectedItems.length,
       createdItemsCount,
       reviewItemsCount,
+      matchedItemsCount,
     });
 
     await updateInvoiceMetadata(id, {
@@ -537,6 +575,7 @@ export async function POST(request: Request, context: RouteContext) {
       invoiceId: id,
       createdItemsCount,
       reviewItemsCount,
+      matchedItemsCount,
       fallbackUsed,
       visionUsed,
       tableDetected: textTableDetected,

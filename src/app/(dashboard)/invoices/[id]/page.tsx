@@ -28,6 +28,7 @@ type InvoiceItem = {
   matchedProductArticle: string | null;
   matchedProductBrand: string | null;
   matchedProductPrice: string | null;
+  productCandidates: ProductSearchResult[];
   quantity: string | null;
   unit: string | null;
   priceWithoutVat: string | null;
@@ -1685,6 +1686,23 @@ export default function InvoiceDetailsPage() {
                               </button>
                             ) : null}
                           </div>
+                          {!item.matchedProductId && item.productCandidates.length > 0 ? (
+                            <div className="compactProductActions invoiceItemRowActions">
+                              {item.productCandidates.slice(0, 3).map((candidate) => (
+                                <button
+                                  key={candidate.id}
+                                  type="button"
+                                  className="secondaryButton compactButton"
+                                  onClick={() => void handleSelectProduct(item.id, candidate.id)}
+                                  disabled={isBusy}
+                                  title={[candidate.name, candidate.brand, candidate.article].filter(Boolean).join(" / ")}
+                                >
+                                  <span>{candidate.name}</span>
+                                  <strong>Это он</strong>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       </td>
                       <td>

@@ -2,6 +2,7 @@ import { unlink } from "fs/promises";
 import path from "path";
 import { jsonUtf8 } from "@/lib/http";
 import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
+import { matchInvoiceProduct } from "@/lib/invoice-product-match";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -139,6 +140,42 @@ export async function GET(request: Request, context: RouteContext) {
 
   const supplierMatch =
     invoice.rawText && invoice.supplierId ? await matchInvoiceSupplier(invoice.rawText, enterpriseId).catch(() => null) : null;
+  const invoiceItems = await Promise.all(
+    invoice.items.map(async (item) => {
+      const productCandidates = item.matchedProductId
+        ? []
+        : (
+            await matchInvoiceProduct({
+              enterpriseId,
+              supplierId: invoice.supplierId,
+              productNameRaw: item.productNameRaw,
+              limit: 3,
+            }).catch(() => ({ candidates: [] }))
+          ).candidates;
+
+      return {
+        id: item.id,
+        productNameRaw: item.productNameRaw,
+        matchedProductId: item.matchedProductId,
+        matchedProductStatus: item.matchedProductId ? "matched" : item.confidence !== null && item.confidence >= 0.5 ? "ambiguous" : "not_found",
+        matchedProductName: item.matchedProduct?.name ?? null,
+        matchedProductArticle: item.matchedProduct?.article ?? null,
+        matchedProductBrand: item.matchedProduct?.brand ?? null,
+        matchedProductPrice: item.matchedProduct?.price?.toString() ?? null,
+        productCandidates,
+        quantity: item.quantity?.toString() ?? null,
+        unit: item.unit,
+        priceWithoutVat: item.priceWithoutVat?.toString() ?? null,
+        priceWithVat: item.priceWithVat?.toString() ?? null,
+        vatRate: item.vatRate?.toString() ?? null,
+        lineTotal: item.lineTotal?.toString() ?? null,
+        confidence: item.confidence,
+        needsReview: item.needsReview,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      };
+    }),
+  );
 
   return jsonUtf8({
     id: invoice.id,
@@ -165,26 +202,7 @@ export async function GET(request: Request, context: RouteContext) {
     rawText: invoice.rawText,
     createdAt: invoice.createdAt,
     updatedAt: invoice.updatedAt,
-    items: invoice.items.map((item) => ({
-      id: item.id,
-      productNameRaw: item.productNameRaw,
-      matchedProductId: item.matchedProductId,
-      matchedProductStatus: item.matchedProductId ? "matched" : item.confidence !== null && item.confidence >= 0.5 ? "ambiguous" : "not_found",
-      matchedProductName: item.matchedProduct?.name ?? null,
-      matchedProductArticle: item.matchedProduct?.article ?? null,
-      matchedProductBrand: item.matchedProduct?.brand ?? null,
-      matchedProductPrice: item.matchedProduct?.price?.toString() ?? null,
-      quantity: item.quantity?.toString() ?? null,
-      unit: item.unit,
-      priceWithoutVat: item.priceWithoutVat?.toString() ?? null,
-      priceWithVat: item.priceWithVat?.toString() ?? null,
-      vatRate: item.vatRate?.toString() ?? null,
-      lineTotal: item.lineTotal?.toString() ?? null,
-      confidence: item.confidence,
-      needsReview: item.needsReview,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-    })),
+    items: invoiceItems,
     priceChanges: invoice.priceChanges.map((change) => ({
       id: change.id,
       invoiceItemId: change.invoiceItemId,

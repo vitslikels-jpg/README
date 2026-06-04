@@ -1,7 +1,8 @@
-import { jsonUtf8 } from "@/lib/http";
+﻿import { jsonUtf8 } from "@/lib/http";
 import { filterInvoiceItems } from "@/lib/invoice-item-filter";
 import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
 import { sanitizeMoney, sanitizeQuantity } from "@/lib/invoice-number-sanitize";
+import { matchInvoiceProduct } from "@/lib/invoice-product-match";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -16,7 +17,7 @@ type ProductMatchStatus = "matched" | "ambiguous" | "not_found";
 function normalizeSearchText(value: string | null | undefined) {
   return String(value ?? "")
     .toLowerCase()
-    .replace(/ё/g, "е")
+    .replace(/С‘/g, "Рµ")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -178,13 +179,13 @@ export async function POST(request: Request, context: RouteContext) {
   const enterpriseId = searchParams.get("enterpriseId")?.trim();
 
   if (!enterpriseId) {
-    return jsonUtf8({ message: "Параметр enterpriseId обязателен." }, { status: 400 });
+    return jsonUtf8({ message: "РџР°СЂР°РјРµС‚СЂ enterpriseId РѕР±СЏР·Р°С‚РµР»РµРЅ." }, { status: 400 });
   }
 
   const enterprise = await ensureEnterpriseExists(enterpriseId);
 
   if (!enterprise) {
-    return jsonUtf8({ message: "Предприятие не найдено." }, { status: 404 });
+    return jsonUtf8({ message: "РџСЂРµРґРїСЂРёСЏС‚РёРµ РЅРµ РЅР°Р№РґРµРЅРѕ." }, { status: 404 });
   }
 
   const invoice = await prisma.invoiceDocument.findFirst({
@@ -200,13 +201,13 @@ export async function POST(request: Request, context: RouteContext) {
   });
 
   if (!invoice) {
-    return jsonUtf8({ message: "Накладная не найдена." }, { status: 404 });
+    return jsonUtf8({ message: "РќР°РєР»Р°РґРЅР°СЏ РЅРµ РЅР°Р№РґРµРЅР°." }, { status: 404 });
   }
 
   const rawText = invoice.rawText?.trim() ?? "";
 
   if (!rawText) {
-    return jsonUtf8({ message: "У накладной нет текста для разбора." }, { status: 400 });
+    return jsonUtf8({ message: "РЈ РЅР°РєР»Р°РґРЅРѕР№ РЅРµС‚ С‚РµРєСЃС‚Р° РґР»СЏ СЂР°Р·Р±РѕСЂР°." }, { status: 400 });
   }
 
   const invoiceLines = parseInvoiceItemsFromText(rawText);
@@ -230,7 +231,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return jsonUtf8(
       {
-        message: "Товарные строки не найдены. Попробуйте более чёткое фото или внесите строки вручную.",
+        message: "РўРѕРІР°СЂРЅС‹Рµ СЃС‚СЂРѕРєРё РЅРµ РЅР°Р№РґРµРЅС‹. РџРѕРїСЂРѕР±СѓР№С‚Рµ Р±РѕР»РµРµ С‡С‘С‚РєРѕРµ С„РѕС‚Рѕ РёР»Рё РІРЅРµСЃРёС‚Рµ СЃС‚СЂРѕРєРё РІСЂСѓС‡РЅСѓСЋ.",
         itemsBeforeFilter: invoiceLines.length,
         filteredItemsCount: 0,
         rejectedItems: filteredLines.rejected,
@@ -246,7 +247,7 @@ export async function POST(request: Request, context: RouteContext) {
       const sanitizedLineTotal = sanitizeMoney(parsedItem.lineTotal);
       const forcedReview = sanitizedQuantity.forcedReview || sanitizedPriceWithVat.forcedReview || sanitizedLineTotal.forcedReview;
 
-      const productMatch = await matchProduct({
+      const productMatch = await matchInvoiceProduct({
         enterpriseId,
         supplierId: invoice.supplierId,
         productNameRaw: parsedItem.productNameRaw,
@@ -262,7 +263,7 @@ export async function POST(request: Request, context: RouteContext) {
         lineTotal: sanitizedLineTotal.value,
       };
 
-      if (productMatch.matchStatus === "matched") {
+      if (productMatch.status === "matched") {
         return {
           ...baseItem,
           matchedProductId: productMatch.matchedProductId,
@@ -271,7 +272,7 @@ export async function POST(request: Request, context: RouteContext) {
         };
       }
 
-      if (productMatch.matchStatus === "ambiguous") {
+      if (productMatch.status === "ambiguous") {
         return {
           ...baseItem,
           matchedProductId: null,
