@@ -303,6 +303,7 @@ const SupplierAccordionItem = memo(function SupplierAccordionItem({
   pendingItemId,
 }: SupplierAccordionItemProps) {
   const [productSearchInput, setProductSearchInput] = useState("");
+  const [isSearchSuggestOpen, setIsSearchSuggestOpen] = useState(false);
   const deferredProductSearch = useDeferredValue(productSearchInput);
   const [comparedProductIds, setComparedProductIds] = useState<string[]>([]);
 
@@ -335,6 +336,11 @@ const SupplierAccordionItem = memo(function SupplierAccordionItem({
       return [...current, productId];
     });
   }, []);
+
+  function handleProductSearchChange(value: string) {
+    setProductSearchInput(value);
+    setIsSearchSuggestOpen(value.trim().length > 0);
+  }
 
   return (
     <article className="supplierAccordionCard">
@@ -373,18 +379,27 @@ const SupplierAccordionItem = memo(function SupplierAccordionItem({
               <div className="searchSuggest">
                 <input
                   value={productSearchInput}
-                  onChange={(event) => setProductSearchInput(event.target.value)}
+                  onChange={(event) => handleProductSearchChange(event.target.value)}
+                  onFocus={() => setIsSearchSuggestOpen(productSearchInput.trim().length > 0)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === "Escape") {
+                      setIsSearchSuggestOpen(false);
+                    }
+                  }}
                   placeholder="Название, артикул или бренд"
                 />
 
-                {productSearchInput.trim() && suggestions.length > 0 ? (
+                {isSearchSuggestOpen && productSearchInput.trim() && suggestions.length > 0 ? (
                   <div className="searchSuggestDropdown">
                     {suggestions.map((product) => (
                       <button
                         key={product.id}
                         type="button"
                         className="searchSuggestOption"
-                        onClick={() => setProductSearchInput(product.name)}
+                        onClick={() => {
+                          setProductSearchInput(product.name);
+                          setIsSearchSuggestOpen(false);
+                        }}
                       >
                         <strong>{product.name}</strong>
                         <span>
