@@ -372,6 +372,7 @@ export default function InvoiceDetailsPage() {
   const [editItemDraft, setEditItemDraft] = useState<EditInvoiceItemDraft | null>(null);
   const [isSavingItemEdit, setIsSavingItemEdit] = useState(false);
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  const [creatingProductItemId, setCreatingProductItemId] = useState<string | null>(null);
   const [isDeletingInvoice, setIsDeletingInvoice] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [isBulkDeletingItems, setIsBulkDeletingItems] = useState(false);
@@ -1111,6 +1112,54 @@ export default function InvoiceDetailsPage() {
     }
   }
 
+  async function handleCreateProduct(item: InvoiceItem) {
+    if (!activeEnterpriseId || !params?.id || !invoice) {
+      return;
+    }
+
+    if (!invoice.supplierId) {
+      setErrorMessage("Сначала выберите поставщика.");
+      return;
+    }
+
+    if (!window.confirm("Создать новый товар во внутреннем накопителе?")) {
+      return;
+    }
+
+    setCreatingProductItemId(item.id);
+    setErrorMessage("");
+    setSuccessMessage("");
+    setProductSearchError("");
+
+    try {
+      const response = await fetch(`/api/invoices/${params.id}/items/${item.id}/create-product`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          enterpriseId: activeEnterpriseId,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Не удалось создать товар.");
+      }
+
+      await loadInvoice(activeEnterpriseId, params.id);
+      handleCloseProductSearch();
+      setSuccessMessage("Товар создан и привязан к строке накладной.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось создать товар.";
+      setProductSearchError(message);
+      setErrorMessage(message);
+    } finally {
+      setCreatingProductItemId(null);
+    }
+  }
+
   async function handleDeleteInvoice() {
     if (!activeEnterpriseId || !params?.id) {
       return;
@@ -1324,6 +1373,7 @@ export default function InvoiceDetailsPage() {
     isSavingItemEdit ||
     isBulkDeletingItems ||
     deletingItemId !== null ||
+    creatingProductItemId !== null ||
     isSavingSupplier ||
     isSavingProduct ||
     updatingPriceChangeId !== null;
@@ -1725,8 +1775,14 @@ export default function InvoiceDetailsPage() {
                                   {item.productCandidates.length > 0 ? "Показать варианты" : "Выбрать вручную"}
                                 </button>
                                 {item.matchedProductStatus === "new" ? (
-                                  <button type="button" className="secondaryButton compactButton" disabled title="Скоро будет доступно">
-                                    Создать товар
+                                  <button
+                                    type="button"
+                                    className="secondaryButton compactButton"
+                                    onClick={() => void handleCreateProduct(item)}
+                                    disabled={isBusy}
+                                    title={invoice.supplierId ? undefined : "Сначала выберите поставщика"}
+                                  >
+                                    {creatingProductItemId === item.id ? "Создаём..." : "Создать товар"}
                                   </button>
                                 ) : null}
                               </>
