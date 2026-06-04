@@ -2195,18 +2195,57 @@ body.sidebarResizing * {
   gap: 12px;
   width: min(95vw, 1280px);
   max-height: 95vh;
+  overflow: hidden;
 }
 
 .invoicePreviewModalClose {
   justify-self: end;
 }
 
+.invoicePreviewModalToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.invoicePreviewModalPager,
+.invoicePreviewModalActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.invoicePreviewZoomLabel {
+  min-width: 56px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.invoicePreviewViewport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-height: 60vh;
+  max-height: calc(95vh - 72px);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .invoicePreviewModalImage {
-  width: 100%;
-  max-height: calc(95vh - 52px);
+  width: auto;
+  max-width: 100%;
+  max-height: calc(95vh - 120px);
   object-fit: contain;
   border-radius: 18px;
   background: #ffffff;
+  transform-origin: center center;
+  transition: transform 120ms ease;
+  will-change: transform;
 }
 
 .invoiceFilesGrid {
