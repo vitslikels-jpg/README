@@ -153,6 +153,8 @@ export async function GET(request: Request, context: RouteContext) {
 
       const productMatchStatus = item.matchedProductId
         ? "matched"
+        : productMatch.status === "matched"
+          ? "matched"
         : productMatch.status === "ambiguous"
           ? "ambiguous"
           : "new";
@@ -160,11 +162,11 @@ export async function GET(request: Request, context: RouteContext) {
       return {
         id: item.id,
         productNameRaw: item.productNameRaw,
-        matchedProductId: item.matchedProductId,
+        matchedProductId: item.matchedProductId ?? (productMatch.status === "matched" ? productMatch.matchedProductId : null),
         matchedProductStatus: productMatchStatus,
-        matchedProductName: item.matchedProduct?.name ?? null,
-        matchedProductArticle: item.matchedProduct?.article ?? null,
-        matchedProductBrand: item.matchedProduct?.brand ?? null,
+        matchedProductName: item.matchedProduct?.name ?? productMatch.candidates[0]?.name ?? null,
+        matchedProductArticle: item.matchedProduct?.article ?? productMatch.candidates[0]?.article ?? null,
+        matchedProductBrand: item.matchedProduct?.brand ?? productMatch.candidates[0]?.brand ?? null,
         matchedProductPrice: item.matchedProduct?.price?.toString() ?? null,
         productCandidates: productMatchStatus === "ambiguous" ? productMatch.candidates : [],
         quantity: item.quantity?.toString() ?? null,
