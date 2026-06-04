@@ -2476,6 +2476,82 @@ body.sidebarResizing * {
   gap: 8px;
 }
 
+.invoiceSearchModal {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.78);
+}
+
+.invoiceSearchModalBody {
+  display: grid;
+  gap: 16px;
+  width: min(960px, 96vw);
+  max-height: 92vh;
+  padding: 20px;
+  border-radius: 20px;
+  background: var(--surface);
+  overflow: auto;
+}
+
+.invoiceSearchModalHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.invoiceSearchModalToolbar {
+  display: grid;
+  gap: 12px;
+}
+
+.invoiceSearchScope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.invoiceSearchModalResults {
+  display: grid;
+  gap: 10px;
+}
+
+.invoiceSearchModalResultCard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-muted);
+}
+
+.invoiceSearchModalResultMeta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.invoiceSearchModalResultMeta span {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  word-break: break-word;
+}
+
+.invoiceSearchEmptyState {
+  align-items: flex-start;
+}
+
 .invoiceItemSearchResult {
   display: flex;
   flex-direction: column;

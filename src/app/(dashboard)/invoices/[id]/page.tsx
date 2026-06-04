@@ -65,6 +65,9 @@ type ProductSearchResult = {
   name: string;
   article: string | null;
   brand: string | null;
+  unit?: string | null;
+  unitsPerPack?: string | null;
+  price?: string | null;
   supplierId: string;
   supplierName: string | null;
 };
@@ -349,6 +352,33 @@ function clampPreviewZoom(value: number) {
   return Math.min(4, Math.max(0.5, Number(value.toFixed(2))));
 }
 
+function buildProductSearchQueries(value: string) {
+  const normalized = value
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  const words = normalized.split(" ").filter(Boolean);
+  const queries = new Set<string>([normalized]);
+
+  if (words.length > 0) {
+    queries.add(words[0]);
+  }
+
+  if (words.length > 1) {
+    queries.add(words.slice(0, 2).join(" "));
+  }
+
+  if (words.length > 2) {
+    queries.add(words.slice(0, 3).join(" "));
+  }
+
+  return Array.from(queries).filter(Boolean);
+}
+
 export default function InvoiceDetailsPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -372,6 +402,7 @@ export default function InvoiceDetailsPage() {
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [productSearchResults, setProductSearchResults] = useState<ProductSearchResult[]>([]);
   const [productSearchError, setProductSearchError] = useState("");
+  const [productSearchAllSuppliers, setProductSearchAllSuppliers] = useState(false);
   const [previewImage, setPreviewImage] = useState<PreviewImageState | null>(null);
   const [isSearchingProducts, setIsSearchingProducts] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
@@ -477,37 +508,56 @@ export default function InvoiceDetailsPage() {
       setProductSearchError("");
 
       try {
-        const searchParams = new URLSearchParams({
-          enterpriseId: activeEnterpriseId,
-          q: query,
-          limit: "20",
-        });
+        const collected = new Map<string, ProductSearchResult>();
+        const queries = buildProductSearchQueries(query);
 
-        if (invoice?.supplierId) {
-          searchParams.set("supplierId", invoice.supplierId);
+        for (const searchQuery of queries) {
+          if (controller.signal.aborted) {
+            return;
+          }
+
+          const searchParams = new URLSearchParams({
+            enterpriseId: activeEnterpriseId,
+            q: searchQuery,
+            limit: "50",
+          });
+
+          if (invoice?.supplierId && !productSearchAllSuppliers) {
+            searchParams.set("supplierId", invoice.supplierId);
+          }
+
+          const response = await fetch(`/api/products?${searchParams.toString()}`, {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+
+          const payload = (await response.json().catch(() => null)) as
+            | { products?: ProductSearchResult[]; message?: string }
+            | null;
+
+          if (!response.ok) {
+            throw new Error(payload?.message ?? "Не удалось найти товары.");
+          }
+
+          for (const product of payload?.products ?? []) {
+            if (!collected.has(product.id)) {
+              collected.set(product.id, product);
+            }
+          }
+
+          if (collected.size >= 50) {
+            break;
+          }
         }
 
-        const response = await fetch(`/api/products?${searchParams.toString()}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-
-        const payload = (await response.json().catch(() => null)) as
-          | { products?: ProductSearchResult[]; message?: string }
-          | null;
-
-        if (!response.ok) {
-          throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё С‚РѕРІР°СЂС‹.");
-        }
-
-        setProductSearchResults(payload?.products ?? []);
+        setProductSearchResults(Array.from(collected.values()).slice(0, 50));
       } catch (error) {
         if (controller.signal.aborted) {
           return;
         }
 
         setProductSearchResults([]);
-        setProductSearchError(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё С‚РѕРІР°СЂС‹.");
+        setProductSearchError(error instanceof Error ? error.message : "Не удалось найти товары.");
       } finally {
         if (!controller.signal.aborted) {
           setIsSearchingProducts(false);
@@ -519,7 +569,7 @@ export default function InvoiceDetailsPage() {
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [activeEnterpriseId, invoice?.supplierId, productSearchItemId, productSearchQuery]);
+  }, [activeEnterpriseId, invoice?.supplierId, productSearchAllSuppliers, productSearchItemId, productSearchQuery]);
 
   useEffect(() => {
     if (!activeEnterpriseId || !isSupplierSearchOpen) {
@@ -938,9 +988,10 @@ export default function InvoiceDetailsPage() {
 
   function handleOpenProductSearch(item: InvoiceItem) {
     setProductSearchItemId(item.id);
-    setProductSearchQuery("");
-    setProductSearchResults(item.productCandidates);
+    setProductSearchQuery(item.productNameRaw);
+    setProductSearchResults([]);
     setProductSearchError("");
+    setProductSearchAllSuppliers(false);
     setEditingItemId(null);
     setEditItemDraft(null);
     setErrorMessage("");
@@ -974,6 +1025,7 @@ export default function InvoiceDetailsPage() {
     setProductSearchQuery("");
     setProductSearchResults([]);
     setProductSearchError("");
+    setProductSearchAllSuppliers(false);
   }
 
   function handleOpenItemEdit(item: InvoiceItem) {
@@ -1372,6 +1424,7 @@ export default function InvoiceDetailsPage() {
     [invoiceFiles],
   );
   const currentPreviewFile = previewImage ? invoiceImageFiles[previewImage.index] ?? null : null;
+  const productSearchItem = productSearchItemId ? invoice.items.find((item) => item.id === productSearchItemId) ?? null : null;
   const reviewItemsCount = invoice.items.filter((item) => item.needsReview).length;
   const pendingPriceChangesCount = invoice.priceChanges.filter((change) => change.status === "pending").length;
   const hasRawText = Boolean(invoice.rawText?.trim());
@@ -1899,7 +1952,7 @@ export default function InvoiceDetailsPage() {
                                   onClick={() => handleOpenProductSearch(item)}
                                   disabled={isBusy}
                                 >
-                                  {item.productCandidates.length > 0 ? "РџРѕРєР°Р·Р°С‚СЊ РІР°СЂРёР°РЅС‚С‹" : "Р’С‹Р±СЂР°С‚СЊ РІСЂСѓС‡РЅСѓСЋ"}
+                                  Выбрать
                                 </button>
                                 {item.matchedProductStatus === "new" ? (
                                   <button
@@ -1920,7 +1973,7 @@ export default function InvoiceDetailsPage() {
                                 onClick={() => handleOpenProductSearch(item)}
                                 disabled={isBusy}
                               >
-                                РР·РјРµРЅРёС‚СЊ С‚РѕРІР°СЂ
+                                Изменить
                               </button>
                             )}
 
@@ -1964,55 +2017,6 @@ export default function InvoiceDetailsPage() {
                           </div>
                         </td>
                       </tr>
-
-                      {productSearchItemId === item.id ? (
-                        <tr className="invoiceItemSearchRow">
-                          <td colSpan={8}>
-                            <div className="invoiceItemSearchPanel">
-                              <div className="field">
-                                <span>РџРѕРёСЃРє С‚РѕРІР°СЂР°</span>
-                                <input
-                                  type="text"
-                                  value={productSearchQuery}
-                                  onChange={(event) => setProductSearchQuery(event.target.value)}
-                                  placeholder="РќР°С‡РЅРёС‚Рµ РІРІРѕРґРёС‚СЊ РЅР°Р·РІР°РЅРёРµ С‚РѕРІР°СЂР°"
-                                  disabled={isBusy}
-                                />
-                              </div>
-
-                              <div className="invoiceItemSearchActions">
-                                <button type="button" className="secondaryButton compactButton" onClick={handleCloseProductSearch} disabled={isBusy}>
-                                  Р—Р°РєСЂС‹С‚СЊ
-                                </button>
-                              </div>
-
-                              {item.matchedProductStatus === "new" ? <p className="invoiceHint">РўР°РєРѕРіРѕ С‚РѕРІР°СЂР° РЅРµС‚ РІ РїСЂР°Р№СЃРµ. РњРѕР¶РЅРѕ РІС‹Р±СЂР°С‚СЊ РІСЂСѓС‡РЅСѓСЋ РёР· РєР°С‚Р°Р»РѕРіР°.</p> : null}
-                              {productSearchError ? <p className="errorText">{productSearchError}</p> : null}
-                              {isSearchingProducts ? <p className="invoiceHint">РС‰РµРј С‚РѕРІР°СЂС‹...</p> : null}
-                              {!isSearchingProducts && productSearchQuery.trim() && productSearchResults.length === 0 ? (
-                                <p className="invoiceHint">РўРѕРІР°СЂС‹ РЅРµ РЅР°Р№РґРµРЅС‹</p>
-                              ) : null}
-
-                              {productSearchResults.length > 0 ? (
-                                <div className="invoiceItemSearchResults">
-                                  {productSearchResults.slice(0, 3).map((product) => (
-                                    <button
-                                      key={product.id}
-                                      type="button"
-                                      className="invoiceItemSearchResult"
-                                      onClick={() => void handleSelectProduct(item.id, product.id)}
-                                      disabled={isBusy}
-                                    >
-                                      <strong>{product.name}</strong>
-                                      <span>{[product.brand, product.article, product.supplierName].filter(Boolean).join(" / ") || "Р‘РµР· РїРѕСЃС‚Р°РІС‰РёРєР°"}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null}
 
                       {editingItemId === item.id && editItemDraft ? (
                         <tr className="invoiceItemSearchRow">
@@ -2178,6 +2182,115 @@ export default function InvoiceDetailsPage() {
         ) : null}
       </section>
 
+      {productSearchItem ? (
+        <div className="invoiceSearchModal" onClick={handleCloseProductSearch} role="presentation">
+          <div className="invoiceSearchModalBody" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Выбрать товар">
+            <div className="invoiceSearchModalHeader">
+              <div>
+                <p className="panelEyebrow">Товар из накладной</p>
+                <h2 className="sectionTitle">Выбрать товар</h2>
+                <p className="pageDescription">{productSearchItem.productNameRaw}</p>
+              </div>
+              <button type="button" className="secondaryButton compactButton" onClick={handleCloseProductSearch} disabled={isBusy}>
+                Закрыть
+              </button>
+            </div>
+
+            <div className="invoiceSearchModalToolbar">
+              <label className="field">
+                <span>Поиск</span>
+                <input
+                  type="text"
+                  value={productSearchQuery}
+                  onChange={(event) => setProductSearchQuery(event.target.value)}
+                  placeholder="Начните вводить название товара"
+                  disabled={isBusy}
+                />
+              </label>
+
+              <div className="invoiceSearchScope">
+                <span className="invoiceHint">
+                  {invoice.supplierId && !productSearchAllSuppliers
+                    ? `Сейчас ищем только у поставщика: ${getSupplierName(invoice)}`
+                    : "Сейчас ищем по всем поставщикам"}
+                </span>
+                {invoice.supplierId && !productSearchAllSuppliers ? (
+                  <button
+                    type="button"
+                    className="secondaryButton compactButton"
+                    onClick={() => setProductSearchAllSuppliers(true)}
+                    disabled={isBusy}
+                  >
+                    Искать среди всех поставщиков
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {productSearchError ? <p className="errorText">{productSearchError}</p> : null}
+            {isSearchingProducts ? <p className="invoiceHint">Ищем товары...</p> : null}
+
+            {!isSearchingProducts && productSearchQuery.trim() && productSearchResults.length === 0 ? (
+              <div className="emptyState invoiceSearchEmptyState">
+                <p className="emptyStateTitle">
+                  {invoice.supplierId && !productSearchAllSuppliers ? "У этого поставщика товар не найден" : "Товары не найдены"}
+                </p>
+                <div className="invoiceSupplierActions">
+                  {invoice.supplierId && !productSearchAllSuppliers ? (
+                    <button
+                      type="button"
+                      className="secondaryButton compactButton"
+                      onClick={() => setProductSearchAllSuppliers(true)}
+                      disabled={isBusy}
+                    >
+                      Искать среди всех поставщиков
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="secondaryButton compactButton"
+                    onClick={() => void handleCreateProduct(productSearchItem)}
+                    disabled={isBusy || !invoice.supplierId}
+                    title={invoice.supplierId ? undefined : "Сначала выберите поставщика"}
+                  >
+                    {creatingProductItemId === productSearchItem.id ? "Создаём..." : "Создать новый товар"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {productSearchResults.length > 0 ? (
+              <>
+                <p className="invoiceHint">Найдено товаров: {productSearchResults.length}</p>
+                <div className="invoiceSearchModalResults">
+                  {productSearchResults.map((product) => (
+                    <div key={product.id} className="invoiceSearchModalResultCard">
+                      <div className="invoiceSearchModalResultMeta">
+                        <strong>{product.name}</strong>
+                        <span>Поставщик: {product.supplierName || "—"}</span>
+                        <span>
+                          {[product.price ? formatMoney(product.price) : null, product.unit || null, product.unitsPerPack ? `фасовка ${product.unitsPerPack}` : null]
+                            .filter(Boolean)
+                            .join(" • ") || "Без цены и фасовки"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="primaryButton compactButton"
+                        onClick={() => void handleSelectProduct(productSearchItem.id, product.id)}
+                        disabled={isBusy}
+                      >
+                        Выбрать
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {previewImage && currentPreviewFile?.fileUrl ? (
         <div className="invoicePreviewModal" onClick={closePreviewModal} role="presentation">
           <div
@@ -2246,4 +2359,5 @@ export default function InvoiceDetailsPage() {
     </div>
   );
 }
+
 

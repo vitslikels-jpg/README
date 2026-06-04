@@ -97,6 +97,9 @@ export async function GET(request: Request) {
         name: true,
         article: true,
         brand: true,
+        unit: true,
+        unitsPerPack: true,
+        price: true,
         supplierId: true,
         supplier: {
           select: {
@@ -116,6 +119,9 @@ export async function GET(request: Request) {
         name: product.name,
         article: product.article,
         brand: product.brand,
+        unit: product.unit,
+        unitsPerPack: product.unitsPerPack?.toString() ?? null,
+        price: product.price?.toString() ?? null,
         supplierId: product.supplierId,
         supplierName: product.supplier.name,
       })),
