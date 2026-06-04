@@ -25,10 +25,45 @@ function normalize(value: string | null | undefined) {
     .trim();
 }
 
+const MATCH_STOP_WORDS = new Set([
+  "кг",
+  "г",
+  "л",
+  "мл",
+  "шт",
+  "уп",
+  "упак",
+  "пакет",
+  "кор",
+  "короб",
+  "банка",
+  "бут",
+  "класс",
+  "рф",
+  "россия",
+  "беларусь",
+]);
+
+function isUsefulMatchWord(word: string) {
+  if (MATCH_STOP_WORDS.has(word)) {
+    return false;
+  }
+
+  if (/^\d+[a-zа-я]*$/iu.test(word)) {
+    return false;
+  }
+
+  if (/^\d+[,.]?\d*$/.test(word)) {
+    return false;
+  }
+
+  return word.length > 2;
+}
+
 function getWords(value: string) {
   return normalize(value)
     .split(" ")
-    .filter((word) => word.length > 2);
+    .filter(isUsefulMatchWord);
 }
 
 function uniqueWords(words: string[]) {
@@ -170,7 +205,7 @@ export async function matchInvoiceProduct(params: {
         score,
       } satisfies InvoiceProductCandidate;
     })
-    .filter((candidate) => candidate.score >= 12)
+    .filter((candidate) => candidate.score >= 8)
     .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name, "ru"));
 
   const candidates = scored.slice(0, params.limit ?? 3);
@@ -181,7 +216,10 @@ export async function matchInvoiceProduct(params: {
 
   const best = candidates[0];
   const second = candidates[1] ?? null;
-  const isConfident = best.score >= 55 && (!second || best.score - second.score >= 18);
+  const isConfident =
+    (best.score >= 55 && (!second || best.score - second.score >= 18)) ||
+    (best.score >= 18 && (!second || best.score - second.score >= 10)) ||
+    (best.score >= 8 && candidates.length === 1);
 
   return {
     matchedProductId: isConfident ? best.id : null,
