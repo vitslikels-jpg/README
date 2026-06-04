@@ -158,16 +158,33 @@ export async function GET(request: Request, context: RouteContext) {
         : productMatch.status === "ambiguous"
           ? "ambiguous"
           : "new";
+      const resolvedMatchedProductId = item.matchedProductId ?? (productMatch.status === "matched" ? productMatch.matchedProductId : null);
+      const resolvedMatchedProduct =
+        item.matchedProduct ??
+        (resolvedMatchedProductId
+          ? await prisma.product.findUnique({
+              where: {
+                id: resolvedMatchedProductId,
+              },
+              select: {
+                id: true,
+                name: true,
+                article: true,
+                brand: true,
+                price: true,
+              },
+            })
+          : null);
 
       return {
         id: item.id,
         productNameRaw: item.productNameRaw,
-        matchedProductId: item.matchedProductId ?? (productMatch.status === "matched" ? productMatch.matchedProductId : null),
+        matchedProductId: resolvedMatchedProductId,
         matchedProductStatus: productMatchStatus,
-        matchedProductName: item.matchedProduct?.name ?? productMatch.candidates[0]?.name ?? null,
-        matchedProductArticle: item.matchedProduct?.article ?? productMatch.candidates[0]?.article ?? null,
-        matchedProductBrand: item.matchedProduct?.brand ?? productMatch.candidates[0]?.brand ?? null,
-        matchedProductPrice: item.matchedProduct?.price?.toString() ?? null,
+        matchedProductName: resolvedMatchedProduct?.name ?? productMatch.candidates[0]?.name ?? null,
+        matchedProductArticle: resolvedMatchedProduct?.article ?? productMatch.candidates[0]?.article ?? null,
+        matchedProductBrand: resolvedMatchedProduct?.brand ?? productMatch.candidates[0]?.brand ?? null,
+        matchedProductPrice: resolvedMatchedProduct?.price?.toString() ?? null,
         productCandidates: productMatchStatus === "ambiguous" ? productMatch.candidates : [],
         quantity: item.quantity?.toString() ?? null,
         unit: item.unit,
