@@ -1,7 +1,9 @@
-import { normalizeCatalogText } from "@/lib/catalog-model.shared.js";
-
 export function normalizeSupplierAliasValue(value: string | null | undefined) {
-  return normalizeCatalogText(value)
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[ё]/g, "е")
+    .replace(/["'`«»“”„]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
