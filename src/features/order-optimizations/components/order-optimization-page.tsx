@@ -380,6 +380,18 @@ function getOptimizerScenarioStatus(scenario: SupplierOptimizerPreviewScenario) 
   return "Без замечаний";
 }
 
+function getOptimizerScenarioMinOrderSummary(scenario: SupplierOptimizerPreviewScenario) {
+  if (scenario.diagnostics.unresolvedItemsCount > 0) {
+    return "Требуется проверка";
+  }
+
+  if (scenario.allMinOrdersMet) {
+    return "Выполнены";
+  }
+
+  return "Не везде выполнены";
+}
+
 function getOptimizerScenarioDescription(type: SupplierOptimizerPreviewScenario["type"]) {
   if (type === "cheapest_with_min_orders") {
     return "Пытается сохранить низкую цену, но учитывать минимальные суммы заказа.";
@@ -685,6 +697,9 @@ export function OrderOptimizationPage() {
   const [optimizerPreview, setOptimizerPreview] = useState<SupplierOptimizerPreviewResponse | null>(null);
   const [optimizerPreviewError, setOptimizerPreviewError] = useState("");
   const [isOptimizerPreviewLoading, setIsOptimizerPreviewLoading] = useState(false);
+  const [expandedScenarioTypes, setExpandedScenarioTypes] = useState<
+    Partial<Record<SupplierOptimizerPreviewScenario["type"], boolean>>
+  >({});
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
@@ -975,6 +990,13 @@ export function OrderOptimizationPage() {
     }
   }
 
+  function handleToggleScenarioDetails(type: SupplierOptimizerPreviewScenario["type"]) {
+    setExpandedScenarioTypes((current) => ({
+      ...current,
+      [type]: !current[type],
+    }));
+  }
+
   async function handleSelectCandidate(item: OrderOptimizationItem, candidate: OrderOptimizationResult) {
     if (!activeEnterpriseId || !selectedOptimization || selectingCandidateId) {
       return;
@@ -1154,127 +1176,142 @@ export function OrderOptimizationPage() {
               const tradeoff = getOptimizerScenarioTradeoff(scenario);
               const warnings = getOptimizerScenarioWarnings(scenario);
               const isEmptyScenario = isEmptyOptimizerScenario(scenario);
+              const isExpanded = Boolean(expandedScenarioTypes[scenario.type]);
 
               return (
                 <section key={scenario.type} className="smartOrderSupplierBlock">
-                  <div className="smartOrderSupplierTop">
+                  <div className="smartOrderScenarioSummary">
                     <div className="smartOrderBasketHeader">
-                      <h3>{getOptimizerScenarioTitle(scenario.type)}</h3>
-                      <div className="smartOrderBasketMeta">
-                        <span>Сумма: {formatMoney(scenario.total) ?? scenario.total}</span>
-                        <span>Поставщиков: {scenario.supplierCount}</span>
-                        <span>{getOptimizerScenarioStatus(scenario)}</span>
+                      <div className="smartOrderScenarioTitleRow">
+                        <h3>{getOptimizerScenarioTitle(scenario.type)}</h3>
                         {optimizerPreview.recommendedScenarioType === scenario.type ? (
                           <span className="statusPill">Рекомендуемый вариант</span>
                         ) : null}
                       </div>
-                    </div>
-
-                    {!isEmptyScenario ? (
-                      <button
-                        type="button"
-                        className="secondaryButton compactButton"
-                        disabled={copyingScenarioType === scenario.type}
-                        onClick={() => void handleCopyScenario(scenario)}
-                      >
-                        <Copy size={15} />
-                        <span>{copyingScenarioType === scenario.type ? "Копируем..." : "Скопировать сценарий"}</span>
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <p className="smartOrderHint">{getOptimizerScenarioDescription(scenario.type)}</p>
-                  {optimizerPreview.recommendedScenarioType === scenario.type ? (
-                    <p className="smartOrderHint">{optimizerPreview.recommendationReason}</p>
-                  ) : null}
-
-                  {isEmptyScenario ? (
-                    <p className="smartOrderHint">Недостаточно подобранных товаров для расчёта сценариев закупки.</p>
-                  ) : (
-                    <>
-                      <div className="smartOrderSupplierRows">
-                        <div className="smartOrderRow">
-                          <div className="smartOrderRowMain">
-                            <span className="smartOrderRowName">Tradeoff</span>
-                          </div>
-                          <span className="smartOrderRowMeta">{tradeoff.priceText}</span>
-                          <span className="smartOrderRowTotal">{tradeoff.suppliersText}</span>
+                      <div className="smartOrderScenarioTotal">{formatMoney(scenario.total) ?? scenario.total}</div>
+                      <div className="smartOrderScenarioStats">
+                        <div className="smartOrderScenarioStat">
+                          <span className="smartOrderScenarioStatLabel">Поставщиков</span>
+                          <span className="smartOrderScenarioStatValue">{scenario.supplierCount}</span>
                         </div>
-
-                        <div className="smartOrderRow">
-                          <div className="smartOrderRowMain">
-                            <span className="smartOrderRowName">Минималки</span>
-                          </div>
-                          <span className="smartOrderRowMeta">{tradeoff.minOrdersText}</span>
-                          <span className="smartOrderRowTotal">{formatSignedMoney(scenario.totalDeltaVsCheapest)}</span>
-                        </div>
-
-                        <div className="smartOrderRow">
-                          <div className="smartOrderRowMain">
-                            <span className="smartOrderRowName">Сводка</span>
-                          </div>
-                          <span className="smartOrderRowMeta">
-                            Поставщики: {formatSignedNumber(scenario.supplierCountDeltaVsCheapest)}
-                          </span>
-                          <span className="smartOrderRowTotal">
-                            Мин. суммы: {formatSignedNumber(scenario.minOrdersMetDeltaVsCheapest)}
+                        <div className="smartOrderScenarioStat">
+                          <span className="smartOrderScenarioStatLabel">Минималки</span>
+                          <span className="smartOrderScenarioStatValue">
+                            {getOptimizerScenarioMinOrderSummary(scenario)}
                           </span>
                         </div>
                       </div>
+                    </div>
 
-                      {warnings.length ? (
-                        <div className="smartOrderProblemReasons">
-                          {warnings.map((warning) => (
-                            <span key={`${scenario.type}-${warning}`} className="statusPill smartOrderProblemReason">
-                              {warning}
-                            </span>
-                          ))}
-                        </div>
+                    <div className="smartOrderScenarioActions">
+                      {!isEmptyScenario ? (
+                        <button
+                          type="button"
+                          className="secondaryButton compactButton"
+                          disabled={copyingScenarioType === scenario.type}
+                          onClick={() => void handleCopyScenario(scenario)}
+                        >
+                          <Copy size={15} />
+                          <span>{copyingScenarioType === scenario.type ? "Копируем..." : "Скопировать сценарий"}</span>
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="secondaryButton compactButton"
+                        onClick={() => handleToggleScenarioDetails(scenario.type)}
+                      >
+                        <span>{isExpanded ? "Скрыть детали" : "Показать детали"}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {isExpanded ? (
+                    <div className="smartOrderScenarioDetails">
+                      <p className="smartOrderHint">{getOptimizerScenarioDescription(scenario.type)}</p>
+                      {optimizerPreview.recommendedScenarioType === scenario.type ? (
+                        <p className="smartOrderHint">{optimizerPreview.recommendationReason}</p>
                       ) : null}
 
-                      <p className="smartOrderHint">{scenario.diagnostics.explanation}</p>
+                      {isEmptyScenario ? (
+                        <p className="smartOrderHint">Недостаточно подобранных товаров для расчёта сценариев закупки.</p>
+                      ) : (
+                        <>
+                          <div className="smartOrderScenarioDetailGrid">
+                            <div className="smartOrderScenarioDetailCard">
+                              <span className="smartOrderScenarioDetailLabel">Tradeoff</span>
+                              <strong>{tradeoff.priceText}</strong>
+                              <span>{tradeoff.suppliersText}</span>
+                            </div>
+                            <div className="smartOrderScenarioDetailCard">
+                              <span className="smartOrderScenarioDetailLabel">Delta</span>
+                              <strong>{formatSignedMoney(scenario.totalDeltaVsCheapest)}</strong>
+                              <span>{tradeoff.minOrdersText}</span>
+                            </div>
+                            <div className="smartOrderScenarioDetailCard">
+                              <span className="smartOrderScenarioDetailLabel">Сводка</span>
+                              <strong>Поставщики: {formatSignedNumber(scenario.supplierCountDeltaVsCheapest)}</strong>
+                              <span>Мин. суммы: {formatSignedNumber(scenario.minOrdersMetDeltaVsCheapest)}</span>
+                            </div>
+                            <div className="smartOrderScenarioDetailCard">
+                              <span className="smartOrderScenarioDetailLabel">Диагностика</span>
+                              <strong>{getOptimizerScenarioStatus(scenario)}</strong>
+                              <span>Нерешённых позиций: {scenario.diagnostics.unresolvedItemsCount}</span>
+                            </div>
+                          </div>
 
-                      <details>
-                        <summary>Детали</summary>
+                          {warnings.length ? (
+                            <div className="smartOrderProblemReasons">
+                              {warnings.map((warning) => (
+                                <span key={`${scenario.type}-${warning}`} className="statusPill smartOrderProblemReason">
+                                  {warning}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
 
-                        {scenario.diagnostics.underMinSuppliers.length ? (
-                          <div className="smartOrderSupplierRows" style={{ marginTop: 12 }}>
-                            {scenario.diagnostics.underMinSuppliers.map((supplier) => (
-                              <div
-                                key={`${scenario.type}-${supplier.supplierId ?? supplier.supplierName}`}
-                                className="smartOrderRow"
-                              >
+                          <p className="smartOrderHint">{scenario.diagnostics.explanation}</p>
+
+                          {scenario.diagnostics.underMinSuppliers.length ? (
+                            <div className="smartOrderSupplierRows smartOrderScenarioRows">
+                              {scenario.diagnostics.underMinSuppliers.map((supplier) => (
+                                <div
+                                  key={`${scenario.type}-${supplier.supplierId ?? supplier.supplierName}`}
+                                  className="smartOrderRow"
+                                >
+                                  <div className="smartOrderRowMain">
+                                    <span className="smartOrderRowName">{supplier.supplierName}</span>
+                                  </div>
+                                  <span className="smartOrderRowMeta">
+                                    Не хватает до минималки {formatMoney(supplier.missingAmount) ?? supplier.missingAmount}
+                                  </span>
+                                  <span className="smartOrderRowTotal">{supplier.reason}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          <div className="smartOrderSupplierRows smartOrderScenarioRows">
+                            {scenario.baskets.map((basket) => (
+                              <div key={`${scenario.type}-${basket.supplierId ?? basket.supplierName}`} className="smartOrderRow">
                                 <div className="smartOrderRowMain">
-                                  <span className="smartOrderRowName">{supplier.supplierName}</span>
+                                  <span className="smartOrderRowName">{basket.supplierName}</span>
                                 </div>
                                 <span className="smartOrderRowMeta">
-                                  Не хватает до минималки {formatMoney(supplier.missingAmount) ?? supplier.missingAmount}
+                                  {basket.itemsCount} поз. · {basket.meetsMinOrder ? "ok" : "ниже минималки"}
                                 </span>
-                                <span className="smartOrderRowTotal">{supplier.reason}</span>
+                                <span className="smartOrderRowTotal">
+                                  {formatMoney(basket.total) ?? basket.total}
+                                  {basket.meetsMinOrder
+                                    ? ""
+                                    : ` · Не хватает ${formatMoney(basket.missingAmount) ?? basket.missingAmount}`}
+                                </span>
                               </div>
                             ))}
                           </div>
-                        ) : null}
-
-                        <div className="smartOrderSupplierRows" style={{ marginTop: 12 }}>
-                          {scenario.baskets.map((basket) => (
-                            <div key={`${scenario.type}-${basket.supplierId ?? basket.supplierName}`} className="smartOrderRow">
-                              <div className="smartOrderRowMain">
-                                <span className="smartOrderRowName">{basket.supplierName}</span>
-                              </div>
-                              <span className="smartOrderRowMeta">
-                                {basket.itemsCount} поз. · {basket.meetsMinOrder ? "ok" : "ниже минималки"}
-                              </span>
-                              <span className="smartOrderRowTotal">
-                                {formatMoney(basket.total) ?? basket.total}
-                                {basket.meetsMinOrder ? "" : ` · Не хватает ${formatMoney(basket.missingAmount) ?? basket.missingAmount}`}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    </>
-                  )}
+                        </>
+                      )}
+                    </div>
+                  ) : null}
                 </section>
               );
             })}

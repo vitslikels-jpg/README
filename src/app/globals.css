@@ -4299,6 +4299,117 @@ body.sidebarResizing * {
   font-size: 0.84rem;
 }
 
+.smartOrderScenarioSummary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+}
+
+.smartOrderScenarioTitleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.smartOrderScenarioTotal {
+  font-size: 1.85rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #111827;
+}
+
+.smartOrderScenarioStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.smartOrderScenarioStat {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(216, 224, 234, 0.92);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.smartOrderScenarioStatLabel {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.smartOrderScenarioStatValue {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.smartOrderScenarioActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.smartOrderScenarioDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.smartOrderScenarioDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.smartOrderScenarioDetailCard {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(216, 224, 234, 0.92);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.9);
+  color: #334155;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.smartOrderScenarioDetailCard strong {
+  color: #111827;
+  font-size: 0.96rem;
+}
+
+.smartOrderScenarioDetailLabel {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.smartOrderScenarioRows .smartOrderRow {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.1fr);
+  align-items: start;
+}
+
+.smartOrderScenarioRows .smartOrderRowMeta,
+.smartOrderScenarioRows .smartOrderRowTotal {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .smartOrderBasketActions {
   display: flex;
   flex-direction: column;
@@ -5136,6 +5247,7 @@ body.sidebarResizing * {
 
   .smartOrderSupplierTop,
   .smartOrderBasketActions,
+  .smartOrderScenarioActions,
   .smartOrderProblemHeader {
     align-items: flex-start;
   }
@@ -5153,6 +5265,15 @@ body.sidebarResizing * {
 
   .smartOrderMainButton {
     width: 100%;
+  }
+
+  .smartOrderScenarioSummary {
+    grid-template-columns: 1fr;
+  }
+
+  .smartOrderScenarioStats,
+  .smartOrderScenarioDetailGrid {
+    grid-template-columns: 1fr;
   }
 
   .compactProductMain h3,
