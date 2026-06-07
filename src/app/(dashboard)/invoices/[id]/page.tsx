@@ -266,14 +266,14 @@ function detectFileKind(fileUrl: string | null, fileName: string | null) {
 function getMatchedProductLabel(item: InvoiceItem) {
   if (!item.matchedProductName) {
     if (item.matchedProductStatus === "ambiguous") {
-      return "РќСѓР¶РЅРѕ РІС‹Р±СЂР°С‚СЊ С‚РѕРІР°СЂ";
+      return "Нужно выбрать товар";
     }
 
     if (item.matchedProductStatus === "new") {
-      return "РќРѕРІР°СЏ РїРѕР·РёС†РёСЏ";
+      return "Новая позиция";
     }
 
-    return "РќРµ СЃРѕРїРѕСЃС‚Р°РІР»РµРЅ";
+    return "Не сопоставлен";
   }
 
   return [item.matchedProductName, item.matchedProductArticle, item.matchedProductBrand].filter(Boolean).join(" \u2022 ");
@@ -281,34 +281,34 @@ function getMatchedProductLabel(item: InvoiceItem) {
 
 function getInvoiceItemStatus(item: InvoiceItem, change: InvoicePriceChange | null) {
   if (item.matchedProductStatus === "new") {
-    return "РќРѕРІР°СЏ РїРѕР·РёС†РёСЏ";
+    return "Новая позиция";
   }
 
   if (!item.matchedProductId) {
-    return "РќРµ СЃРѕРїРѕСЃС‚Р°РІР»РµРЅ";
+    return "Не сопоставлен";
   }
 
   if (change?.status === "pending") {
-    return "Р¦РµРЅР° РёР·РјРµРЅРёР»Р°СЃСЊ";
+    return "Цена изменилась";
   }
 
   if (item.needsReview || change?.status === "rejected") {
-    return "РџСЂРѕРІРµСЂРёС‚СЊ";
+    return "Проверить";
   }
 
-  return "Р“РѕС‚РѕРІРѕ";
+  return "Готово";
 }
 
 function getInvoiceItemStatusClassName(itemStatus: string) {
-  if (itemStatus === "Р“РѕС‚РѕРІРѕ") {
+  if (itemStatus === "Готово") {
     return "invoiceStatus-approved";
   }
 
-  if (itemStatus === "Р¦РµРЅР° РёР·РјРµРЅРёР»Р°СЃСЊ" || itemStatus === "РџСЂРѕРІРµСЂРёС‚СЊ") {
+  if (itemStatus === "Цена изменилась" || itemStatus === "Проверить") {
     return "invoiceStatus-review";
   }
 
-  if (itemStatus === "РќРѕРІР°СЏ РїРѕР·РёС†РёСЏ") {
+  if (itemStatus === "Новая позиция") {
     return "invoiceStatus-new";
   }
 
@@ -448,7 +448,7 @@ export default function InvoiceDetailsPage() {
         }
 
         if (!response.ok) {
-          throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ.");
+          throw new Error(payload?.message ?? "Не удалось загрузить накладную.");
         }
 
         setInvoice(payload);
@@ -460,7 +460,7 @@ export default function InvoiceDetailsPage() {
 
         setInvoice(null);
         setDraftRawText("");
-        setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ.");
+        setErrorMessage(error instanceof Error ? error.message : "Не удалось загрузить накладную.");
       } finally {
         if (!signal?.aborted) {
           setIsLoading(false);
@@ -611,7 +611,7 @@ export default function InvoiceDetailsPage() {
         const payload = (await response.json().catch(() => null)) as SupplierSearchResult[] | { message?: string } | null;
 
         if (!response.ok) {
-          throw new Error((payload as { message?: string } | null)?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё РїРѕСЃС‚Р°РІС‰РёРєРѕРІ.");
+          throw new Error((payload as { message?: string } | null)?.message ?? "Не удалось найти поставщиков.");
         }
 
         setSupplierSearchResults(Array.isArray(payload) ? payload : []);
@@ -621,7 +621,7 @@ export default function InvoiceDetailsPage() {
         }
 
         setSupplierSearchResults([]);
-        setSupplierSearchError(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё РїРѕСЃС‚Р°РІС‰РёРєРѕРІ.");
+        setSupplierSearchError(error instanceof Error ? error.message : "Не удалось найти поставщиков.");
       } finally {
         if (!controller.signal.aborted) {
           setIsSearchingSuppliers(false);
@@ -661,13 +661,13 @@ export default function InvoiceDetailsPage() {
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ С‚РµРєСЃС‚.");
+        throw new Error(payload?.message ?? "Не удалось сохранить текст.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
-      setSuccessMessage(draftRawText.trim() ? "РўРµРєСЃС‚ РЅР°РєР»Р°РґРЅРѕР№ СЃРѕС…СЂР°РЅС‘РЅ." : "РўРµРєСЃС‚ РѕС‡РёС‰РµРЅ, СЃС‚Р°С‚СѓСЃ РѕР±РЅРѕРІР»С‘РЅ.");
+      setSuccessMessage(draftRawText.trim() ? "Текст накладной сохранён." : "Текст очищен, статус обновлён.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ С‚РµРєСЃС‚.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось сохранить текст.");
     } finally {
       setIsSavingRawText(false);
     }
@@ -693,13 +693,13 @@ export default function InvoiceDetailsPage() {
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±СЂР°Р±РѕС‚Р°С‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ.");
+        throw new Error(payload?.message ?? "Не удалось обработать накладную.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
-      setSuccessMessage("РўРµРєСЃС‚ РЅР°РєР»Р°РґРЅРѕР№ СЂР°СЃРїРѕР·РЅР°РЅ.");
+      setSuccessMessage("Текст накладной распознан.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±СЂР°Р±РѕС‚Р°С‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось обработать накладную.");
     } finally {
       setIsProcessing(false);
     }
@@ -727,13 +727,13 @@ export default function InvoiceDetailsPage() {
         | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ СЂР°Р·РѕР±СЂР°С‚СЊ С‚РѕРІР°СЂС‹.");
+        throw new Error(payload?.message ?? "Не удалось разобрать товары.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
-      setSuccessMessage(`РЎРѕР·РґР°РЅРѕ СЃС‚СЂРѕРє: ${payload?.createdItemsCount ?? 0}. РўСЂРµР±СѓСЋС‚ РїСЂРѕРІРµСЂРєРё: ${payload?.reviewItemsCount ?? 0}.`);
+      setSuccessMessage(`Создано строк: ${payload?.createdItemsCount ?? 0}. Требуют проверки: ${payload?.reviewItemsCount ?? 0}.`);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЂР°Р·РѕР±СЂР°С‚СЊ С‚РѕРІР°СЂС‹.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось разобрать товары.");
     } finally {
       setIsParsingItems(false);
     }
@@ -769,17 +769,17 @@ export default function InvoiceDetailsPage() {
 
       if (!response.ok) {
         setDebugRawTextPreview(payload?.rawTextPreview ?? "");
-        throw new Error(payload?.message ?? "AI РЅРµ СЃРјРѕРі СЂР°Р·РѕР±СЂР°С‚СЊ С‚РѕРІР°СЂС‹. РџСЂРѕРІРµСЂСЊС‚Рµ СЂР°СЃРїРѕР·РЅР°РЅРЅС‹Р№ С‚РµРєСЃС‚ РёР»Рё РёСЃРїРѕР»СЊР·СѓР№С‚Рµ СЂР°Р·Р±РѕСЂ Р±РµР· AI.");
+        throw new Error(payload?.message ?? "AI не смог разобрать товары. Проверьте распознанный текст или используйте разбор без AI.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
       setSuccessMessage(
         payload?.visionUsed || payload?.fallbackUsed
-          ? payload?.message ?? "AI РЅРµ РЅР°С€С‘Р» С‚РѕРІР°СЂС‹, РёСЃРїРѕР»СЊР·РѕРІР°РЅ РїСЂРѕСЃС‚РѕР№ СЂР°Р·Р±РѕСЂ."
-          : `AI-СЂР°Р·Р±РѕСЂ РіРѕС‚РѕРІ. РЎРѕР·РґР°РЅРѕ СЃС‚СЂРѕРє: ${payload?.createdItemsCount ?? 0}. РўСЂРµР±СѓСЋС‚ РїСЂРѕРІРµСЂРєРё: ${payload?.reviewItemsCount ?? 0}.`,
+          ? payload?.message ?? "AI не нашёл товары, использован простой разбор."
+          : `AI-разбор готов. Создано строк: ${payload?.createdItemsCount ?? 0}. Требуют проверки: ${payload?.reviewItemsCount ?? 0}.`,
       );
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "AI РЅРµ СЃРјРѕРі СЂР°Р·РѕР±СЂР°С‚СЊ С‚РѕРІР°СЂС‹. РџСЂРѕРІРµСЂСЊС‚Рµ СЂР°СЃРїРѕР·РЅР°РЅРЅС‹Р№ С‚РµРєСЃС‚ РёР»Рё РёСЃРїРѕР»СЊР·СѓР№С‚Рµ СЂР°Р·Р±РѕСЂ Р±РµР· AI.");
+      setErrorMessage(error instanceof Error ? error.message : "AI не смог разобрать товары. Проверьте распознанный текст или используйте разбор без AI.");
     } finally {
       setIsAiParsingItems(false);
     }
@@ -807,7 +807,7 @@ export default function InvoiceDetailsPage() {
       const processPayload = (await processResponse.json().catch(() => null)) as { message?: string } | null;
 
       if (!processResponse.ok) {
-        throw new Error(processPayload?.message ?? "OCR РЅРµ РїСЂРѕС‡РёС‚Р°Р» С‚РµРєСЃС‚.");
+        throw new Error(processPayload?.message ?? "OCR не прочитал текст.");
       }
 
       const aiResponse = await fetch(`/api/invoices/${params.id}/ai-parse?${query.toString()}`, {
@@ -827,7 +827,7 @@ export default function InvoiceDetailsPage() {
       if (!aiResponse.ok) {
         setDebugRawTextPreview(aiPayload?.rawTextPreview ?? "");
         await loadInvoice(activeEnterpriseId, params.id);
-        throw new Error(aiPayload?.message ?? "AI РЅРµ СЃРјРѕРі СЂР°Р·РѕР±СЂР°С‚СЊ С‚РѕРІР°СЂС‹. РџСЂРѕРІРµСЂСЊС‚Рµ СЂР°СЃРїРѕР·РЅР°РЅРЅС‹Р№ С‚РµРєСЃС‚ РёР»Рё РёСЃРїРѕР»СЊР·СѓР№С‚Рµ СЂР°Р·Р±РѕСЂ Р±РµР· AI.");
+        throw new Error(aiPayload?.message ?? "AI не смог разобрать товары. Проверьте распознанный текст или используйте разбор без AI.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
@@ -864,7 +864,7 @@ export default function InvoiceDetailsPage() {
             : "\u041d\u0430\u043a\u043b\u0430\u0434\u043d\u0430\u044f \u0440\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u043d\u0430, \u0442\u043e\u0432\u0430\u0440\u044b \u0438 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u044f \u0446\u0435\u043d \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u044b.",
       );
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹РїРѕР»РЅРёС‚СЊ РїРѕР»РЅС‹Р№ СЂР°Р·Р±РѕСЂ РЅР°РєР»Р°РґРЅРѕР№.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось выполнить полный разбор накладной.");
     } finally {
       setIsProcessing(false);
       setIsAiParsingItems(false);
@@ -897,15 +897,15 @@ export default function InvoiceDetailsPage() {
         | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё РёР·РјРµРЅРµРЅРёСЏ С†РµРЅ.");
+        throw new Error(payload?.message ?? "Не удалось найти изменения цен.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
       setSuccessMessage(
-        `РќР°Р№РґРµРЅРѕ РёР·РјРµРЅРµРЅРёР№ С†РµРЅ: ${payload?.createdPriceChangesCount ?? 0}. РџСЂРѕРїСѓС‰РµРЅРѕ СЃС‚СЂРѕРє: ${payload?.skippedItemsCount ?? 0}.`,
+        `Найдено изменений цен: ${payload?.createdPriceChangesCount ?? 0}. Пропущено строк: ${payload?.skippedItemsCount ?? 0}.`,
       );
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё РёР·РјРµРЅРµРЅРёСЏ С†РµРЅ.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось найти изменения цен.");
     } finally {
       setIsDetectingPriceChanges(false);
     }
@@ -934,13 +934,13 @@ export default function InvoiceDetailsPage() {
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ РёР·РјРµРЅРµРЅРёРµ С†РµРЅС‹.");
+        throw new Error(payload?.message ?? "Не удалось обновить изменение цены.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
-      setSuccessMessage(action === "approve" ? "РР·РјРµРЅРµРЅРёРµ С†РµРЅС‹ РїРѕРґС‚РІРµСЂР¶РґРµРЅРѕ." : "РР·РјРµРЅРµРЅРёРµ С†РµРЅС‹ РѕС‚РєР»РѕРЅРµРЅРѕ.");
+      setSuccessMessage(action === "approve" ? "Изменение цены подтверждено." : "Изменение цены отклонено.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ РёР·РјРµРЅРµРЅРёРµ С†РµРЅС‹.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось обновить изменение цены.");
     } finally {
       setUpdatingPriceChangeId(null);
     }
@@ -973,17 +973,17 @@ export default function InvoiceDetailsPage() {
       if (!response.ok) {
         if (response.status === 400 && payload?.error) {
           throw new Error(
-            `${payload.error}. РЎРЅР°С‡Р°Р»Р° РїСЂРѕРІРµСЂСЊС‚Рµ СЃС‚СЂРѕРєРё Рё РёР·РјРµРЅРµРЅРёСЏ С†РµРЅ. РЎС‚СЂРѕРє РЅР° РїСЂРѕРІРµСЂРєРµ: ${payload.reviewItemsCount ?? 0}. РР·РјРµРЅРµРЅРёР№ С†РµРЅ РЅР° РїСЂРѕРІРµСЂРєРµ: ${payload.pendingPriceChangesCount ?? 0}.`,
+            `${payload.error}. Сначала проверьте строки и изменения цен. Строк на проверке: ${payload.reviewItemsCount ?? 0}. Изменений цен на проверке: ${payload.pendingPriceChangesCount ?? 0}.`,
           );
         }
 
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РІРµСЂС€РёС‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ.");
+        throw new Error(payload?.message ?? "Не удалось завершить накладную.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
-      setSuccessMessage("РќР°РєР»Р°РґРЅР°СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅР°.");
+      setSuccessMessage("Накладная подтверждена.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РІРµСЂС€РёС‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось завершить накладную.");
     } finally {
       setIsApprovingInvoice(false);
     }
@@ -1076,14 +1076,14 @@ export default function InvoiceDetailsPage() {
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ С‚РѕРІР°СЂ.");
+        throw new Error(payload?.message ?? "Не удалось сохранить товар.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
       handleCloseProductSearch();
-      setSuccessMessage(matchedProductId ? "РўРѕРІР°СЂ РґР»СЏ СЃС‚СЂРѕРєРё РІС‹Р±СЂР°РЅ." : "РЎРѕРїРѕСЃС‚Р°РІР»РµРЅРёРµ СЃРѕ СЃС‚СЂРѕРєРѕР№ СЃР±СЂРѕС€РµРЅРѕ.");
+      setSuccessMessage(matchedProductId ? "Товар для строки выбран." : "Сопоставление со строкой сброшено.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ С‚РѕРІР°СЂ.";
+      const message = error instanceof Error ? error.message : "Не удалось сохранить товар.";
       setProductSearchError(message);
       setErrorMessage(message);
     } finally {
@@ -1099,7 +1099,7 @@ export default function InvoiceDetailsPage() {
     const productNameRaw = editItemDraft.productNameRaw.trim();
 
     if (!productNameRaw) {
-      setErrorMessage("РќР°Р·РІР°РЅРёРµ С‚РѕРІР°СЂР° РЅРµ РјРѕР¶РµС‚ Р±С‹С‚СЊ РїСѓСЃС‚С‹Рј.");
+      setErrorMessage("Название товара не может быть пустым.");
       return;
     }
 
@@ -1129,14 +1129,14 @@ export default function InvoiceDetailsPage() {
       const apiPayload = (await response.json().catch(() => null)) as { message?: string } | null;
 
       if (!response.ok) {
-        throw new Error(apiPayload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ СЃС‚СЂРѕРєСѓ РЅР°РєР»Р°РґРЅРѕР№.");
+        throw new Error(apiPayload?.message ?? "Не удалось сохранить строку накладной.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
       handleCloseItemEdit();
-      setSuccessMessage("РЎС‚СЂРѕРєР° РЅР°РєР»Р°РґРЅРѕР№ РѕР±РЅРѕРІР»РµРЅР°.");
+      setSuccessMessage("Строка накладной обновлена.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ СЃС‚СЂРѕРєСѓ РЅР°РєР»Р°РґРЅРѕР№.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось сохранить строку накладной.");
     } finally {
       setIsSavingItemEdit(false);
     }
@@ -1147,7 +1147,7 @@ export default function InvoiceDetailsPage() {
       return;
     }
 
-    if (!window.confirm("РЈРґР°Р»РёС‚СЊ СЌС‚Сѓ СЃС‚СЂРѕРєСѓ РёР· РЅР°РєР»Р°РґРЅРѕР№?")) {
+    if (!window.confirm("Удалить эту строку из накладной?")) {
       return;
     }
 
@@ -1169,13 +1169,13 @@ export default function InvoiceDetailsPage() {
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ СЃС‚СЂРѕРєСѓ РЅР°РєР»Р°РґРЅРѕР№.");
+        throw new Error(payload?.message ?? "Не удалось удалить строку накладной.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
-      setSuccessMessage("РЎС‚СЂРѕРєР° РЅР°РєР»Р°РґРЅРѕР№ СѓРґР°Р»РµРЅР°.");
+      setSuccessMessage("Строка накладной удалена.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ СЃС‚СЂРѕРєСѓ РЅР°РєР»Р°РґРЅРѕР№.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось удалить строку накладной.");
     } finally {
       setDeletingItemId(null);
     }
@@ -1187,11 +1187,11 @@ export default function InvoiceDetailsPage() {
     }
 
     if (!invoice.supplierId) {
-      setErrorMessage("РЎРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРёС‚Рµ РїРѕСЃС‚Р°РІС‰РёРєР°.");
+      setErrorMessage("Сначала выберите поставщика.");
       return;
     }
 
-    if (!window.confirm("РЎРѕР·РґР°С‚СЊ РЅРѕРІС‹Р№ С‚РѕРІР°СЂ РІРѕ РІРЅСѓС‚СЂРµРЅРЅРµРј РЅР°РєРѕРїРёС‚РµР»Рµ?")) {
+    if (!window.confirm("Создать новый товар во внутреннем накопителе?")) {
       return;
     }
 
@@ -1214,14 +1214,14 @@ export default function InvoiceDetailsPage() {
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ С‚РѕРІР°СЂ.");
+        throw new Error(payload?.message ?? "Не удалось создать товар.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
       handleCloseProductSearch();
-      setSuccessMessage("РўРѕРІР°СЂ СЃРѕР·РґР°РЅ Рё РїСЂРёРІСЏР·Р°РЅ Рє СЃС‚СЂРѕРєРµ РЅР°РєР»Р°РґРЅРѕР№.");
+      setSuccessMessage("Товар создан и привязан к строке накладной.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ С‚РѕРІР°СЂ.";
+      const message = error instanceof Error ? error.message : "Не удалось создать товар.";
       setProductSearchError(message);
       setErrorMessage(message);
     } finally {
@@ -1234,7 +1234,7 @@ export default function InvoiceDetailsPage() {
       return;
     }
 
-    if (!window.confirm("РЈРґР°Р»РёС‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ? Р­С‚Рѕ РґРµР№СЃС‚РІРёРµ РЅРµР»СЊР·СЏ РѕС‚РјРµРЅРёС‚СЊ.")) {
+    if (!window.confirm("Удалить накладную? Это действие нельзя отменить.")) {
       return;
     }
 
@@ -1251,13 +1251,13 @@ export default function InvoiceDetailsPage() {
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ.");
+        throw new Error(payload?.message ?? "Не удалось удалить накладную.");
       }
 
       router.push("/invoices");
       router.refresh();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось удалить накладную.");
       setIsDeletingInvoice(false);
     }
   }
@@ -1281,7 +1281,7 @@ export default function InvoiceDetailsPage() {
       return;
     }
 
-    if (!window.confirm(`РЈРґР°Р»РёС‚СЊ РІС‹Р±СЂР°РЅРЅС‹Рµ СЃС‚СЂРѕРєРё: ${selectedItemIds.length}?`)) {
+    if (!window.confirm(`Удалить выбранные строки: ${selectedItemIds.length}?`)) {
       return;
     }
 
@@ -1304,14 +1304,14 @@ export default function InvoiceDetailsPage() {
       const payload = (await response.json().catch(() => null)) as { message?: string; deletedCount?: number } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ РІС‹Р±СЂР°РЅРЅС‹Рµ СЃС‚СЂРѕРєРё.");
+        throw new Error(payload?.message ?? "Не удалось удалить выбранные строки.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
       setSelectedItemIds([]);
-      setSuccessMessage(`РЈРґР°Р»РµРЅРѕ СЃС‚СЂРѕРє: ${payload?.deletedCount ?? selectedItemIds.length}.`);
+      setSuccessMessage(`Удалено строк: ${payload?.deletedCount ?? selectedItemIds.length}.`);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ РІС‹Р±СЂР°РЅРЅС‹Рµ СЃС‚СЂРѕРєРё.");
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось удалить выбранные строки.");
     } finally {
       setIsBulkDeletingItems(false);
     }
@@ -1366,7 +1366,7 @@ export default function InvoiceDetailsPage() {
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РїРѕСЃС‚Р°РІС‰РёРєР°.");
+        throw new Error(payload?.message ?? "Не удалось сохранить поставщика.");
       }
 
       await loadInvoice(activeEnterpriseId, params.id);
@@ -1383,7 +1383,7 @@ export default function InvoiceDetailsPage() {
         setSuccessMessage("Поставщик для накладной сохранён.");
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РїРѕСЃС‚Р°РІС‰РёРєР°.";
+      const message = error instanceof Error ? error.message : "Не удалось сохранить поставщика.";
       setSupplierSearchError(message);
       setErrorMessage(message);
     } finally {
@@ -1443,9 +1443,9 @@ export default function InvoiceDetailsPage() {
     return (
       <div className="pageStack">
         <section className="card pagePlaceholder">
-          <p className="panelEyebrow">РќР°РєР»Р°РґРЅС‹Рµ</p>
-          <h2 className="pageTitle">РЎРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРёС‚Рµ РїСЂРµРґРїСЂРёСЏС‚РёРµ</h2>
-          <p className="pageDescription">Р§С‚РѕР±С‹ РѕС‚РєСЂС‹С‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ, РІС‹Р±РµСЂРёС‚Рµ Р°РєС‚РёРІРЅРѕРµ РїСЂРµРґРїСЂРёСЏС‚РёРµ РІ РІРµСЂС…РЅРµР№ РїР°РЅРµР»Рё.</p>
+          <p className="panelEyebrow">Накладные</p>
+          <h2 className="pageTitle">Сначала выберите предприятие</h2>
+          <p className="pageDescription">Чтобы открыть накладную, выберите активное предприятие в верхней панели.</p>
         </section>
       </div>
     );
@@ -1459,8 +1459,8 @@ export default function InvoiceDetailsPage() {
             <span className="invoicesEmptyIcon" aria-hidden="true">
               <FileText size={28} strokeWidth={2} />
             </span>
-            <p className="emptyStateTitle">Р—Р°РіСЂСѓР·РєР° РЅР°РєР»Р°РґРЅРѕР№</p>
-            <p className="emptyStateText">РљР°СЂС‚РѕС‡РєР° РЅР°РєР»Р°РґРЅРѕР№ Р·Р°РіСЂСѓР¶Р°РµС‚СЃСЏ.</p>
+            <p className="emptyStateTitle">Загрузка накладной</p>
+            <p className="emptyStateText">Карточка накладной загружается.</p>
           </div>
         </section>
       </div>
@@ -1471,12 +1471,12 @@ export default function InvoiceDetailsPage() {
     return (
       <div className="pageStack">
         <section className="card pagePlaceholder">
-          <p className="panelEyebrow">РќР°РєР»Р°РґРЅС‹Рµ</p>
-          <h2 className="pageTitle">РќР°РєР»Р°РґРЅР°СЏ РЅРµ РЅР°Р№РґРµРЅР°</h2>
-          <p className="pageDescription">Р­С‚Р° РЅР°РєР»Р°РґРЅР°СЏ РЅРµ РЅР°Р№РґРµРЅР° РІ РІС‹Р±СЂР°РЅРЅРѕРј РїСЂРµРґРїСЂРёСЏС‚РёРё РёР»Рё Р±С‹Р»Р° СѓРґР°Р»РµРЅР°.</p>
+          <p className="panelEyebrow">Накладные</p>
+          <h2 className="pageTitle">Накладная не найдена</h2>
+          <p className="pageDescription">Эта накладная не найдена в выбранном предприятии или была удалена.</p>
           <Link className="secondaryButton compactButton invoicesBackLink" href="/invoices">
             <ArrowLeft size={16} strokeWidth={2} />
-            РќР°Р·Р°Рґ Рє РЅР°РєР»Р°РґРЅС‹Рј
+            Назад к накладным
           </Link>
         </section>
       </div>
@@ -1487,12 +1487,12 @@ export default function InvoiceDetailsPage() {
     return (
       <div className="pageStack">
         <section className="card pagePlaceholder">
-          <p className="panelEyebrow">РќР°РєР»Р°РґРЅС‹Рµ</p>
-          <h2 className="pageTitle">РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё</h2>
+          <p className="panelEyebrow">Накладные</p>
+          <h2 className="pageTitle">Ошибка загрузки</h2>
           <p className="pageDescription">{errorMessage}</p>
           <Link className="secondaryButton compactButton invoicesBackLink" href="/invoices">
             <ArrowLeft size={16} strokeWidth={2} />
-            РќР°Р·Р°Рґ Рє РЅР°РєР»Р°РґРЅС‹Рј
+            Назад к накладным
           </Link>
         </section>
       </div>
@@ -1536,12 +1536,12 @@ export default function InvoiceDetailsPage() {
     isSavingProduct ||
     updatingPriceChangeId !== null;
   const processSteps = [
-    { label: "Р¤Р°Р№Р» Р·Р°РіСЂСѓР¶РµРЅ", done: Boolean(invoice.fileUrl) },
-    { label: "РўРµРєСЃС‚ СЂР°СЃРїРѕР·РЅР°РЅ", done: hasRawText },
-    { label: "РџРѕСЃС‚Р°РІС‰РёРє РІС‹Р±СЂР°РЅ", done: hasSupplier },
-    { label: "РўРѕРІР°СЂС‹ СЂР°Р·РѕР±СЂР°РЅС‹", done: hasItems },
-    { label: "Р¦РµРЅС‹ РїСЂРѕРІРµСЂРµРЅС‹", done: priceChangesChecked },
-    { label: "Р—Р°РІРµСЂС€РµРЅРѕ", done: invoice.status === "approved" },
+    { label: "Файл загружен", done: Boolean(invoice.fileUrl) },
+    { label: "Текст распознан", done: hasRawText },
+    { label: "Поставщик выбран", done: hasSupplier },
+    { label: "Товары разобраны", done: hasItems },
+    { label: "Цены проверены", done: priceChangesChecked },
+    { label: "Завершено", done: invoice.status === "approved" },
   ];
 
   const closePreviewModal = useCallback(() => {
@@ -1655,20 +1655,20 @@ export default function InvoiceDetailsPage() {
       <section className="heroCard invoiceHeroCompact">
         <Link className="secondaryButton compactButton invoicesBackLink" href="/invoices">
           <ArrowLeft size={16} strokeWidth={2} />
-          РќР°Р·Р°Рґ Рє РЅР°РєР»Р°РґРЅС‹Рј
+          Назад к накладным
         </Link>
 
         <div className="invoiceDetailsHeader">
           <div>
-            <p className="panelEyebrow">РќР°РєР»Р°РґРЅР°СЏ</p>
-            <h2 className="pageTitle">РќР°РєР»Р°РґРЅР°СЏ</h2>
+            <p className="panelEyebrow">Накладная</p>
+            <h2 className="pageTitle">Накладная</h2>
           </div>
           <div className="invoiceHeaderActions">
             <button type="button" className="primaryButton compactButton" onClick={() => void handleProcessAndParseInvoice()} disabled={isBusy || invoiceFiles.length === 0}>
-              {isProcessing || isAiParsingItems || isDetectingPriceChanges ? "РћР±СЂР°Р±Р°С‚С‹РІР°РµРј..." : "Р Р°СЃРїРѕР·РЅР°С‚СЊ Рё СЂР°Р·РѕР±СЂР°С‚СЊ"}
+              {isProcessing || isAiParsingItems || isDetectingPriceChanges ? "Обрабатываем..." : "Распознать и разобрать"}
             </button>
             <button type="button" className="secondaryButton compactButton" onClick={() => void handleDeleteInvoice()} disabled={isBusy || isDeletingInvoice}>
-              {isDeletingInvoice ? "РЈРґР°Р»СЏРµРј..." : "РЈРґР°Р»РёС‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ"}
+              {isDeletingInvoice ? "Удаляем..." : "Удалить накладную"}
             </button>
             <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
           </div>
@@ -1685,19 +1685,19 @@ export default function InvoiceDetailsPage() {
 
         <div className="invoiceMetaGrid invoiceMetaGridCompact invoiceMetaGridSummary">
           <div className="supplierMetaItem">
-            <span>РџРѕСЃС‚Р°РІС‰РёРє</span>
+            <span>Поставщик</span>
             <strong>{getSupplierName(invoice)}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>РќРѕРјРµСЂ</span>
-            <strong>{invoice.invoiceNumber || "вЂ”"}</strong>
+            <span>Номер</span>
+            <strong>{invoice.invoiceNumber || "—"}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>РЎСѓРјРјР°</span>
+            <span>Сумма</span>
             <strong>{formatMoney(invoice.totalAmount)}</strong>
           </div>
           <div className="supplierMetaItem">
-            <span>Р¤Р°Р№Р»РѕРІ</span>
+            <span>Файлов</span>
             <strong>{invoiceFiles.length}</strong>
           </div>
         </div>
@@ -1706,35 +1706,35 @@ export default function InvoiceDetailsPage() {
       <section className="card">
         <div className="cardHeader">
           <div>
-            <p className="panelEyebrow">Р¤Р°Р№Р»</p>
-            <h2 className="sectionTitle">Р¤Р°Р№Р»С‹ РЅР°РєР»Р°РґРЅРѕР№</h2>
+            <p className="panelEyebrow">Файл</p>
+            <h2 className="sectionTitle">Файлы накладной</h2>
           </div>
           <button type="button" className="primaryButton compactButton" onClick={() => void handleProcessAndParseInvoice()} disabled={isBusy || invoiceFiles.length === 0}>
-            {isProcessing || isAiParsingItems || isDetectingPriceChanges ? "РћР±СЂР°Р±Р°С‚С‹РІР°РµРј..." : "Р Р°СЃРїРѕР·РЅР°С‚СЊ Рё СЂР°Р·РѕР±СЂР°С‚СЊ"}
+            {isProcessing || isAiParsingItems || isDetectingPriceChanges ? "Обрабатываем..." : "Распознать и разобрать"}
           </button>
         </div>
 
         {errorMessage ? <p className="errorText">{errorMessage}</p> : null}
         {errorMessage && (debugRawTextPreview || draftRawText.trim()) ? (
           <details className="invoiceDetailsPanel">
-            <summary>РџРѕРєР°Р·Р°С‚СЊ СЂР°СЃРїРѕР·РЅР°РЅРЅС‹Р№ С‚РµРєСЃС‚</summary>
+            <summary>Показать распознанный текст</summary>
             <pre className="invoiceRawText">{debugRawTextPreview || draftRawText.slice(0, 4000)}</pre>
           </details>
         ) : null}
         {debugParseInfo ? (
           <details className="invoiceDetailsPanel">
-            <summary>РџРѕРєР°Р·Р°С‚СЊ РґРµС‚Р°Р»Рё СЂР°Р·Р±РѕСЂР° С‚РѕРІР°СЂРѕРІ</summary>
+            <summary>Показать детали разбора товаров</summary>
             <div className="invoiceCompletionChecks">
-              <span>AI РЅР°С€С‘Р» С‚Р°Р±Р»РёС†Сѓ: <strong>{debugParseInfo.tableDetected ? "РґР°" : "РЅРµС‚"}</strong></span>
-              <span>РЎС‚СЂРѕРє С‚Р°Р±Р»РёС†С‹ РЅР°Р№РґРµРЅРѕ: <strong>{debugParseInfo.tableRowsCount ?? 0}</strong></span>
-              <span>РЎС‚СЂРѕРє РґРѕ С„РёР»СЊС‚СЂР°: <strong>{debugParseInfo.itemsBeforeFilter ?? debugParseInfo.textParsedItemsCount ?? debugParseInfo.visionItemsCount ?? 0}</strong></span>
-              <span>РўРѕРІР°СЂРѕРІ РїРѕСЃР»Рµ С„РёР»СЊС‚СЂР°: <strong>{debugParseInfo.filteredItemsCount ?? 0}</strong></span>
+              <span>AI нашёл таблицу: <strong>{debugParseInfo.tableDetected ? "да" : "нет"}</strong></span>
+              <span>Строк таблицы найдено: <strong>{debugParseInfo.tableRowsCount ?? 0}</strong></span>
+              <span>Строк до фильтра: <strong>{debugParseInfo.itemsBeforeFilter ?? debugParseInfo.textParsedItemsCount ?? debugParseInfo.visionItemsCount ?? 0}</strong></span>
+              <span>Товаров после фильтра: <strong>{debugParseInfo.filteredItemsCount ?? 0}</strong></span>
             </div>
             {debugParseInfo.rejectedItems?.length ? (
               <div className="invoiceItemSearchResults">
                 {debugParseInfo.rejectedItems.slice(0, 50).map((item, index) => (
                   <div key={`${item.reason}-${index}`} className="invoiceItemSearchResult">
-                    <strong>{item.name || "РџСѓСЃС‚Р°СЏ СЃС‚СЂРѕРєР°"}</strong>
+                    <strong>{item.name || "Пустая строка"}</strong>
                     <span>{item.reason}</span>
                   </div>
                 ))}
@@ -1746,18 +1746,18 @@ export default function InvoiceDetailsPage() {
 
         {invoiceFiles.length === 0 ? (
           <div className="emptyState">
-            <p className="emptyStateTitle">Р¤Р°Р№Р»С‹ РЅРµ Р·Р°РіСЂСѓР¶РµРЅС‹</p>
-            <p className="emptyStateText">Р”Р»СЏ СЌС‚РѕР№ РЅР°РєР»Р°РґРЅРѕР№ РїРѕРєР° РЅРµС‚ СЃРѕС…СЂР°РЅС‘РЅРЅС‹С… С„Р°Р№Р»РѕРІ.</p>
+            <p className="emptyStateTitle">Файлы не загружены</p>
+            <p className="emptyStateText">Для этой накладной пока нет сохранённых файлов.</p>
           </div>
         ) : (
           <div className="invoiceFilesGrid">
             {invoiceFiles.map((file) => {
               const currentFileKind = detectFileKind(file.fileUrl, file.originalFileName);
-              const previewAlt = file.originalFileName || `РЎС‚СЂР°РЅРёС†Р° ${file.pageIndex + 1}`;
+              const previewAlt = file.originalFileName || `Страница ${file.pageIndex + 1}`;
 
               return (
                 <div key={file.id} className="invoiceFileTile">
-                  <strong>РЎС‚СЂР°РЅРёС†Р° {file.pageIndex + 1}</strong>
+                  <strong>Страница {file.pageIndex + 1}</strong>
                   {currentFileKind === "image" && file.fileUrl ? (
                     <>
                       <button type="button" className="invoicePreviewButton" onClick={() => openPreviewModal(file.id)}>
@@ -1767,16 +1767,16 @@ export default function InvoiceDetailsPage() {
                       </button>
                       <a className="secondaryButton compactButton invoicesFileLink" href={file.fileUrl} target="_blank" rel="noreferrer">
                         <ExternalLink size={16} strokeWidth={2} />
-                        РћС‚РєСЂС‹С‚СЊ РєСЂСѓРїРЅРѕ
+                        Открыть крупно
                       </a>
                     </>
                   ) : (
                     <a className="secondaryButton compactButton invoicesFileLink" href={file.fileUrl || "#"} target="_blank" rel="noreferrer">
                       <ExternalLink size={16} strokeWidth={2} />
-                      {currentFileKind === "pdf" ? "РћС‚РєСЂС‹С‚СЊ PDF" : "РћС‚РєСЂС‹С‚СЊ С„Р°Р№Р»"}
+                      {currentFileKind === "pdf" ? "Открыть PDF" : "Открыть файл"}
                     </a>
                   )}
-                  <span>{file.originalFileName || "Р¤Р°Р№Р» Р±РµР· РёРјРµРЅРё"}</span>
+                  <span>{file.originalFileName || "Файл без имени"}</span>
                 </div>
               );
             })}
@@ -1784,42 +1784,42 @@ export default function InvoiceDetailsPage() {
         )}
 
         {invoice.status === "failed" && !hasRawText ? (
-          <p className="errorText">РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ С‚РµРєСЃС‚. РџРѕРїСЂРѕР±СѓР№С‚Рµ С„РѕС‚Рѕ С‡С‘С‚С‡Рµ РёР»Рё РІСЃС‚Р°РІСЊС‚Рµ С‚РµРєСЃС‚ РІСЂСѓС‡РЅСѓСЋ.</p>
+          <p className="errorText">Не удалось прочитать текст. Попробуйте фото чётче или вставьте текст вручную.</p>
         ) : hasRawText ? (
-          <p className="successText">РўРµРєСЃС‚ РЅР°РєР»Р°РґРЅРѕР№ РµСЃС‚СЊ. РњРѕР¶РЅРѕ РїРµСЂРµС…РѕРґРёС‚СЊ Рє РїРѕСЃС‚Р°РІС‰РёРєСѓ Рё С‚РѕРІР°СЂР°Рј.</p>
+          <p className="successText">Текст накладной есть. Можно переходить к поставщику и товарам.</p>
         ) : (
-          <p className="invoiceHint">РџРѕСЃР»Рµ СЂР°СЃРїРѕР·РЅР°РІР°РЅРёСЏ Р·РґРµСЃСЊ РїРѕСЏРІРёС‚СЃСЏ С‚РµРєСЃС‚ РґР»СЏ СЂР°Р·Р±РѕСЂР° С‚РѕРІР°СЂРѕРІ.</p>
+          <p className="invoiceHint">После распознавания здесь появится текст для разбора товаров.</p>
         )}
 
         <details className="invoiceDetailsPanel">
-          <summary>Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Рµ РґРµР№СЃС‚РІРёСЏ</summary>
+          <summary>Дополнительные действия</summary>
           <div className="invoiceSupplierActions">
             <button type="button" className="secondaryButton compactButton" onClick={() => void handleProcessInvoice()} disabled={isBusy || invoiceFiles.length === 0}>
-              {isProcessing ? "Р Р°СЃРїРѕР·РЅР°С‘Рј..." : "РўРѕР»СЊРєРѕ СЂР°СЃРїРѕР·РЅР°С‚СЊ"}
+              {isProcessing ? "Распознаём..." : "Только распознать"}
             </button>
             <button type="button" className="secondaryButton compactButton" onClick={() => void handleParseItems()} disabled={isBusy || !hasRawText}>
-              {isParsingItems ? "Р Р°Р·Р±РёСЂР°РµРј..." : "Р Р°Р·РѕР±СЂР°С‚СЊ Р±РµР· AI"}
+              {isParsingItems ? "Разбираем..." : "Разобрать без AI"}
             </button>
             <button type="button" className="secondaryButton compactButton" onClick={() => void handleDetectPriceChanges()} disabled={isBusy || !hasItems}>
-              {isDetectingPriceChanges ? "РС‰РµРј..." : "РќР°Р№С‚Рё РёР·РјРµРЅРµРЅРёСЏ С†РµРЅ"}
+              {isDetectingPriceChanges ? "Ищем..." : "Найти изменения цен"}
             </button>
           </div>
         </details>
 
         <details className="invoiceDetailsPanel">
-          <summary>РџРѕРєР°Р·Р°С‚СЊ СЂР°СЃРїРѕР·РЅР°РЅРЅС‹Р№ С‚РµРєСЃС‚</summary>
+          <summary>Показать распознанный текст</summary>
           <div className="invoiceManualTextPanel">
             <textarea
               className="fieldTextarea"
               rows={10}
               value={draftRawText}
               onChange={(event) => setDraftRawText(event.target.value)}
-              placeholder="Р’СЃС‚Р°РІСЊС‚Рµ С‚РµРєСЃС‚ РЅР°РєР»Р°РґРЅРѕР№ РІСЂСѓС‡РЅСѓСЋ"
+              placeholder="Вставьте текст накладной вручную"
               disabled={isBusy}
             />
             <div className="invoiceSupplierActions">
               <button type="button" className="primaryButton compactButton" onClick={() => void handleSaveRawText()} disabled={isBusy}>
-                {isSavingRawText ? "РЎРѕС…СЂР°РЅСЏРµРј..." : "РЎРѕС…СЂР°РЅРёС‚СЊ С‚РµРєСЃС‚"}
+                {isSavingRawText ? "Сохраняем..." : "Сохранить текст"}
               </button>
               <button
                 type="button"
@@ -1827,7 +1827,7 @@ export default function InvoiceDetailsPage() {
                 onClick={() => setDraftRawText(invoice.rawText ?? "")}
                 disabled={isBusy}
               >
-                Р’РµСЂРЅСѓС‚СЊ С‚РµРєСЃС‚
+                Вернуть текст
               </button>
             </div>
           </div>
@@ -1837,16 +1837,16 @@ export default function InvoiceDetailsPage() {
       <section className="card">
         <div className="cardHeader">
           <div>
-            <p className="panelEyebrow">РЁР°Рі 2</p>
-            <h2 className="sectionTitle">РџРѕСЃС‚Р°РІС‰РёРє</h2>
+            <p className="panelEyebrow">Шаг 2</p>
+            <h2 className="sectionTitle">Поставщик</h2>
           </div>
           <div className="invoiceSupplierActions">
             <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
-              {invoice.supplierId ? "РР·РјРµРЅРёС‚СЊ" : "Р’С‹Р±СЂР°С‚СЊ РїРѕСЃС‚Р°РІС‰РёРєР°"}
+              {invoice.supplierId ? "Изменить" : "Выбрать поставщика"}
             </button>
             {invoice.supplierId ? (
               <button type="button" className="secondaryButton compactButton" onClick={() => void handleSelectSupplier(null)} disabled={isBusy}>
-                РЎР±СЂРѕСЃРёС‚СЊ
+                Сбросить
               </button>
             ) : null}
           </div>
@@ -1855,8 +1855,8 @@ export default function InvoiceDetailsPage() {
         <div className="invoiceStepSummary">
           <FileText size={20} strokeWidth={2} />
           <div>
-            <strong>{invoice.supplierId ? getSupplierName(invoice) : "РџРѕСЃС‚Р°РІС‰РёРє РЅРµ РЅР°Р№РґРµРЅ"}</strong>
-            <p>{invoice.supplierId ? "РџРѕСЃС‚Р°РІС‰РёРє РІС‹Р±СЂР°РЅ РґР»СЏ СЌС‚РѕР№ РЅР°РєР»Р°РґРЅРѕР№." : "Р’С‹Р±РµСЂРёС‚Рµ РїРѕСЃС‚Р°РІС‰РёРєР°, С‡С‚РѕР±С‹ РїРѕРёСЃРє С‚РѕРІР°СЂРѕРІ Р±С‹Р» С‚РѕС‡РЅРµРµ."}</p>
+            <strong>{invoice.supplierId ? getSupplierName(invoice) : "Поставщик не найден"}</strong>
+            <p>{invoice.supplierId ? "Поставщик выбран для этой накладной." : "Выберите поставщика, чтобы поиск товаров был точнее."}</p>
           </div>
         </div>
 
@@ -1878,31 +1878,31 @@ export default function InvoiceDetailsPage() {
       <section className="card">
         <div className="cardHeader">
           <div>
-            <p className="panelEyebrow">РЁР°Рі 3</p>
-            <h2 className="sectionTitle">РўРѕРІР°СЂС‹</h2>
+            <p className="panelEyebrow">Шаг 3</p>
+            <h2 className="sectionTitle">Товары</h2>
           </div>
         </div>
 
         {hasItems ? (
           <div className="invoiceItemEditActions">
-            <span className="invoiceHint">Р’С‹Р±СЂР°РЅРѕ СЃС‚СЂРѕРє: {selectedItemIds.length}</span>
+            <span className="invoiceHint">Выбрано строк: {selectedItemIds.length}</span>
             <button
               type="button"
               className="secondaryButton compactButton"
               onClick={() => void handleBulkDeleteItems()}
               disabled={isBusy || selectedItemIds.length === 0}
             >
-              {isBulkDeletingItems ? "РЈРґР°Р»СЏРµРј..." : "РЈРґР°Р»РёС‚СЊ РІС‹Р±СЂР°РЅРЅС‹Рµ"}
+              {isBulkDeletingItems ? "Удаляем..." : "Удалить выбранные"}
             </button>
           </div>
         ) : null}
 
-        {!hasRawText ? <p className="invoiceHint">РЎРЅР°С‡Р°Р»Р° СЂР°СЃРїРѕР·РЅР°Р№С‚Рµ РЅР°РєР»Р°РґРЅСѓСЋ РёР»Рё РІСЃС‚Р°РІСЊС‚Рµ С‚РµРєСЃС‚ РІСЂСѓС‡РЅСѓСЋ.</p> : null}
+        {!hasRawText ? <p className="invoiceHint">Сначала распознайте накладную или вставьте текст вручную.</p> : null}
 
         {invoice.items.length === 0 ? (
           <div className="emptyState">
-            <p className="emptyStateTitle">РўРѕРІР°СЂС‹ РµС‰С‘ РЅРµ СЂР°Р·РѕР±СЂР°РЅС‹</p>
-            <p className="emptyStateText">РџРѕСЃР»Рµ СЂР°Р·Р±РѕСЂР° Р·РґРµСЃСЊ РїРѕСЏРІСЏС‚СЃСЏ СЃС‚СЂРѕРєРё РЅР°РєР»Р°РґРЅРѕР№.</p>
+            <p className="emptyStateTitle">Товары ещё не разобраны</p>
+            <p className="emptyStateText">После разбора здесь появятся строки накладной.</p>
           </div>
         ) : (
           <div className="orderItemsTableWrap invoiceItemsTableWrap">
@@ -1915,16 +1915,16 @@ export default function InvoiceDetailsPage() {
                       checked={areAllItemsSelected}
                       onChange={handleToggleAllItems}
                       disabled={isBusy || !hasItems}
-                      aria-label="Р’С‹Р±СЂР°С‚СЊ РІСЃРµ СЃС‚СЂРѕРєРё"
+                      aria-label="Выбрать все строки"
                     />
                   </th>
-                  <th>РўРѕРІР°СЂ</th>
-                  <th>РљРѕР»-РІРѕ</th>
-                  <th>Р¦РµРЅР°</th>
-                  <th>РЎСѓРјРјР°</th>
-                  <th>РР·РјРµРЅРµРЅРёРµ</th>
-                  <th>РЎС‚Р°С‚СѓСЃ</th>
-                  <th>Р”РµР№СЃС‚РІРёСЏ</th>
+                  <th>Товар</th>
+                  <th>Кол-во</th>
+                  <th>Цена</th>
+                  <th>Сумма</th>
+                  <th>Изменение</th>
+                  <th>Статус</th>
+                  <th>Действия</th>
                 </tr>
               </thead>
               <tbody>
@@ -1955,28 +1955,28 @@ export default function InvoiceDetailsPage() {
                             checked={selectedItemIds.includes(item.id)}
                             onChange={() => handleToggleItemSelection(item.id)}
                             disabled={isBusy}
-                            aria-label="Р’С‹Р±СЂР°С‚СЊ СЃС‚СЂРѕРєСѓ"
+                            aria-label="Выбрать строку"
                           />
                         </td>
                         <td>
                           <div className={`invoiceProductCell ${item.matchedProductStatus === "new" ? "invoiceProductCellNew" : ""}`}>
                             <strong>{item.productNameRaw}</strong>
                             <span>{getMatchedProductLabel(item)}</span>
-                            {item.matchedProductStatus === "new" ? <span className="invoiceProductWarning">РўР°РєРѕРіРѕ С‚РѕРІР°СЂР° РЅРµС‚ РІ РїСЂР°Р№СЃРµ</span> : null}
+                            {item.matchedProductStatus === "new" ? <span className="invoiceProductWarning">Такого товара нет в прайсе</span> : null}
                           </div>
                         </td>
                         <td>
                           <strong>{formatNumber(item.quantity)}</strong>
-                          <span>{item.unit || "вЂ”"}</span>
+                          <span>{item.unit || "—"}</span>
                         </td>
                         <td>
                           <strong>{formatMoney(newPrice)}</strong>
-                          <span>{oldPrice ? `Р‘С‹Р»Рѕ: ${formatMoney(oldPrice)}` : "вЂ”"}</span>
+                          <span>{oldPrice ? `Было: ${formatMoney(oldPrice)}` : "—"}</span>
                           {item.priceComparisonNote ? <span>{item.priceComparisonNote}</span> : null}
                         </td>
                         <td>
                           <strong>{formatMoney(lineTotal)}</strong>
-                          {!item.lineTotal && lineTotal ? <span>Р Р°СЃС‡С‘С‚РЅР°СЏ СЃСѓРјРјР°</span> : null}
+                          {!item.lineTotal && lineTotal ? <span>Расчётная сумма</span> : null}
                         </td>
                         <td>
                           <strong>{formatMoney(priceChange?.differenceAmount ?? differenceAmount)}</strong>
@@ -2005,9 +2005,9 @@ export default function InvoiceDetailsPage() {
                                     className="secondaryButton compactButton"
                                     onClick={() => void handleCreateProduct(item)}
                                     disabled={isBusy}
-                                    title={invoice.supplierId ? undefined : "РЎРЅР°С‡Р°Р»Р° РІС‹Р±РµСЂРёС‚Рµ РїРѕСЃС‚Р°РІС‰РёРєР°"}
+                                    title={invoice.supplierId ? undefined : "Сначала выберите поставщика"}
                                   >
-                                    {creatingProductItemId === item.id ? "РЎРѕР·РґР°С‘Рј..." : "РЎРѕР·РґР°С‚СЊ С‚РѕРІР°СЂ"}
+                                    {creatingProductItemId === item.id ? "Создаём..." : "Создать товар"}
                                   </button>
                                 ) : null}
                               </>
@@ -2030,7 +2030,7 @@ export default function InvoiceDetailsPage() {
                                   onClick={() => void handleUpdatePriceChange(priceChange.id, "approve")}
                                   disabled={isBusy}
                                 >
-                                  {updatingPriceChangeId === priceChange.id ? "РЎРѕС…СЂР°РЅСЏРµРј..." : "РџРѕРґС‚РІРµСЂРґРёС‚СЊ С†РµРЅСѓ"}
+                                  {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Подтвердить цену"}
                                 </button>
                                 <button
                                   type="button"
@@ -2038,7 +2038,7 @@ export default function InvoiceDetailsPage() {
                                   onClick={() => void handleUpdatePriceChange(priceChange.id, "reject")}
                                   disabled={isBusy}
                                 >
-                                  {updatingPriceChangeId === priceChange.id ? "РЎРѕС…СЂР°РЅСЏРµРј..." : "РћС‚РєР»РѕРЅРёС‚СЊ С†РµРЅСѓ"}
+                                  {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Отклонить цену"}
                                 </button>
                               </>
                             ) : null}
@@ -2049,7 +2049,7 @@ export default function InvoiceDetailsPage() {
                               onClick={() => handleOpenItemEdit(item)}
                               disabled={isBusy}
                             >
-                              Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ
+                              Редактировать
                             </button>
                             <button
                               type="button"
@@ -2057,7 +2057,7 @@ export default function InvoiceDetailsPage() {
                               onClick={() => void handleDeleteItem(item.id)}
                               disabled={isBusy}
                             >
-                              {deletingItemId === item.id ? "РЈРґР°Р»СЏРµРј..." : "РЈРґР°Р»РёС‚СЊ"}
+                              {deletingItemId === item.id ? "Удаляем..." : "Удалить"}
                             </button>
                           </div>
                         </td>
@@ -2069,7 +2069,7 @@ export default function InvoiceDetailsPage() {
                             <div className="invoiceItemSearchPanel invoiceItemEditPanel">
                               <div className="invoiceItemEditGrid">
                                 <label className="field">
-                                  <span>РќР°Р·РІР°РЅРёРµ</span>
+                                  <span>Название</span>
                                   <input
                                     type="text"
                                     value={editItemDraft.productNameRaw}
@@ -2078,7 +2078,7 @@ export default function InvoiceDetailsPage() {
                                   />
                                 </label>
                                 <label className="field">
-                                  <span>РљРѕР»РёС‡РµСЃС‚РІРѕ</span>
+                                  <span>Количество</span>
                                   <input
                                     type="text"
                                     inputMode="decimal"
@@ -2088,7 +2088,7 @@ export default function InvoiceDetailsPage() {
                                   />
                                 </label>
                                 <label className="field">
-                                  <span>Р•РґРёРЅРёС†Р°</span>
+                                  <span>Единица</span>
                                   <input
                                     type="text"
                                     value={editItemDraft.unit}
@@ -2097,7 +2097,7 @@ export default function InvoiceDetailsPage() {
                                   />
                                 </label>
                                 <label className="field">
-                                  <span>Р¦РµРЅР°</span>
+                                  <span>Цена</span>
                                   <input
                                     type="text"
                                     inputMode="decimal"
@@ -2107,7 +2107,7 @@ export default function InvoiceDetailsPage() {
                                   />
                                 </label>
                                 <label className="field">
-                                  <span>РЎСѓРјРјР°</span>
+                                  <span>Сумма</span>
                                   <input
                                     type="text"
                                     inputMode="decimal"
@@ -2117,7 +2117,7 @@ export default function InvoiceDetailsPage() {
                                   />
                                 </label>
                                 <label className="field">
-                                  <span>РќР”РЎ %</span>
+                                  <span>НДС %</span>
                                   <input
                                     type="text"
                                     inputMode="decimal"
@@ -2135,7 +2135,7 @@ export default function InvoiceDetailsPage() {
                                   onClick={() => void handleSaveItemEdit(item.id)}
                                   disabled={isBusy}
                                 >
-                                  {isSavingItemEdit ? "РЎРѕС…СЂР°РЅСЏРµРј..." : "РЎРѕС…СЂР°РЅРёС‚СЊ"}
+                                  {isSavingItemEdit ? "Сохраняем..." : "Сохранить"}
                                 </button>
                                 <button
                                   type="button"
@@ -2143,7 +2143,7 @@ export default function InvoiceDetailsPage() {
                                   onClick={handleCloseItemEdit}
                                   disabled={isBusy}
                                 >
-                                  РћС‚РјРµРЅР°
+                                  Отмена
                                 </button>
                               </div>
                             </div>
@@ -2163,23 +2163,23 @@ export default function InvoiceDetailsPage() {
         <section className="card">
           <div className="cardHeader">
             <div>
-              <p className="panelEyebrow">РЁР°Рі 4</p>
-              <h2 className="sectionTitle">РР·РјРµРЅРµРЅРёСЏ С†РµРЅ</h2>
+              <p className="panelEyebrow">Шаг 4</p>
+              <h2 className="sectionTitle">Изменения цен</h2>
             </div>
           </div>
 
           {invoice.priceChanges.length === 0 ? (
-            <p className="invoiceHint">РР·РјРµРЅРµРЅРёР№ С†РµРЅ РїРѕРєР° РЅРµС‚.</p>
+            <p className="invoiceHint">Изменений цен пока нет.</p>
           ) : (
             <div className="orderItemsTableWrap">
               <table className="orderItemsTable">
                 <thead>
                   <tr>
-                    <th>РўРѕРІР°СЂ</th>
-                    <th>РЎС‚Р°СЂР°СЏ С†РµРЅР°</th>
-                    <th>РќРѕРІР°СЏ С†РµРЅР°</th>
-                    <th>Р Р°Р·РЅРёС†Р°</th>
-                    <th>РЎС‚Р°С‚СѓСЃ</th>
+                    <th>Товар</th>
+                    <th>Старая цена</th>
+                    <th>Новая цена</th>
+                    <th>Разница</th>
+                    <th>Статус</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2210,20 +2210,20 @@ export default function InvoiceDetailsPage() {
       <section className="card">
         <div className="cardHeader">
           <div>
-            <p className="panelEyebrow">РЁР°Рі 5</p>
-            <h2 className="sectionTitle">Р—Р°РІРµСЂС€РµРЅРёРµ</h2>
+            <p className="panelEyebrow">Шаг 5</p>
+            <h2 className="sectionTitle">Завершение</h2>
           </div>
           <button type="button" className="primaryButton compactButton" onClick={() => void handleApproveInvoice()} disabled={isBusy}>
-            {isApprovingInvoice ? "Р—Р°РІРµСЂС€Р°РµРј..." : "Р—Р°РІРµСЂС€РёС‚СЊ РЅР°РєР»Р°РґРЅСѓСЋ"}
+            {isApprovingInvoice ? "Завершаем..." : "Завершить накладную"}
           </button>
         </div>
 
         <div className="invoiceCompletionChecks">
-          <span>РЎС‚СЂРѕРє РЅР° РїСЂРѕРІРµСЂРєРµ: <strong>{reviewItemsCount}</strong></span>
-          <span>РР·РјРµРЅРµРЅРёР№ С†РµРЅ РЅР° РїСЂРѕРІРµСЂРєРµ: <strong>{pendingPriceChangesCount}</strong></span>
+          <span>Строк на проверке: <strong>{reviewItemsCount}</strong></span>
+          <span>Изменений цен на проверке: <strong>{pendingPriceChangesCount}</strong></span>
         </div>
         {(reviewItemsCount > 0 || pendingPriceChangesCount > 0) && invoice.status !== "approved" ? (
-          <p className="invoiceHint">РЎРЅР°С‡Р°Р»Р° РїСЂРѕРІРµСЂСЊС‚Рµ СЃС‚СЂРѕРєРё Рё РёР·РјРµРЅРµРЅРёСЏ С†РµРЅ.</p>
+          <p className="invoiceHint">Сначала проверьте строки и изменения цен.</p>
         ) : null}
       </section>
 
@@ -2408,7 +2408,7 @@ export default function InvoiceDetailsPage() {
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            aria-label="РџСЂРѕСЃРјРѕС‚СЂ РЅР°РєР»Р°РґРЅРѕР№"
+            aria-label="Просмотр накладной"
           >
             <div className="invoicePreviewModalToolbar">
               <div className="invoicePreviewModalPager">
