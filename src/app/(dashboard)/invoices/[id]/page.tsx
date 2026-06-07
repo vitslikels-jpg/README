@@ -123,6 +123,16 @@ type InvoiceParseDebugInfo = {
   }>;
 };
 
+type InvoiceItemStatus =
+  | "Готово"
+  | "Не сопоставлен"
+  | "Новый товар"
+  | "Цена изменилась"
+  | "Проверить цену"
+  | "Проверить единицу"
+  | "Нет цены"
+  | "Нет количества";
+
 const statusLabels: Record<InvoiceStatus, string> = {
   uploaded: "\u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043d\u0430",
   processing: "\u041e\u0431\u0440\u0430\u0431\u0430\u0442\u044b\u0432\u0430\u0435\u0442\u0441\u044f",
@@ -279,13 +289,25 @@ function getMatchedProductLabel(item: InvoiceItem) {
   return [item.matchedProductName, item.matchedProductArticle, item.matchedProductBrand].filter(Boolean).join(" \u2022 ");
 }
 
-function getInvoiceItemStatus(item: InvoiceItem, change: InvoicePriceChange | null) {
-  if (item.matchedProductStatus === "new") {
-    return "Новая позиция";
+function getInvoiceItemStatus(item: InvoiceItem, change: InvoicePriceChange | null): InvoiceItemStatus {
+  if (item.matchedProductStatus === "new" || (!item.matchedProductId && item.productCandidates.length === 0)) {
+    return "Новый товар";
   }
 
   if (!item.matchedProductId) {
     return "Не сопоставлен";
+  }
+
+  if (!item.quantity) {
+    return "Нет количества";
+  }
+
+  if (!item.priceWithVat) {
+    return "Нет цены";
+  }
+
+  if (item.priceComparisonNeedsReview) {
+    return "Проверить единицу";
   }
 
   if (change?.status === "pending") {
@@ -293,22 +315,28 @@ function getInvoiceItemStatus(item: InvoiceItem, change: InvoicePriceChange | nu
   }
 
   if (item.needsReview || change?.status === "rejected") {
-    return "Проверить";
+    return "Проверить цену";
   }
 
   return "Готово";
 }
 
-function getInvoiceItemStatusClassName(itemStatus: string) {
+function getInvoiceItemStatusClassName(itemStatus: InvoiceItemStatus) {
   if (itemStatus === "Готово") {
     return "invoiceStatus-approved";
   }
 
-  if (itemStatus === "Цена изменилась" || itemStatus === "Проверить") {
+  if (
+    itemStatus === "Цена изменилась" ||
+    itemStatus === "Проверить цену" ||
+    itemStatus === "Проверить единицу" ||
+    itemStatus === "Нет цены" ||
+    itemStatus === "Нет количества"
+  ) {
     return "invoiceStatus-review";
   }
 
-  if (itemStatus === "Новая позиция") {
+  if (itemStatus === "Новый товар") {
     return "invoiceStatus-new";
   }
 
@@ -379,6 +407,21 @@ function buildProductSearchQueries(value: string) {
   }
 
   return Array.from(queries).filter(Boolean);
+}
+
+function formatCount(value: number, one: string, few: string, many: string) {
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+
+  if (mod10 === 1 && mod100 !== 11) {
+    return `${value} ${one}`;
+  }
+
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return `${value} ${few}`;
+  }
+
+  return `${value} ${many}`;
 }
 
 export default function InvoiceDetailsPage() {
@@ -1446,13 +1489,56 @@ export default function InvoiceDetailsPage() {
   );
   const currentPreviewFile = previewImage ? invoiceImageFiles[previewImage.index] ?? null : null;
   const productSearchItem = productSearchItemId && invoice ? invoice.items.find((item) => item.id === productSearchItemId) ?? null : null;
-  const reviewItemsCount = invoice?.items.filter((item) => item.needsReview).length ?? 0;
   const pendingPriceChangesCount = invoice?.priceChanges.filter((change) => change.status === "pending").length ?? 0;
   const hasRawText = Boolean(invoice?.rawText?.trim());
   const hasSupplier = Boolean(invoice?.supplierId);
   const hasItems = (invoice?.items.length ?? 0) > 0;
   const hasPriceChanges = (invoice?.priceChanges.length ?? 0) > 0;
   const priceChangesByItemId = new Map((invoice?.priceChanges ?? []).map((change) => [change.invoiceItemId, change]));
+  const itemRows = (invoice?.items ?? []).map((item) => {
+    const priceChange = priceChangesByItemId.get(item.id) ?? null;
+    const itemStatus = getInvoiceItemStatus(item, priceChange);
+    const oldPrice = item.matchedProductPrice;
+    const newPrice = item.priceWithVat;
+    const comparisonPrice = item.normalizedComparisonPrice ?? newPrice;
+    const oldPriceNumber = oldPrice ? Number(oldPrice) : null;
+    const newPriceNumber = comparisonPrice ? Number(comparisonPrice) : null;
+    const differenceAmount =
+      oldPriceNumber !== null && Number.isFinite(oldPriceNumber) && newPriceNumber !== null && Number.isFinite(newPriceNumber)
+        ? String(newPriceNumber - oldPriceNumber)
+        : null;
+    const differencePercent =
+      oldPriceNumber && newPriceNumber !== null && Number.isFinite(newPriceNumber)
+        ? String(((newPriceNumber - oldPriceNumber) / oldPriceNumber) * 100)
+        : null;
+
+    return {
+      item,
+      priceChange,
+      itemStatus,
+      lineTotal: getCalculatedLineTotal(item),
+      differenceAmount,
+      differencePercent,
+    };
+  });
+  const totalItemsCount = itemRows.length;
+  const matchedItemsCount = itemRows.filter(({ item }) => Boolean(item.matchedProductId)).length;
+  const unmatchedItemsCount = itemRows.filter(({ itemStatus }) => itemStatus === "Не сопоставлен").length;
+  const newItemsCount = itemRows.filter(({ itemStatus }) => itemStatus === "Новый товар").length;
+  const missingQuantityCount = itemRows.filter(({ itemStatus }) => itemStatus === "Нет количества").length;
+  const missingPriceCount = itemRows.filter(({ itemStatus }) => itemStatus === "Нет цены").length;
+  const unitReviewCount = itemRows.filter(({ itemStatus }) => itemStatus === "Проверить единицу").length;
+  const priceReviewItemsCount = itemRows.filter(({ itemStatus }) => itemStatus === "Цена изменилась" || itemStatus === "Проверить цену").length;
+  const problemItemsCount = itemRows.filter(({ itemStatus }) => itemStatus !== "Готово").length;
+  const completionIssues = [
+    unmatchedItemsCount > 0 ? `${formatCount(unmatchedItemsCount, "товар не сопоставлен", "товара не сопоставлены", "товаров не сопоставлены")}` : null,
+    priceReviewItemsCount > 0 ? `${formatCount(priceReviewItemsCount, "строка требует проверки цены", "строки требуют проверки цены", "строк требуют проверки цены")}` : null,
+    newItemsCount > 0 ? `${formatCount(newItemsCount, "новая позиция не создана в каталоге", "новые позиции не созданы в каталоге", "новых позиций не созданы в каталоге")}` : null,
+    unitReviewCount > 0 ? `${formatCount(unitReviewCount, "строка требует проверки единицы цены", "строки требуют проверки единицы цены", "строк требуют проверки единицы цены")}` : null,
+    missingPriceCount > 0 ? `${formatCount(missingPriceCount, "строка без цены", "строки без цены", "строк без цены")}` : null,
+    missingQuantityCount > 0 ? `${formatCount(missingQuantityCount, "строка без количества", "строки без количества", "строк без количества")}` : null,
+  ].filter((value): value is string => Boolean(value));
+  const canApproveInvoice = completionIssues.length === 0 && invoice?.status !== "approved";
   const priceChangesChecked = hasItems && pendingPriceChangesCount === 0;
   const areAllItemsSelected = hasItems && selectedItemIds.length === (invoice?.items.length ?? 0);
   const isBusy =
@@ -1706,6 +1792,43 @@ export default function InvoiceDetailsPage() {
       <section className="card">
         <div className="cardHeader">
           <div>
+            <p className="panelEyebrow">Проверка</p>
+            <h2 className="sectionTitle">Проверка накладной</h2>
+          </div>
+          <button type="button" className="primaryButton compactButton" onClick={() => void handleApproveInvoice()} disabled={isBusy || !canApproveInvoice}>
+            {isApprovingInvoice ? "Завершаем..." : invoice.status === "approved" ? "Завершена" : "Завершить накладную"}
+          </button>
+        </div>
+
+        <div className="invoiceCompletionChecks">
+          <span>Всего строк: <strong>{totalItemsCount}</strong></span>
+          <span>Сопоставлено товаров: <strong>{matchedItemsCount}</strong></span>
+          <span>Не сопоставлено: <strong>{unmatchedItemsCount}</strong></span>
+          <span>Новых товаров: <strong>{newItemsCount}</strong></span>
+          <span>Цен на проверке: <strong>{priceReviewItemsCount + pendingPriceChangesCount}</strong></span>
+          <span>Строк с проблемами: <strong>{problemItemsCount}</strong></span>
+        </div>
+
+        {invoice.status === "approved" ? (
+          <p className="successText">Накладная уже завершена.</p>
+        ) : completionIssues.length > 0 ? (
+          <>
+            <p className="invoiceHint">До завершения нужно исправить:</p>
+            <ul className="invoiceCompletionChecks">
+              {completionIssues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+            <p className="invoiceHint">Сначала исправьте строки на проверке.</p>
+          </>
+        ) : (
+          <p className="successText">Все строки готовы. Накладную можно завершать.</p>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="cardHeader">
+          <div>
             <p className="panelEyebrow">Файл</p>
             <h2 className="sectionTitle">Файлы накладной</h2>
           </div>
@@ -1928,24 +2051,7 @@ export default function InvoiceDetailsPage() {
                 </tr>
               </thead>
               <tbody>
-                {invoice.items.map((item) => {
-                  const priceChange = priceChangesByItemId.get(item.id) ?? null;
-                  const oldPrice = item.matchedProductPrice;
-                  const newPrice = item.priceWithVat;
-                  const comparisonPrice = item.normalizedComparisonPrice ?? newPrice;
-                  const oldPriceNumber = oldPrice ? Number(oldPrice) : null;
-                  const newPriceNumber = comparisonPrice ? Number(comparisonPrice) : null;
-                  const differenceAmount =
-                    oldPriceNumber !== null && Number.isFinite(oldPriceNumber) && newPriceNumber !== null && Number.isFinite(newPriceNumber)
-                      ? String(newPriceNumber - oldPriceNumber)
-                      : null;
-                  const differencePercent =
-                    oldPriceNumber && newPriceNumber !== null && Number.isFinite(newPriceNumber)
-                      ? String(((newPriceNumber - oldPriceNumber) / oldPriceNumber) * 100)
-                      : null;
-                  const itemStatus = getInvoiceItemStatus(item, priceChange);
-                  const lineTotal = getCalculatedLineTotal(item);
-
+                {itemRows.map(({ item, priceChange, itemStatus, lineTotal, differenceAmount, differencePercent }) => {
                   return (
                     <Fragment key={item.id}>
                       <tr className={item.matchedProductStatus === "new" ? "invoiceItemRowNew" : undefined}>
@@ -1970,8 +2076,8 @@ export default function InvoiceDetailsPage() {
                           <span>{item.unit || "—"}</span>
                         </td>
                         <td>
-                          <strong>{formatMoney(newPrice)}</strong>
-                          <span>{oldPrice ? `Было: ${formatMoney(oldPrice)}` : "—"}</span>
+                          <strong>{formatMoney(item.priceWithVat)}</strong>
+                          <span>{item.matchedProductPrice ? `Было: ${formatMoney(item.matchedProductPrice)}` : "—"}</span>
                           {item.priceComparisonNote ? <span>{item.priceComparisonNote}</span> : null}
                         </td>
                         <td>
@@ -1997,9 +2103,9 @@ export default function InvoiceDetailsPage() {
                                   onClick={() => handleOpenProductSearch(item)}
                                   disabled={isBusy}
                                 >
-                                  Выбрать
+                                  {itemStatus === "Не сопоставлен" ? "Выбрать" : "Выбрать вручную"}
                                 </button>
-                                {item.matchedProductStatus === "new" ? (
+                                {itemStatus === "Новый товар" ? (
                                   <button
                                     type="button"
                                     className="secondaryButton compactButton"
@@ -2011,7 +2117,7 @@ export default function InvoiceDetailsPage() {
                                   </button>
                                 ) : null}
                               </>
-                            ) : (
+                            ) : itemStatus !== "Цена изменилась" ? (
                               <button
                                 type="button"
                                 className="secondaryButton compactButton"
@@ -2020,7 +2126,7 @@ export default function InvoiceDetailsPage() {
                               >
                                 Изменить
                               </button>
-                            )}
+                            ) : null}
 
                             {priceChange?.status === "pending" ? (
                               <>
@@ -2043,14 +2149,16 @@ export default function InvoiceDetailsPage() {
                               </>
                             ) : null}
 
-                            <button
-                              type="button"
-                              className="secondaryButton compactButton"
-                              onClick={() => handleOpenItemEdit(item)}
-                              disabled={isBusy}
-                            >
-                              Редактировать
-                            </button>
+                            {itemStatus !== "Цена изменилась" ? (
+                              <button
+                                type="button"
+                                className="secondaryButton compactButton"
+                                onClick={() => handleOpenItemEdit(item)}
+                                disabled={isBusy}
+                              >
+                                Редактировать
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="secondaryButton compactButton"
@@ -2206,26 +2314,6 @@ export default function InvoiceDetailsPage() {
           )}
         </section>
       ) : null}
-
-      <section className="card">
-        <div className="cardHeader">
-          <div>
-            <p className="panelEyebrow">Шаг 5</p>
-            <h2 className="sectionTitle">Завершение</h2>
-          </div>
-          <button type="button" className="primaryButton compactButton" onClick={() => void handleApproveInvoice()} disabled={isBusy}>
-            {isApprovingInvoice ? "Завершаем..." : "Завершить накладную"}
-          </button>
-        </div>
-
-        <div className="invoiceCompletionChecks">
-          <span>Строк на проверке: <strong>{reviewItemsCount}</strong></span>
-          <span>Изменений цен на проверке: <strong>{pendingPriceChangesCount}</strong></span>
-        </div>
-        {(reviewItemsCount > 0 || pendingPriceChangesCount > 0) && invoice.status !== "approved" ? (
-          <p className="invoiceHint">Сначала проверьте строки и изменения цен.</p>
-        ) : null}
-      </section>
 
       {productSearchItem ? (
         <div className="invoiceSearchModal" onClick={handleCloseProductSearch} role="presentation">
