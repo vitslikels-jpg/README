@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { jsonUtf8 } from "@/lib/http";
+import { detectInvoiceDocumentMetadata } from "@/lib/invoice-document-detector";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -104,6 +105,25 @@ export async function POST(request: Request) {
         status: true,
       },
     });
+
+    for (const file of storedFiles) {
+      try {
+        const metadata = await detectInvoiceDocumentMetadata(file);
+        console.info("[invoice-document-detector]", {
+          fileName: file.originalFileName,
+          invoiceNumber: metadata?.invoiceNumber ?? null,
+          invoiceDate: metadata?.invoiceDate ?? null,
+          supplierName: metadata?.supplierName ?? null,
+          totalAmount: metadata?.totalAmount ?? null,
+          confidence: metadata?.confidence ?? null,
+        });
+      } catch (error) {
+        console.warn("[invoice-document-detector:failed]", {
+          fileName: file.originalFileName,
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
 
     return jsonUtf8(
       {
