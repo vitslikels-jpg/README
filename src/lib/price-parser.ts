@@ -1942,6 +1942,93 @@ function hasRealProductPayload(product: Omit<ParsedProductRow, "sourceRow" | "ra
   return Boolean(product.article || product.price || product.stock || product.brand);
 }
 
+function getParsedProductDuplicateName(product: ParsedProductRow) {
+  return findRawNameValue(product.rawData) ?? product.name;
+}
+
+function buildParsedProductDuplicateKey(product: ParsedProductRow) {
+  return [
+    normalizeComparableText(getParsedProductDuplicateName(product)),
+    normalizeComparableText(product.article ?? ""),
+    normalizeComparableText(product.brand ?? ""),
+    normalizeComparableText(product.country ?? ""),
+    normalizeComparableText(product.unit ?? ""),
+    product.unitsPerPack?.toString() ?? "",
+    product.minOrderQuantity?.toString() ?? "",
+    product.orderStep?.toString() ?? "",
+    product.allowFractionalOrder ? "1" : "0",
+    product.shipByBoxesOnly ? "1" : "0",
+  ].join("::");
+}
+
+function countParsedProductSignals(product: ParsedProductRow) {
+  return [
+    product.article,
+    product.brand,
+    product.country,
+    product.unit,
+    product.unitsPerPack,
+    product.minOrderQuantity,
+    product.orderStep,
+    product.stock,
+  ].filter((value) => value !== null && value !== "").length;
+}
+
+function toComparableDecimal(value: Prisma.Decimal | null) {
+  if (!value) {
+    return null;
+  }
+
+  const numberValue = Number(value.toString());
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function compareParsedProductPreference(left: ParsedProductRow, right: ParsedProductRow) {
+  const signalDifference = countParsedProductSignals(left) - countParsedProductSignals(right);
+  if (signalDifference !== 0) {
+    return signalDifference;
+  }
+
+  const leftPrice = toComparableDecimal(left.price);
+  const rightPrice = toComparableDecimal(right.price);
+  const leftHasPositivePrice = leftPrice !== null && leftPrice > 0 ? 1 : 0;
+  const rightHasPositivePrice = rightPrice !== null && rightPrice > 0 ? 1 : 0;
+
+  if (leftHasPositivePrice !== rightHasPositivePrice) {
+    return leftHasPositivePrice - rightHasPositivePrice;
+  }
+
+  if (leftPrice !== null && rightPrice !== null && leftPrice !== rightPrice) {
+    return leftPrice - rightPrice;
+  }
+
+  const leftStock = toComparableDecimal(left.stock);
+  const rightStock = toComparableDecimal(right.stock);
+  const leftHasStock = leftStock !== null ? 1 : 0;
+  const rightHasStock = rightStock !== null ? 1 : 0;
+
+  if (leftHasStock !== rightHasStock) {
+    return leftHasStock - rightHasStock;
+  }
+
+  return right.sourceRow - left.sourceRow;
+}
+
+function dedupeParsedProducts(products: ParsedProductRow[]) {
+  const bestByKey = new Map<string, ParsedProductRow>();
+
+  for (const product of products) {
+    const key = buildParsedProductDuplicateKey(product);
+    const existing = bestByKey.get(key);
+
+    if (!existing || compareParsedProductPreference(product, existing) > 0) {
+      bestByKey.set(key, product);
+    }
+  }
+
+  return [...bestByKey.values()].sort((left, right) => left.sourceRow - right.sourceRow);
+}
+
 async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Promise<{ products: ParsedProductRow[]; skippedCount: number }> {
   const headerMatch = detectHeaderRow(rows);
 
@@ -2185,17 +2272,18 @@ export async function parsePriceDocument(documentId: string): Promise<ParseDocum
   try {
     const absolutePath = path.join(/* turbopackIgnore: true */ process.cwd(), document.storedFilePath);
     const identityRules = await loadProductIdentityRules(document.enterpriseId, document.supplierId);
-    const { products, skippedCount } =
+    const { products: parsedProducts, skippedCount } =
       document.sourceFormat === "pdf"
         ? parsePdfRows(await extractPdfLayoutText(absolutePath))
         : isMeridianSupplierName(document.supplier?.name)
           ? await parseMeridianSheetRows(await parseWorkbookRows(absolutePath))
-        : isRedDragonSupplierName(document.supplier?.name)
+          : isRedDragonSupplierName(document.supplier?.name)
           ? await parseRedDragonSheetRows(await parseWorkbookRows(absolutePath), { identityRules })
           : await parseRows(await parseWorkbookRows(absolutePath), {
               supplierName: document.supplier?.name ?? null,
               identityRules,
             });
+    const products = dedupeParsedProducts(parsedProducts as ParsedProductRow[]);
 
     if (products.length === 0) {
       await prisma.document.update({
