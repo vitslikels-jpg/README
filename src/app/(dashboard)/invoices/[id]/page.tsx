@@ -1439,66 +1439,6 @@ export default function InvoiceDetailsPage() {
     }
   }
 
-  if (!activeEnterpriseId) {
-    return (
-      <div className="pageStack">
-        <section className="card pagePlaceholder">
-          <p className="panelEyebrow">Накладные</p>
-          <h2 className="pageTitle">Сначала выберите предприятие</h2>
-          <p className="pageDescription">Чтобы открыть накладную, выберите активное предприятие в верхней панели.</p>
-        </section>
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="pageStack">
-        <section className="card">
-          <div className="emptyState invoicesEmptyState">
-            <span className="invoicesEmptyIcon" aria-hidden="true">
-              <FileText size={28} strokeWidth={2} />
-            </span>
-            <p className="emptyStateTitle">Загрузка накладной</p>
-            <p className="emptyStateText">Карточка накладной загружается.</p>
-          </div>
-        </section>
-      </div>
-    );
-  }
-
-  if (isNotFound) {
-    return (
-      <div className="pageStack">
-        <section className="card pagePlaceholder">
-          <p className="panelEyebrow">Накладные</p>
-          <h2 className="pageTitle">Накладная не найдена</h2>
-          <p className="pageDescription">Эта накладная не найдена в выбранном предприятии или была удалена.</p>
-          <Link className="secondaryButton compactButton invoicesBackLink" href="/invoices">
-            <ArrowLeft size={16} strokeWidth={2} />
-            Назад к накладным
-          </Link>
-        </section>
-      </div>
-    );
-  }
-
-  if (errorMessage && !invoice) {
-    return (
-      <div className="pageStack">
-        <section className="card pagePlaceholder">
-          <p className="panelEyebrow">Накладные</p>
-          <h2 className="pageTitle">Ошибка загрузки</h2>
-          <p className="pageDescription">{errorMessage}</p>
-          <Link className="secondaryButton compactButton invoicesBackLink" href="/invoices">
-            <ArrowLeft size={16} strokeWidth={2} />
-            Назад к накладным
-          </Link>
-        </section>
-      </div>
-    );
-  }
-
   const invoiceFiles = invoice ? getInvoiceFiles(invoice) : [];
   const invoiceImageFiles = useMemo(
     () => invoiceFiles.filter((file) => detectFileKind(file.fileUrl, file.originalFileName) === "image" && file.fileUrl),
@@ -1645,6 +1585,66 @@ export default function InvoiceDetailsPage() {
       target.removeEventListener("wheel", handleWheel);
     };
   }, [changePreviewZoom, previewImage]);
+
+  if (!activeEnterpriseId) {
+    return (
+      <div className="pageStack">
+        <section className="card pagePlaceholder">
+          <p className="panelEyebrow">Накладные</p>
+          <h2 className="pageTitle">Сначала выберите предприятие</h2>
+          <p className="pageDescription">Чтобы открыть накладную, выберите активное предприятие в верхней панели.</p>
+        </section>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="pageStack">
+        <section className="card">
+          <div className="emptyState invoicesEmptyState">
+            <span className="invoicesEmptyIcon" aria-hidden="true">
+              <FileText size={28} strokeWidth={2} />
+            </span>
+            <p className="emptyStateTitle">Загрузка накладной</p>
+            <p className="emptyStateText">Карточка накладной загружается.</p>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (isNotFound) {
+    return (
+      <div className="pageStack">
+        <section className="card pagePlaceholder">
+          <p className="panelEyebrow">Накладные</p>
+          <h2 className="pageTitle">Накладная не найдена</h2>
+          <p className="pageDescription">Эта накладная не найдена в выбранном предприятии или была удалена.</p>
+          <Link className="secondaryButton compactButton invoicesBackLink" href="/invoices">
+            <ArrowLeft size={16} strokeWidth={2} />
+            Назад к накладным
+          </Link>
+        </section>
+      </div>
+    );
+  }
+
+  if (errorMessage && !invoice) {
+    return (
+      <div className="pageStack">
+        <section className="card pagePlaceholder">
+          <p className="panelEyebrow">Накладные</p>
+          <h2 className="pageTitle">Ошибка загрузки</h2>
+          <p className="pageDescription">{errorMessage}</p>
+          <Link className="secondaryButton compactButton invoicesBackLink" href="/invoices">
+            <ArrowLeft size={16} strokeWidth={2} />
+            Назад к накладным
+          </Link>
+        </section>
+      </div>
+    );
+  }
 
   if (!invoice) {
     return null;
