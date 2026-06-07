@@ -125,10 +125,14 @@ function hasSmallConsumerPackagingHint(text) {
   return false;
 }
 
+function hasExplicitBoxTextHint(text) {
+  return EXPLICIT_BOX_COUNT_PATTERN.test(normalizeText(text));
+}
+
 function hasExplicitBoxCountHint({ name, packaging, rawData }) {
   const sourceTexts = [name, packaging, ...rawDataValues(rawData)];
 
-  if (sourceTexts.some((text) => EXPLICIT_BOX_COUNT_PATTERN.test(normalizeText(text)))) {
+  if (sourceTexts.some((text) => hasExplicitBoxTextHint(text))) {
     return true;
   }
 
@@ -178,7 +182,19 @@ export function sanitizeUnitsPerPackCandidate({
     hasSmallConsumerPackagingHint(packaging) ||
     rawDataValues(rawData).some((text) => hasSmallConsumerPackagingHint(text));
 
+  const hasSmallConsumerNameHint =
+    hasSmallConsumerPackagingHint(name) ||
+    hasSmallConsumerPackagingHint(packaging);
+
+  const hasExplicitBoxTextInVisibleFields =
+    hasExplicitBoxTextHint(name) ||
+    hasExplicitBoxTextHint(packaging);
+
   const hasExplicitBoxHint = hasExplicitBoxCountHint({ name, packaging, rawData });
+
+  if (numericUnitsPerPack > 50 && hasSmallConsumerNameHint && !hasExplicitBoxTextInVisibleFields) {
+    return null;
+  }
 
   if (numericUnitsPerPack > 50 && !shipByBoxesOnly && !hasExplicitBoxHint) {
     return null;
