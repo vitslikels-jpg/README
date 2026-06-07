@@ -414,6 +414,7 @@ export default function InvoiceDetailsPage() {
   const [supplierSearchError, setSupplierSearchError] = useState("");
   const [isSearchingSuppliers, setIsSearchingSuppliers] = useState(false);
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
+  const [isCreatingSupplier, setIsCreatingSupplier] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemDraft, setEditItemDraft] = useState<EditInvoiceItemDraft | null>(null);
   const [isSavingItemEdit, setIsSavingItemEdit] = useState(false);
@@ -1390,6 +1391,54 @@ export default function InvoiceDetailsPage() {
     }
   }
 
+  async function handleCreateSupplierFromInvoice() {
+    if (!activeEnterpriseId || !params?.id || !invoice) {
+      return;
+    }
+
+    if (!invoice.detectedSupplierName?.trim()) {
+      setErrorMessage("В накладной нет названия поставщика.");
+      return;
+    }
+
+    if (!window.confirm("Создать нового поставщика из накладной?")) {
+      return;
+    }
+
+    setIsCreatingSupplier(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+    setSupplierSearchError("");
+
+    try {
+      const response = await fetch(`/api/invoices/${params.id}/create-supplier-from-invoice`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          enterpriseId: activeEnterpriseId,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Не удалось создать поставщика из накладной.");
+      }
+
+      await loadInvoice(activeEnterpriseId, params.id);
+      handleCloseSupplierSearch();
+      setSuccessMessage("Поставщик создан, alias сохранён, накладная привязана.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось создать поставщика из накладной.";
+      setSupplierSearchError(message);
+      setErrorMessage(message);
+    } finally {
+      setIsCreatingSupplier(false);
+    }
+  }
+
   if (!activeEnterpriseId) {
     return (
       <div className="pageStack">
@@ -1483,6 +1532,7 @@ export default function InvoiceDetailsPage() {
     deletingItemId !== null ||
     creatingProductItemId !== null ||
     isSavingSupplier ||
+    isCreatingSupplier ||
     isSavingProduct ||
     updatingPriceChangeId !== null;
   const processSteps = [
@@ -1817,6 +1867,9 @@ export default function InvoiceDetailsPage() {
             </p>
             <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
               Связать с существующим поставщиком
+            </button>
+            <button type="button" className="primaryButton compactButton" onClick={() => void handleCreateSupplierFromInvoice()} disabled={isBusy}>
+              {isCreatingSupplier ? "Создаём..." : "Создать нового поставщика"}
             </button>
           </div>
         ) : null}
