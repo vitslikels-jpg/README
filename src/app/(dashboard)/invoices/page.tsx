@@ -439,7 +439,7 @@ export default function InvoicesPage() {
                   <div className="invoiceCardHeader">
                     <div className="invoiceCardTitleBlock">
                       <h3 className="invoiceCardTitle">{getSupplierName(invoice)}</h3>
-                      <p className="invoiceCardFileName">{invoice.originalFileName || "???? ??? ?????"}</p>
+                      <p className="invoiceCardFileName">{invoice.originalFileName || "Без имени файла"}</p>
                     </div>
 
                     <div className="invoiceHeaderActions">
@@ -453,7 +453,7 @@ export default function InvoicesPage() {
                         }}
                         disabled={deletingInvoiceId === invoice.id}
                       >
-                        {deletingInvoiceId === invoice.id ? "???????..." : "???????"}
+                        {deletingInvoiceId === invoice.id ? "Удаляем..." : "Удалить"}
                       </button>
                       <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
                     </div>
