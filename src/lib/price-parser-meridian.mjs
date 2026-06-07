@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { extractWeightPackFromNameOrRawData } from "./price-parser-packaging.mjs";
+import { extractWeightPackFromNameOrRawData, sanitizeUnitsPerPackCandidate } from "./price-parser-packaging.mjs";
 
 export const MERIDIAN_SUPPLIER_PROFILE_ID = "meridian";
 
@@ -331,12 +331,22 @@ export async function parseMeridianSheetRows(rows) {
 
     const brand = rawBrand || null;
     const country = normalizeCountry(rawCountry);
-    const unitsPerPack =
+    const unitsPerPackCandidate =
       (extractedWeightPack?.isWeighted ? decimalFromExtractedPack(extractedWeightPack.unitsPerPack) : null) ??
       parseDecimal(rawUnitsPerPack) ??
       inferUnitsPerPackFromName(rawName);
     const minOrderQuantity = parseDecimal(rawMinOrderQuantity);
     const shipByBoxesOnly = isTruthyFlag(rawShipByBoxesOnly);
+    const unitsPerPack = decimalFromExtractedPack(
+      sanitizeUnitsPerPackCandidate({
+        unitsPerPack: unitsPerPackCandidate ? Number(unitsPerPackCandidate.toString()) : null,
+        name: rawName,
+        packaging: rawUnitsPerPack,
+        rawData,
+        extractedWeightPack,
+        shipByBoxesOnly,
+      }),
+    );
     const cleanedName = cleanupName(rawName, brand, rawCountry || country);
 
     products.push({

@@ -9,7 +9,7 @@ import { upsertDocumentQualityReport } from "@/lib/document-quality";
 import { loadProductIdentityRules, type LoadedProductIdentityRule } from "@/lib/product-identity-rules";
 import { isMeridianSupplierName, parseMeridianSheetRows } from "@/lib/price-parser-meridian.mjs";
 import { refineParsedProductIdentity } from "@/lib/product-identity-refiner.mjs";
-import { extractWeightPackFromNameOrRawData } from "@/lib/price-parser-packaging.mjs";
+import { extractWeightPackFromNameOrRawData, sanitizeUnitsPerPackCandidate } from "@/lib/price-parser-packaging.mjs";
 import { isRedDragonSupplierName, parseRedDragonSheetRows } from "@/lib/price-parser-red-dragon.mjs";
 import { prisma } from "@/lib/prisma";
 
@@ -1828,7 +1828,24 @@ function parsePdfRows(pdfText: string): { products: ParsedProductRow[]; skippedC
       const resolvedName = [pendingName, matchedName].filter(Boolean).join(" ").replace(/\s+/gu, " ").trim();
       pendingName = null;
       const finalizedNameParts = cleanupPdfParsedParts(splitPdfNameBrandCountry(resolvedName));
-      const unit = normalizeUnitValue(matchedUnit);
+      const sourceRow = pageIndex * 1000 + lineIndex + 1;
+      const rawData = {
+        pdfPage: String(pageIndex + 1),
+        pdfLine: String(lineIndex + 1),
+        sourceRow: String(sourceRow),
+        name: resolvedName,
+        price: matchedPrice,
+        unit: matchedUnit,
+      };
+      const extractedWeightPack = extractWeightPackFromNameOrRawData({
+        name: resolvedName,
+        packaging: "",
+        rawData,
+      }) as ExtractedWeightPack | null;
+      const unit = (extractedWeightPack?.isWeighted ? extractedWeightPack.unit : null) ?? normalizeUnitValue(matchedUnit);
+      const unitsPerPack = extractedWeightPack?.isWeighted
+        ? decimalFromExtractedPack(extractedWeightPack.unitsPerPack)
+        : null;
       const price = parseDecimal(matchedPrice);
 
       if (!finalizedNameParts.name || !price) {
@@ -1842,20 +1859,17 @@ function parsePdfRows(pdfText: string): { products: ParsedProductRow[]; skippedC
         brand: finalizedNameParts.brand,
         country: finalizedNameParts.country,
         unit,
-        unitsPerPack: null,
+        unitsPerPack,
         minOrderQuantity: null,
         orderStep: null,
         allowFractionalOrder: inferAllowFractionalOrder(unit, false),
         shipByBoxesOnly: false,
         price,
         stock: null,
-        sourceRow: pageIndex * 1000 + lineIndex + 1,
+        sourceRow,
         rawData: {
-          pdfPage: String(pageIndex + 1),
-          pdfLine: String(lineIndex + 1),
-          name: resolvedName,
-          price: matchedPrice,
-          unit: matchedUnit,
+          ...rawData,
+          weightPackSource: extractedWeightPack?.source ?? "",
         },
       });
     });
@@ -2003,11 +2017,28 @@ async function parseRows(rows: unknown[][], options: ParseRowsOptions = {}): Pro
     const extractedUnitsPerPack = extractedWeightPack?.isWeighted
       ? decimalFromExtractedPack(extractedWeightPack.unitsPerPack)
       : null;
-    const unitsPerPack =
+    const shipUnitValueForSanitize =
+      supplierProfile?.rawHeaderAliases?.shipByBoxesOnly?.length
+        ? findRawFieldValueByHeaders(rawData, supplierProfile.rawHeaderAliases.shipByBoxesOnly)
+        : findRawFieldValue(rawData, "shipByBoxesOnly", supplierProfile);
+    const shipByBoxesOnlyForSanitize =
+      normalizeHeader(shipUnitValueForSanitize) === normalizeHeader("КОР") ||
+      isTruthyFlag(shipByBoxesOnlyValue || findRawFieldValue(rawData, "shipByBoxesOnly", supplierProfile));
+    const unitsPerPackCandidate =
       extractedUnitsPerPack ??
       parseDecimal(unitsPerPackValue) ??
       parseDecimal(findRawFieldValue(rawData, "unitsPerPack", supplierProfile)) ??
       inferredUnitsPerPackFromName;
+    const unitsPerPack = decimalFromExtractedPack(
+      (sanitizeUnitsPerPackCandidate as (input: { unitsPerPack?: number | null; name?: string; packaging?: string; rawData?: Record<string, string>; extractedWeightPack?: ExtractedWeightPack | null; shipByBoxesOnly?: boolean; }) => number | null)({
+        unitsPerPack: unitsPerPackCandidate ? Number(unitsPerPackCandidate.toString()) : null,
+        name: rawNameValue || resolvedName,
+        packaging: packagingValue || findRawFieldValue(rawData, "packaging", supplierProfile),
+        rawData,
+        extractedWeightPack,
+        shipByBoxesOnly: shipByBoxesOnlyForSanitize,
+      }),
+    );
     const minOrderQuantity =
       parseDecimal(minOrderValue) ?? parseDecimal(findRawFieldValue(rawData, "minOrderQuantity", supplierProfile));
     const preOrderStatus = normalizePreOrderStatus(preOrderValue || findRawFieldValue(rawData, "preOrder", supplierProfile));

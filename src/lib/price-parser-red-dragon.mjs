@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { refineParsedProductIdentity } from "./product-identity-refiner.mjs";
-import { extractWeightPackFromNameOrRawData } from "./price-parser-packaging.mjs";
+import { extractWeightPackFromNameOrRawData, sanitizeUnitsPerPackCandidate } from "./price-parser-packaging.mjs";
 
 export const RED_DRAGON_SUPPLIER_PROFILE_ID = "red-dragon";
 
@@ -499,6 +499,17 @@ export async function parseRedDragonSheetRows(rows, options = {}) {
     } else if (!unitsPerPack) {
       rawData._warningUnitsPerPack = "true";
     }
+
+    unitsPerPack = decimalFromExtractedPack(
+      sanitizeUnitsPerPackCandidate({
+        unitsPerPack: unitsPerPack ? Number(unitsPerPack.toString()) : null,
+        name,
+        packaging: packaging?.label ?? "",
+        rawData,
+        extractedWeightPack,
+        shipByBoxesOnly: false,
+      }),
+    );
 
     if (packaging) {
       rawData.detectedPackaging = packaging.label;
