@@ -36,6 +36,12 @@ type InvoiceListItem = {
   reviewItemsCount: number;
 };
 
+type UploadResultSummary = {
+  summary: string;
+  details: string[];
+  note: string | null;
+};
+
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const MAX_FILES_PER_UPLOAD = 10;
 const acceptedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -130,6 +136,7 @@ export default function InvoicesPage() {
   const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [uploadResult, setUploadResult] = useState<UploadResultSummary | null>(null);
 
   const loadInvoices = useCallback(async (enterpriseId: string, signal?: AbortSignal) => {
     setIsLoading(true);
@@ -173,6 +180,7 @@ export default function InvoicesPage() {
       setInvoices([]);
       setErrorMessage("");
       setSuccessMessage("");
+      setUploadResult(null);
       return;
     }
 
@@ -224,6 +232,7 @@ export default function InvoicesPage() {
 
     if (files.length > MAX_FILES_PER_UPLOAD) {
       setSuccessMessage("");
+      setUploadResult(null);
       setErrorMessage("За одну загрузку можно выбрать максимум 10 файлов.");
       event.target.value = "";
       return;
@@ -233,6 +242,7 @@ export default function InvoicesPage() {
 
     if (invalidFile) {
       setSuccessMessage("");
+      setUploadResult(null);
       setErrorMessage(`${invalidFile.name}: ${getClientFileError(invalidFile)}`);
       event.target.value = "";
       return;
@@ -241,6 +251,7 @@ export default function InvoicesPage() {
     setIsUploading(true);
     setErrorMessage("");
     setSuccessMessage("");
+    setUploadResult(null);
 
     try {
       const formData = new FormData();
@@ -256,7 +267,13 @@ export default function InvoicesPage() {
       });
 
       const payload = (await response.json().catch(() => null)) as
-        | { invoice?: { id: string; filesCount?: number }; message?: string }
+        | {
+            invoice?: { id: string; filesCount?: number; invoiceNumber?: string | null };
+            invoices?: Array<{ id: string; filesCount?: number; invoiceNumber?: string | null }>;
+            createdCount?: number;
+            splitApplied?: boolean;
+            message?: string;
+          }
         | null;
 
       if (!response.ok) {
@@ -264,11 +281,31 @@ export default function InvoicesPage() {
       }
 
       await loadInvoices(activeEnterpriseId);
-
-      const uploadedCount = payload?.invoice?.filesCount ?? files.length;
-      setSuccessMessage(uploadedCount === 1 ? "Накладная загружена." : `Накладная загружена. Файлов: ${uploadedCount}.`);
+      const createdCount = payload?.createdCount ?? payload?.invoices?.length ?? 1;
+      const invoiceNumbers = (payload?.invoices ?? [])
+        .map((invoice) => invoice.invoiceNumber?.trim() || null)
+        .filter((invoiceNumber): invoiceNumber is string => Boolean(invoiceNumber));
+      const unknownNumbersCount = Math.max(0, createdCount - invoiceNumbers.length);
+      const summary =
+        createdCount === 1
+          ? files.length > 1
+            ? `Загружена 1 накладная из ${files.length} страниц.`
+            : "Загружена 1 накладная."
+          : `Найдено ${createdCount} накладные. Созданы отдельные документы.`;
+      const details = [
+        ...invoiceNumbers.map((invoiceNumber) => `№${invoiceNumber}`),
+        ...Array.from({ length: unknownNumbersCount }, () => "Номер не распознан — проверьте документ вручную."),
+      ];
+      const note = payload?.splitApplied ? "Файлы автоматически разделены по номерам накладных." : null;
+      setSuccessMessage(summary);
+      setUploadResult({
+        summary,
+        details,
+        note,
+      });
     } catch (error) {
       setSuccessMessage("");
+      setUploadResult(null);
       setErrorMessage(error instanceof Error ? error.message : "Не удалось загрузить накладную.");
     } finally {
       setIsUploading(false);
@@ -296,6 +333,7 @@ export default function InvoicesPage() {
     setDeletingInvoiceId(invoiceId);
     setErrorMessage("");
     setSuccessMessage("");
+    setUploadResult(null);
 
     try {
       const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
@@ -390,7 +428,19 @@ export default function InvoicesPage() {
           </div>
 
           {errorMessage ? <p className="errorText">{errorMessage}</p> : null}
-          {successMessage ? <p className="successText">{successMessage}</p> : null}
+          {successMessage ? (
+            <div className="successText">
+              <p>{successMessage}</p>
+              {uploadResult?.note ? <p>{uploadResult.note}</p> : null}
+              {uploadResult?.details.length ? (
+                <ul>
+                  {uploadResult.details.map((detail) => (
+                    <li key={detail}>{detail}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
 
           {isLoading ? (
             <div className="emptyState invoicesEmptyState">
