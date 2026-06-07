@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { normalizeSupplierAliasValue } from "@/lib/supplier-alias";
 
-type SupplierMatchType = "phone" | "email" | "exact_name" | "contains_name";
+type SupplierMatchType = "alias_exact" | "alias_contains" | "phone" | "email" | "name_exact" | "name_contains";
 
 type SupplierMatchResult = {
   supplierId: string;
@@ -14,6 +15,10 @@ type SupplierCandidate = {
   name: string;
   phone: string | null;
   email: string | null;
+  aliases: Array<{
+    value: string;
+    normalizedValue: string;
+  }>;
 };
 
 function normalizeText(value: string) {
@@ -56,6 +61,37 @@ function extractPhones(rawText: string) {
   );
 }
 
+function getAliasMatchType(rawTextNormalized: string, supplier: SupplierCandidate): SupplierMatchResult | null {
+  const exactAlias = supplier.aliases.find((alias) => alias.normalizedValue && alias.normalizedValue === rawTextNormalized);
+
+  if (exactAlias) {
+    return {
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      confidence: 0.98,
+      matchType: "alias_exact",
+    };
+  }
+
+  const containsAlias = supplier.aliases.find(
+    (alias) =>
+      alias.normalizedValue &&
+      alias.normalizedValue.length >= 4 &&
+      (rawTextNormalized.includes(alias.normalizedValue) || buildWordBoundaryPattern(alias.normalizedValue).test(rawTextNormalized)),
+  );
+
+  if (containsAlias) {
+    return {
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      confidence: 0.9,
+      matchType: "alias_contains",
+    };
+  }
+
+  return null;
+}
+
 function getNameMatchType(rawTextNormalized: string, supplier: SupplierCandidate): SupplierMatchResult | null {
   const normalizedName = normalizeText(supplier.name);
 
@@ -63,12 +99,12 @@ function getNameMatchType(rawTextNormalized: string, supplier: SupplierCandidate
     return null;
   }
 
-  if (rawTextNormalized.includes(normalizedName) || buildWordBoundaryPattern(normalizedName).test(rawTextNormalized)) {
+  if (rawTextNormalized === normalizedName || rawTextNormalized.includes(normalizedName) || buildWordBoundaryPattern(normalizedName).test(rawTextNormalized)) {
     return {
       supplierId: supplier.id,
       supplierName: supplier.name,
       confidence: 0.85,
-      matchType: "exact_name",
+      matchType: "name_exact",
     };
   }
 
@@ -85,7 +121,7 @@ function getNameMatchType(rawTextNormalized: string, supplier: SupplierCandidate
       supplierId: supplier.id,
       supplierName: supplier.name,
       confidence: 0.7,
-      matchType: "contains_name",
+      matchType: "name_contains",
     };
   }
 
@@ -93,14 +129,19 @@ function getNameMatchType(rawTextNormalized: string, supplier: SupplierCandidate
 }
 
 export function matchInvoiceSupplierFromCandidates(rawText: string, suppliers: SupplierCandidate[]): SupplierMatchResult | null {
-  const normalizedRawText = normalizeText(rawText);
+  const normalizedRawText = normalizeSupplierAliasValue(rawText);
 
-  if (suppliers.length === 0) {
+  if (suppliers.length === 0 || !normalizedRawText) {
     return null;
   }
 
-  if (!normalizedRawText) {
-    return null;
+  const aliasMatches = suppliers
+    .map((supplier) => getAliasMatchType(normalizedRawText, supplier))
+    .filter((match): match is SupplierMatchResult => match !== null)
+    .sort((left, right) => right.confidence - left.confidence || left.supplierName.localeCompare(right.supplierName, "ru"));
+
+  if (aliasMatches[0]) {
+    return aliasMatches[0];
   }
 
   const emailsInText = extractEmails(rawText);
@@ -158,6 +199,15 @@ export async function matchInvoiceSupplier(rawText: string, enterpriseId: string
       name: true,
       phone: true,
       email: true,
+      aliases: {
+        select: {
+          value: true,
+          normalizedValue: true,
+        },
+        orderBy: {
+          value: "asc",
+        },
+      },
     },
     orderBy: {
       name: "asc",

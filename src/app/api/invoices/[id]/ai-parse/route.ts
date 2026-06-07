@@ -9,6 +9,7 @@ import { filterInvoiceItems } from "@/lib/invoice-item-filter";
 import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
 import { sanitizeMoney, sanitizeQuantity, sanitizeVatRate } from "@/lib/invoice-number-sanitize";
 import { matchInvoiceProduct } from "@/lib/invoice-product-match";
+import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -268,19 +269,23 @@ async function createInvoiceItems(params: {
 }
 
 async function updateInvoiceMetadata(invoiceId: string, data: {
+  supplierId?: string | null;
   supplierName: string | null;
   invoiceNumber: string | null;
   invoiceDate: string | null;
   totalAmount: number | null;
   vatAmount: number | null;
   status: "needs_review" | "parsed" | "failed" | "processing";
+  confidence?: number | null;
 }) {
   await prisma.invoiceDocument.update({
     where: {
       id: invoiceId,
     },
     data: {
+      ...(data.supplierId !== undefined ? { supplierId: data.supplierId } : {}),
       detectedSupplierName: data.supplierName,
+      ...(data.confidence !== undefined ? { confidence: data.confidence } : {}),
       invoiceNumber: data.invoiceNumber,
       invoiceDate: parseDate(data.invoiceDate),
       totalAmount: data.totalAmount,
@@ -372,6 +377,9 @@ export async function POST(request: Request, context: RouteContext) {
 
     let parsedItems: ParsedItemDraft[] = [];
     let rawTextPreview = rawText ? buildRawTextPreview(rawText) : "";
+    let resolvedSupplierId = invoice.supplierId;
+    let resolvedSupplierConfidence: number | null | undefined = undefined;
+    let resolvedSupplierMatchType: string | null = null;
 
     if (rawText) {
       const parsedInvoice = await parseInvoiceWithGemini(rawText);
@@ -489,6 +497,18 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
 
+    if (!invoice.supplierId && metadata.supplierName) {
+      const supplierMatch =
+        (await matchInvoiceSupplier(metadata.supplierName, enterpriseId).catch(() => null)) ??
+        (rawText ? await matchInvoiceSupplier(rawText, enterpriseId).catch(() => null) : null);
+
+      if (supplierMatch) {
+        resolvedSupplierId = supplierMatch.supplierId;
+        resolvedSupplierConfidence = supplierMatch.confidence;
+        resolvedSupplierMatchType = supplierMatch.matchType;
+      }
+    }
+
     itemsBeforeFilter = parsedItems.length;
     const filterResult = filterInvoiceItems(parsedItems);
     parsedItems = filterResult.accepted;
@@ -548,7 +568,7 @@ export async function POST(request: Request, context: RouteContext) {
     const { createdItemsCount, reviewItemsCount, matchedItemsCount } = await createInvoiceItems({
       invoiceId: id,
       enterpriseId,
-      supplierId: invoice.supplierId,
+      supplierId: resolvedSupplierId,
       items: parsedItems,
     });
 
@@ -569,7 +589,9 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     await updateInvoiceMetadata(id, {
+      ...(invoice.supplierId ? {} : { supplierId: resolvedSupplierId }),
       ...metadata,
+      confidence: resolvedSupplierConfidence,
       status: createdItemsCount === 0 || reviewItemsCount > 0 ? "needs_review" : "parsed",
     });
 
@@ -589,6 +611,7 @@ export async function POST(request: Request, context: RouteContext) {
       filteredItemsCount: createdItemsCount,
       rejectedItems,
       columns,
+      supplierMatchType: resolvedSupplierMatchType,
       message: visionUsed
         ? "Текст OCR был плохой, товары разобраны по изображению."
         : fallbackUsed
