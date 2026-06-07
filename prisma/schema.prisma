@@ -97,6 +97,7 @@ model Enterprise {
   address            String
   phone              String
   suppliers          Supplier[]
+  supplierAliases    SupplierAlias[]
   documents          Document[]
   products           Product[]
   productMasters     ProductMaster[]
@@ -132,6 +133,7 @@ model Supplier {
   optimizationResults OrderOptimizationResult[]
   smartOrderManualSelections SmartOrderManualSelection[]
   productIdentityRules ProductIdentityRule[]
+  aliases             SupplierAlias[]
   invoiceDocuments    InvoiceDocument[]
   invoicePriceChanges InvoicePriceChange[]
   createdAt           DateTime                  @default(now())
@@ -139,6 +141,25 @@ model Supplier {
 
   @@index([enterpriseId])
   @@index([enterpriseId, archivedAt])
+}
+
+model SupplierAlias {
+  id              String     @id @default(cuid())
+  enterpriseId    String
+  supplierId      String
+  value           String
+  normalizedValue String
+  type            String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  enterprise      Enterprise @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  supplier        Supplier   @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([enterpriseId])
+  @@index([supplierId])
+  @@index([normalizedValue])
+  @@unique([enterpriseId, normalizedValue])
 }
 
 model Document {
