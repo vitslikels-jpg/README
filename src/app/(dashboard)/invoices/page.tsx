@@ -42,6 +42,14 @@ type UploadResultSummary = {
   note: string | null;
 };
 
+type BatchInvoiceProcessResult = {
+  invoiceId: string;
+  invoiceNumber: string | null;
+  itemsCount?: number;
+  reviewItemsCount?: number;
+  error?: string;
+};
+
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const MAX_FILES_PER_UPLOAD = 10;
 const acceptedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -137,6 +145,9 @@ export default function InvoicesPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [uploadResult, setUploadResult] = useState<UploadResultSummary | null>(null);
+  const [isProcessingNewInvoices, setIsProcessingNewInvoices] = useState(false);
+  const [processingNewInvoicesProgress, setProcessingNewInvoicesProgress] = useState("");
+  const [processingNewInvoicesResults, setProcessingNewInvoicesResults] = useState<BatchInvoiceProcessResult[]>([]);
 
   const loadInvoices = useCallback(async (enterpriseId: string, signal?: AbortSignal) => {
     setIsLoading(true);
@@ -222,6 +233,106 @@ export default function InvoicesPage() {
       icon: SearchCheck,
     },
   ];
+  const unprocessedInvoices = useMemo(
+    () => invoices.filter((invoice) => invoice.status === "uploaded" || invoice.itemsCount === 0),
+    [invoices],
+  );
+
+  async function handleProcessNewInvoices() {
+    if (!activeEnterpriseId || unprocessedInvoices.length === 0) {
+      return;
+    }
+
+    setIsProcessingNewInvoices(true);
+    setProcessingNewInvoicesResults([]);
+    setProcessingNewInvoicesProgress("");
+    setErrorMessage("");
+    setSuccessMessage("");
+    setUploadResult(null);
+
+    const results: BatchInvoiceProcessResult[] = [];
+
+    for (const [index, invoice] of unprocessedInvoices.entries()) {
+      const invoiceLabel = invoice.invoiceNumber ? `№${invoice.invoiceNumber}` : "без номера";
+      setProcessingNewInvoicesProgress(`Обрабатывается ${index + 1} из ${unprocessedInvoices.length}: ${invoiceLabel}`);
+
+      try {
+        const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
+
+        const processResponse = await fetch(`/api/invoices/${invoice.id}/process?${query.toString()}`, {
+          method: "POST",
+        });
+        const processPayload = (await processResponse.json().catch(() => null)) as { message?: string } | null;
+
+        if (!processResponse.ok) {
+          throw new Error(processPayload?.message ?? "Не удалось распознать текст.");
+        }
+
+        const aiResponse = await fetch(`/api/invoices/${invoice.id}/ai-parse?${query.toString()}`, {
+          method: "POST",
+        });
+        const aiPayload = (await aiResponse.json().catch(() => null)) as { message?: string } | null;
+
+        if (!aiResponse.ok) {
+          throw new Error(aiPayload?.message ?? "AI не нашёл товары.");
+        }
+
+        const detectResponse = await fetch(`/api/invoices/${invoice.id}/detect-price-changes`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            enterpriseId: activeEnterpriseId,
+          }),
+        });
+        const detectPayload = (await detectResponse.json().catch(() => null)) as { message?: string } | null;
+
+        if (!detectResponse.ok) {
+          throw new Error(detectPayload?.message ?? "Не удалось проверить изменения цен.");
+        }
+
+        const detailsResponse = await fetch(`/api/invoices/${invoice.id}?${query.toString()}`, {
+          cache: "no-store",
+        });
+        const detailsPayload = (await detailsResponse.json().catch(() => null)) as
+          | {
+              invoice?: {
+                invoiceNumber?: string | null;
+                items?: Array<{ needsReview?: boolean }>;
+              };
+              message?: string;
+            }
+          | null;
+
+        if (!detailsResponse.ok || !detailsPayload?.invoice) {
+          throw new Error(detailsPayload?.message ?? "Не удалось обновить данные накладной.");
+        }
+
+        const itemsCount = detailsPayload.invoice.items?.length ?? 0;
+        const reviewItemsCount = detailsPayload.invoice.items?.filter((item) => item.needsReview).length ?? 0;
+
+        results.push({
+          invoiceId: invoice.id,
+          invoiceNumber: detailsPayload.invoice.invoiceNumber ?? invoice.invoiceNumber,
+          itemsCount,
+          reviewItemsCount,
+        });
+      } catch (error) {
+        results.push({
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          error: error instanceof Error ? error.message : "Не удалось обработать накладную.",
+        });
+      }
+    }
+
+    await loadInvoices(activeEnterpriseId);
+    setProcessingNewInvoicesResults(results);
+    setProcessingNewInvoicesProgress("");
+    setSuccessMessage("Обработка завершена.");
+    setIsProcessingNewInvoices(false);
+  }
 
   async function handleFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
@@ -408,6 +519,20 @@ export default function InvoicesPage() {
             );
           })}
         </div>
+
+        {unprocessedInvoices.length > 0 ? (
+          <div className="invoiceItemEditActions">
+            <span className="invoiceHint">Найдено {unprocessedInvoices.length} накладных без разобранных товаров</span>
+            <button
+              type="button"
+              className="secondaryButton compactButton"
+              onClick={() => void handleProcessNewInvoices()}
+              disabled={!activeEnterpriseId || isUploading || isLoading || isProcessingNewInvoices}
+            >
+              {isProcessingNewInvoices ? "Обрабатываем..." : "Распознать новые накладные"}
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {!activeEnterpriseId ? (
@@ -439,6 +564,21 @@ export default function InvoicesPage() {
                   ))}
                 </ul>
               ) : null}
+            </div>
+          ) : null}
+          {processingNewInvoicesProgress ? <p className="invoiceHint">{processingNewInvoicesProgress}</p> : null}
+          {processingNewInvoicesResults.length > 0 ? (
+            <div className="successText">
+              <ul>
+                {processingNewInvoicesResults.map((result) => (
+                  <li key={result.invoiceId}>
+                    {result.invoiceNumber ? `№${result.invoiceNumber}` : "Номер не распознан"}{" "}
+                    {result.error
+                      ? `— ошибка: ${result.error}`
+                      : `— товаров ${result.itemsCount ?? 0}, требует проверки ${result.reviewItemsCount ?? 0}`}
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
 
