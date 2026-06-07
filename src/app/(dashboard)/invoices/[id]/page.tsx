@@ -1499,26 +1499,22 @@ export default function InvoiceDetailsPage() {
     );
   }
 
-  if (!invoice) {
-    return null;
-  }
-
-  const invoiceFiles = getInvoiceFiles(invoice);
+  const invoiceFiles = invoice ? getInvoiceFiles(invoice) : [];
   const invoiceImageFiles = useMemo(
     () => invoiceFiles.filter((file) => detectFileKind(file.fileUrl, file.originalFileName) === "image" && file.fileUrl),
     [invoiceFiles],
   );
   const currentPreviewFile = previewImage ? invoiceImageFiles[previewImage.index] ?? null : null;
-  const productSearchItem = productSearchItemId ? invoice.items.find((item) => item.id === productSearchItemId) ?? null : null;
-  const reviewItemsCount = invoice.items.filter((item) => item.needsReview).length;
-  const pendingPriceChangesCount = invoice.priceChanges.filter((change) => change.status === "pending").length;
-  const hasRawText = Boolean(invoice.rawText?.trim());
-  const hasSupplier = Boolean(invoice.supplierId);
-  const hasItems = invoice.items.length > 0;
-  const hasPriceChanges = invoice.priceChanges.length > 0;
-  const priceChangesByItemId = new Map(invoice.priceChanges.map((change) => [change.invoiceItemId, change]));
+  const productSearchItem = productSearchItemId && invoice ? invoice.items.find((item) => item.id === productSearchItemId) ?? null : null;
+  const reviewItemsCount = invoice?.items.filter((item) => item.needsReview).length ?? 0;
+  const pendingPriceChangesCount = invoice?.priceChanges.filter((change) => change.status === "pending").length ?? 0;
+  const hasRawText = Boolean(invoice?.rawText?.trim());
+  const hasSupplier = Boolean(invoice?.supplierId);
+  const hasItems = (invoice?.items.length ?? 0) > 0;
+  const hasPriceChanges = (invoice?.priceChanges.length ?? 0) > 0;
+  const priceChangesByItemId = new Map((invoice?.priceChanges ?? []).map((change) => [change.invoiceItemId, change]));
   const priceChangesChecked = hasItems && pendingPriceChangesCount === 0;
-  const areAllItemsSelected = hasItems && selectedItemIds.length === invoice.items.length;
+  const areAllItemsSelected = hasItems && selectedItemIds.length === (invoice?.items.length ?? 0);
   const isBusy =
     isSavingRawText ||
     isProcessing ||
@@ -1536,12 +1532,12 @@ export default function InvoiceDetailsPage() {
     isSavingProduct ||
     updatingPriceChangeId !== null;
   const processSteps = [
-    { label: "Файл загружен", done: Boolean(invoice.fileUrl) },
+    { label: "Файл загружен", done: Boolean(invoice?.fileUrl) },
     { label: "Текст распознан", done: hasRawText },
     { label: "Поставщик выбран", done: hasSupplier },
     { label: "Товары разобраны", done: hasItems },
     { label: "Цены проверены", done: priceChangesChecked },
-    { label: "Завершено", done: invoice.status === "approved" },
+    { label: "Завершено", done: invoice?.status === "approved" },
   ];
 
   const closePreviewModal = useCallback(() => {
@@ -1649,6 +1645,10 @@ export default function InvoiceDetailsPage() {
       target.removeEventListener("wheel", handleWheel);
     };
   }, [changePreviewZoom, previewImage]);
+
+  if (!invoice) {
+    return null;
+  }
 
   return (
     <div className="pageStack">
