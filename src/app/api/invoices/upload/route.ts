@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { jsonUtf8 } from "@/lib/http";
 import { detectInvoiceDocumentMetadata } from "@/lib/invoice-document-detector";
+import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -25,6 +26,45 @@ const extensionByMimeType: Record<string, string> = {
   "image/webp": ".webp",
   "application/pdf": ".pdf",
 };
+
+type StoredFile = {
+  fileUrl: string;
+  storageKey: string;
+  originalFileName: string;
+  mimeType: string | null;
+  pageIndex: number;
+};
+
+type DetectedFileMetadata = {
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  supplierName: string | null;
+  totalAmount: number | null;
+  confidence: number | null;
+};
+
+type GroupedStoredFile = StoredFile & {
+  detectedMetadata: DetectedFileMetadata | null;
+};
+
+function buildGroupKey(metadata: DetectedFileMetadata | null) {
+  if (!metadata?.invoiceNumber) {
+    return "unknown";
+  }
+
+  return [
+    metadata.supplierName?.trim().toLowerCase() || "",
+    metadata.invoiceNumber.trim().toLowerCase(),
+    metadata.invoiceDate?.trim().toLowerCase() || "",
+  ].join("::");
+}
+
+function pickGroupMetadata(files: GroupedStoredFile[]) {
+  return files
+    .map((file) => file.detectedMetadata)
+    .filter((metadata): metadata is DetectedFileMetadata => Boolean(metadata))
+    .sort((left, right) => (right.confidence ?? 0) - (left.confidence ?? 0))[0] ?? null;
+}
 
 export async function POST(request: Request) {
   const formData = await request.formData();
@@ -66,7 +106,7 @@ export async function POST(request: Request) {
 
   try {
     await mkdir(UPLOAD_DIRECTORY, { recursive: true });
-    const storedFiles = [];
+    const storedFiles: StoredFile[] = [];
 
     for (const [index, file] of files.entries()) {
       const extension = extensionByMimeType[file.type];
@@ -87,24 +127,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const firstFile = storedFiles[0];
-
-    const invoice = await prisma.invoiceDocument.create({
-      data: {
-        enterpriseId,
-        originalFileName: firstFile?.originalFileName ?? null,
-        fileUrl: firstFile?.fileUrl ?? null,
-        storageKey: firstFile?.storageKey ?? null,
-        status: "uploaded",
-        files: {
-          create: storedFiles,
-        },
-      },
-      select: {
-        id: true,
-        status: true,
-      },
-    });
+    const detectedFiles: GroupedStoredFile[] = [];
 
     for (const file of storedFiles) {
       try {
@@ -117,20 +140,97 @@ export async function POST(request: Request) {
           totalAmount: metadata?.totalAmount ?? null,
           confidence: metadata?.confidence ?? null,
         });
+        detectedFiles.push({
+          ...file,
+          detectedMetadata: metadata,
+        });
       } catch (error) {
         console.warn("[invoice-document-detector:failed]", {
           fileName: file.originalFileName,
           message: error instanceof Error ? error.message : "Unknown error",
         });
+        detectedFiles.push({
+          ...file,
+          detectedMetadata: null,
+        });
       }
     }
 
+    const groupedFiles =
+      detectedFiles.length <= 1
+        ? new Map<string, GroupedStoredFile[]>([["single", detectedFiles]])
+        : detectedFiles.reduce((groups, file) => {
+            const groupKey = buildGroupKey(file.detectedMetadata);
+            const current = groups.get(groupKey);
+
+            if (current) {
+              current.push(file);
+            } else {
+              groups.set(groupKey, [file]);
+            }
+
+            return groups;
+          }, new Map<string, GroupedStoredFile[]>());
+
+    const createdInvoices = [];
+
+    for (const groupFiles of groupedFiles.values()) {
+      const normalizedFiles = groupFiles
+        .sort((left, right) => left.pageIndex - right.pageIndex)
+        .map((file, index) => ({
+          fileUrl: file.fileUrl,
+          storageKey: file.storageKey,
+          originalFileName: file.originalFileName,
+          mimeType: file.mimeType,
+          pageIndex: index,
+        }));
+      const firstFile = normalizedFiles[0];
+      const groupMetadata = pickGroupMetadata(groupFiles);
+      const supplierMatch = groupMetadata?.supplierName ? await matchInvoiceSupplier(groupMetadata.supplierName, enterpriseId).catch(() => null) : null;
+
+      const invoice = await prisma.invoiceDocument.create({
+        data: {
+          enterpriseId,
+          supplierId: supplierMatch?.supplierId ?? null,
+          originalFileName: firstFile?.originalFileName ?? null,
+          fileUrl: firstFile?.fileUrl ?? null,
+          storageKey: firstFile?.storageKey ?? null,
+          status: "uploaded",
+          detectedSupplierName: groupMetadata?.supplierName ?? null,
+          confidence: supplierMatch?.confidence ?? groupMetadata?.confidence ?? null,
+          invoiceNumber: groupMetadata?.invoiceNumber ?? null,
+          invoiceDate: groupMetadata?.invoiceDate ? new Date(groupMetadata.invoiceDate) : null,
+          totalAmount: groupMetadata?.totalAmount ?? null,
+          files: {
+            create: normalizedFiles,
+          },
+        },
+        select: {
+          id: true,
+          status: true,
+          invoiceNumber: true,
+        },
+      });
+
+      createdInvoices.push({
+        ...invoice,
+        filesCount: normalizedFiles.length,
+      });
+    }
+
+    console.info("[invoice-upload:grouping]", {
+      filesCount: storedFiles.length,
+      detectedDocumentsCount: createdInvoices.length,
+      invoiceNumbers: createdInvoices.map((invoice) => invoice.invoiceNumber ?? null),
+      splitApplied: storedFiles.length > 1 && createdInvoices.length > 1,
+    });
+
     return jsonUtf8(
       {
-        invoice: {
-          ...invoice,
-          filesCount: storedFiles.length,
-        },
+        invoice: createdInvoices[0] ?? null,
+        invoices: createdInvoices,
+        createdCount: createdInvoices.length,
+        splitApplied: storedFiles.length > 1 && createdInvoices.length > 1,
       },
       { status: 201 },
     );
