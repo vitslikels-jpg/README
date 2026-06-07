@@ -8,7 +8,7 @@ import { useEnterprise } from "@/features/enterprises/components/enterprise-cont
 
 type InvoiceStatus = "uploaded" | "processing" | "needs_review" | "parsed" | "approved" | "failed";
 type PriceChangeStatus = "pending" | "approved" | "rejected";
-type SupplierMatchType = "phone" | "email" | "exact_name" | "contains_name";
+type SupplierMatchType = "alias_exact" | "alias_contains" | "phone" | "email" | "name_exact" | "name_contains";
 
 type InvoiceFile = {
   id: string;
@@ -331,10 +331,12 @@ function getCalculatedLineTotal(item: InvoiceItem) {
 }
 
 const supplierMatchTypeLabels: Record<SupplierMatchType, string> = {
+  alias_exact: "Точное совпадение alias",
+  alias_contains: "Совпадение по alias",
   phone: "\u0421\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043f\u043e \u0442\u0435\u043b\u0435\u0444\u043e\u043d\u0443",
   email: "\u0421\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043f\u043e email",
-  exact_name: "\u0422\u043e\u0447\u043d\u043e\u0435 \u0441\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044f",
-  contains_name: "\u0421\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043f\u043e \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044e",
+  name_exact: "\u0422\u043e\u0447\u043d\u043e\u0435 \u0441\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044f",
+  name_contains: "\u0421\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435 \u043f\u043e \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044e",
 };
 
 function buildItemEditDraft(item: InvoiceItem): EditInvoiceItemDraft {
@@ -1315,7 +1317,7 @@ export default function InvoiceDetailsPage() {
   }
 
   async function handleSelectSupplier(supplierId: string | null) {
-    if (!activeEnterpriseId || !params?.id) {
+    if (!activeEnterpriseId || !params?.id || !invoice) {
       return;
     }
 
@@ -1325,6 +1327,30 @@ export default function InvoiceDetailsPage() {
     setSupplierSearchError("");
 
     try {
+      let aliasAlreadyExists = false;
+
+      if (supplierId && !invoice.supplierId && invoice.detectedSupplierName?.trim()) {
+        const aliasResponse = await fetch(`/api/suppliers/${supplierId}/aliases`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            enterpriseId: activeEnterpriseId,
+            value: invoice.detectedSupplierName.trim(),
+            type: "invoice_name",
+          }),
+        });
+
+        const aliasPayload = (await aliasResponse.json().catch(() => null)) as { message?: string } | null;
+
+        if (!aliasResponse.ok && aliasResponse.status !== 409) {
+          throw new Error(aliasPayload?.message ?? "Не удалось сохранить alias поставщика.");
+        }
+
+        aliasAlreadyExists = aliasResponse.status === 409;
+      }
+
       const response = await fetch(`/api/invoices/${params.id}/supplier`, {
         method: "PATCH",
         headers: {
@@ -1344,7 +1370,17 @@ export default function InvoiceDetailsPage() {
 
       await loadInvoice(activeEnterpriseId, params.id);
       handleCloseSupplierSearch();
-      setSuccessMessage(supplierId ? "РџРѕСЃС‚Р°РІС‰РёРє РґР»СЏ РЅР°РєР»Р°РґРЅРѕР№ СЃРѕС…СЂР°РЅС‘РЅ." : "РџРѕСЃС‚Р°РІС‰РёРє РґР»СЏ РЅР°РєР»Р°РґРЅРѕР№ СЃР±СЂРѕС€РµРЅ.");
+      if (!supplierId) {
+        setSuccessMessage("Поставщик для накладной сброшен.");
+      } else if (!invoice.supplierId && invoice.detectedSupplierName?.trim()) {
+        setSuccessMessage(
+          aliasAlreadyExists
+            ? "Такой alias уже был сохранён. Накладная привязана к поставщику."
+            : "Alias сохранён. Накладная привязана к поставщику.",
+        );
+      } else {
+        setSuccessMessage("Поставщик для накладной сохранён.");
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РїРѕСЃС‚Р°РІС‰РёРєР°.";
       setSupplierSearchError(message);
@@ -1777,55 +1813,11 @@ export default function InvoiceDetailsPage() {
         {!invoice.supplierId && invoice.detectedSupplierName ? (
           <div className="invoiceSupplierActions">
             <p className="invoiceHint">
-              AI РЅР°С€С‘Р»: <strong>{invoice.detectedSupplierName}</strong>
+              AI нашёл поставщика: <strong>{invoice.detectedSupplierName}</strong>
             </p>
             <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
-              РЎРІСЏР·Р°С‚СЊ СЃ РїРѕСЃС‚Р°РІС‰РёРєРѕРј
+              Связать с существующим поставщиком
             </button>
-          </div>
-        ) : null}
-
-        {isSupplierSearchOpen ? (
-          <div className="invoiceItemSearchPanel invoiceSupplierSearchPanel">
-            <label className="field">
-              <span>РџРѕРёСЃРє РїРѕСЃС‚Р°РІС‰РёРєР°</span>
-              <input
-                type="text"
-                value={supplierSearchQuery}
-                onChange={(event) => setSupplierSearchQuery(event.target.value)}
-                placeholder="РќР°С‡РЅРёС‚Рµ РІРІРѕРґРёС‚СЊ РЅР°Р·РІР°РЅРёРµ РїРѕСЃС‚Р°РІС‰РёРєР°"
-                disabled={isBusy}
-              />
-            </label>
-
-            <div className="invoiceItemSearchActions">
-              <button type="button" className="secondaryButton compactButton" onClick={handleCloseSupplierSearch} disabled={isBusy}>
-                Р—Р°РєСЂС‹С‚СЊ
-              </button>
-            </div>
-
-            {supplierSearchError ? <p className="errorText">{supplierSearchError}</p> : null}
-            {isSearchingSuppliers ? <p className="invoiceHint">РС‰РµРј РїРѕСЃС‚Р°РІС‰РёРєРѕРІ...</p> : null}
-            {!isSearchingSuppliers && supplierSearchQuery.trim() && supplierSearchResults.length === 0 ? (
-              <p className="invoiceHint">РџРѕСЃС‚Р°РІС‰РёРєРё РЅРµ РЅР°Р№РґРµРЅС‹</p>
-            ) : null}
-
-            {supplierSearchResults.length > 0 ? (
-              <div className="invoiceItemSearchResults">
-                {supplierSearchResults.map((supplier) => (
-                  <button
-                    key={supplier.id}
-                    type="button"
-                    className="invoiceItemSearchResult"
-                    onClick={() => void handleSelectSupplier(supplier.id)}
-                    disabled={isBusy}
-                  >
-                    <strong>{supplier.name}</strong>
-                    <span>{supplier.email || supplier.phone || "Р‘РµР· РєРѕРЅС‚Р°РєС‚РѕРІ"}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
           </div>
         ) : null}
       </section>
@@ -2281,6 +2273,70 @@ export default function InvoiceDetailsPage() {
                         disabled={isBusy}
                       >
                         Выбрать
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {isSupplierSearchOpen ? (
+        <div className="invoiceSearchModal" onClick={handleCloseSupplierSearch} role="presentation">
+          <div className="invoiceSearchModalBody" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Выбрать поставщика">
+            <div className="invoiceSearchModalHeader">
+              <div>
+                <p className="panelEyebrow">Поставщик</p>
+                <h2 className="sectionTitle">Связать с существующим поставщиком</h2>
+                {invoice?.detectedSupplierName ? <p className="pageDescription">AI нашёл: {invoice.detectedSupplierName}</p> : null}
+              </div>
+              <button type="button" className="secondaryButton compactButton" onClick={handleCloseSupplierSearch} disabled={isBusy}>
+                Закрыть
+              </button>
+            </div>
+
+            <div className="invoiceSearchModalToolbar">
+              <label className="field">
+                <span>Поиск поставщика</span>
+                <input
+                  type="text"
+                  value={supplierSearchQuery}
+                  onChange={(event) => setSupplierSearchQuery(event.target.value)}
+                  placeholder="Начните вводить название поставщика"
+                  disabled={isBusy}
+                />
+              </label>
+            </div>
+
+            {supplierSearchError ? <p className="errorText">{supplierSearchError}</p> : null}
+            {isSearchingSuppliers ? <p className="invoiceHint">Ищем поставщиков...</p> : null}
+
+            {!isSearchingSuppliers && supplierSearchQuery.trim() && supplierSearchResults.length === 0 ? (
+              <div className="emptyState invoiceSearchEmptyState">
+                <p className="emptyStateTitle">Поставщики не найдены</p>
+                <p className="emptyStateText">Попробуйте другое название или часть названия.</p>
+              </div>
+            ) : null}
+
+            {supplierSearchResults.length > 0 ? (
+              <>
+                <p className="invoiceHint">Найдено поставщиков: {supplierSearchResults.length}</p>
+                <div className="invoiceSearchModalResults">
+                  {supplierSearchResults.map((supplier) => (
+                    <div key={supplier.id} className="invoiceSearchModalResultCard">
+                      <div className="invoiceSearchModalResultMeta">
+                        <strong>{supplier.name}</strong>
+                        <span>{supplier.email || supplier.phone || "Без контактов"}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="primaryButton compactButton"
+                        onClick={() => void handleSelectSupplier(supplier.id)}
+                        disabled={isBusy}
+                      >
+                        Связать
                       </button>
                     </div>
                   ))}
