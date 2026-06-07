@@ -66,6 +66,26 @@ function pickGroupMetadata(files: GroupedStoredFile[]) {
     .sort((left, right) => (right.confidence ?? 0) - (left.confidence ?? 0))[0] ?? null;
 }
 
+function parseDetectedInvoiceDate(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedValue)) {
+    const parsedDate = new Date(`${normalizedValue}T00:00:00.000Z`);
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+  }
+
+  const fallbackDate = new Date(normalizedValue);
+  return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
+}
+
 export async function POST(request: Request) {
   const formData = await request.formData();
   const enterpriseId = String(formData.get("enterpriseId") ?? "").trim();
@@ -199,7 +219,7 @@ export async function POST(request: Request) {
           detectedSupplierName: groupMetadata?.supplierName ?? null,
           confidence: supplierMatch?.confidence ?? groupMetadata?.confidence ?? null,
           invoiceNumber: groupMetadata?.invoiceNumber ?? null,
-          invoiceDate: groupMetadata?.invoiceDate ? new Date(groupMetadata.invoiceDate) : null,
+          invoiceDate: parseDetectedInvoiceDate(groupMetadata?.invoiceDate ?? null),
           totalAmount: groupMetadata?.totalAmount ?? null,
           files: {
             create: normalizedFiles,
