@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, FileText, Minus, Plus, RotateCcw, X } from "lucide-react";
 import { useEnterprise } from "@/features/enterprises/components/enterprise-context";
+import { deriveVatFields } from "@/lib/invoice-vat";
 
 type InvoiceStatus = "uploaded" | "processing" | "needs_review" | "parsed" | "approved" | "failed";
 type PriceChangeStatus = "pending" | "approved" | "rejected";
@@ -376,6 +377,19 @@ function getCalculatedLineTotal(item: InvoiceItem) {
   }
 
   return String(quantity * priceWithVat);
+}
+
+function getDisplayVatFields(item: InvoiceItem) {
+  const priceWithoutVat = item.priceWithoutVat ? Number(item.priceWithoutVat) : null;
+  const priceWithVat = item.priceWithVat ? Number(item.priceWithVat) : null;
+  const vatRate = item.vatRate ? Number(item.vatRate) : null;
+  const derived = deriveVatFields({
+    priceWithoutVat: priceWithoutVat !== null && Number.isFinite(priceWithoutVat) ? priceWithoutVat : null,
+    priceWithVat: priceWithVat !== null && Number.isFinite(priceWithVat) ? priceWithVat : null,
+    vatRate: vatRate !== null && Number.isFinite(vatRate) ? vatRate : null,
+  });
+
+  return derived;
 }
 
 const supplierMatchTypeLabels: Record<SupplierMatchType, string> = {
@@ -2144,7 +2158,9 @@ export default function InvoiceDetailsPage() {
                   </th>
                   <th>Товар</th>
                   <th>Кол-во</th>
-                  <th>Цена</th>
+                  <th>Цена без НДС</th>
+                  <th>НДС</th>
+                  <th>Цена с НДС</th>
                   <th>Сумма</th>
                   <th>Изменение</th>
                   <th>Статус</th>
@@ -2153,6 +2169,9 @@ export default function InvoiceDetailsPage() {
               </thead>
               <tbody>
                 {itemRows.map(({ item, priceChange, itemStatus, lineTotal, differenceAmount, differencePercent }) => {
+                  const vatFields = getDisplayVatFields(item);
+                  const showDerivedWithoutVat = !item.priceWithoutVat && vatFields.derivedPriceWithoutVat;
+                  const showDerivedWithVat = !item.priceWithVat && vatFields.derivedPriceWithVat;
                   return (
                     <Fragment key={item.id}>
                       <tr className={item.matchedProductStatus === "new" ? "invoiceItemRowNew" : undefined}>
@@ -2177,8 +2196,17 @@ export default function InvoiceDetailsPage() {
                           <span>{item.unit || "—"}</span>
                         </td>
                         <td>
-                          <strong>{formatMoney(item.priceWithVat)}</strong>
+                          <strong>{formatMoney(vatFields.priceWithoutVat === null ? null : String(vatFields.priceWithoutVat))}</strong>
+                          {showDerivedWithoutVat ? <span>расчёт по НДС</span> : <span>—</span>}
+                        </td>
+                        <td>
+                          <strong>{formatPercent(item.vatRate)}</strong>
+                          <span>Ставка НДС</span>
+                        </td>
+                        <td>
+                          <strong>{formatMoney(vatFields.priceWithVat === null ? null : String(vatFields.priceWithVat))}</strong>
                           <span>{item.matchedProductPrice ? `Было: ${formatMoney(item.matchedProductPrice)}` : "—"}</span>
+                          {showDerivedWithVat ? <span>расчёт по НДС</span> : null}
                           {item.priceComparisonNote ? <span>{item.priceComparisonNote}</span> : null}
                         </td>
                         <td>
@@ -2272,7 +2300,7 @@ export default function InvoiceDetailsPage() {
 
                       {editingItemId === item.id && editItemDraft ? (
                         <tr className="invoiceItemSearchRow">
-                          <td colSpan={8}>
+                          <td colSpan={10}>
                             <div className="invoiceItemSearchPanel invoiceItemEditPanel">
                               <div className="invoiceItemEditGrid">
                                 <label className="field">

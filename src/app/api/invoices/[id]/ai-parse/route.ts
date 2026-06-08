@@ -1,4 +1,5 @@
 import { parseInvoiceWithGemini } from "@/lib/invoice-gemini-parser";
+import { Prisma } from "@prisma/client";
 import {
   InvoiceVisionUnsupportedError,
   parseInvoiceWithGeminiVision,
@@ -10,6 +11,7 @@ import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
 import { sanitizeMoney, sanitizeQuantity, sanitizeVatRate } from "@/lib/invoice-number-sanitize";
 import { matchInvoiceProduct } from "@/lib/invoice-product-match";
 import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
+import { deriveVatFields } from "@/lib/invoice-vat";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -104,8 +106,16 @@ function sanitizeParsedItem(item: {
     lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
   };
 
+  const derivedVatFields = deriveVatFields({
+    priceWithoutVat: sanitizedItem.priceWithoutVat,
+    priceWithVat: sanitizedItem.priceWithVat,
+    vatRate: sanitizedItem.vatRate,
+  });
+
   return {
     ...sanitizedItem,
+    priceWithoutVat: derivedVatFields.priceWithoutVat,
+    priceWithVat: derivedVatFields.priceWithVat,
     forcedReview,
   };
 }
@@ -207,8 +217,18 @@ async function createInvoiceItems(params: {
         matchedProductId: null as string | null,
         quantity: sanitizedQuantity.value,
         unit: item.unit,
-        priceWithoutVat: sanitizedPriceWithoutVat.value,
-        priceWithVat: sanitizedPriceWithVat.value,
+        ...(() => {
+          const derivedVatFields = deriveVatFields({
+            priceWithoutVat: sanitizedPriceWithoutVat.value?.toNumber() ?? null,
+            priceWithVat: sanitizedPriceWithVat.value?.toNumber() ?? null,
+            vatRate: sanitizedVatRate.value?.toNumber() ?? null,
+          });
+
+          return {
+            priceWithoutVat: derivedVatFields.priceWithoutVat === null ? null : new Prisma.Decimal(derivedVatFields.priceWithoutVat),
+            priceWithVat: derivedVatFields.priceWithVat === null ? null : new Prisma.Decimal(derivedVatFields.priceWithVat),
+          };
+        })(),
         vatRate: sanitizedVatRate.value,
         lineTotal: sanitizedLineTotal.value,
         confidence: forcedReview ? Math.min(item.confidence ?? 0.5, 0.5) : item.confidence,

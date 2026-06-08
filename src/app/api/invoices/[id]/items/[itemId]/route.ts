@@ -1,5 +1,7 @@
+import { Prisma } from "@prisma/client";
 import { jsonUtf8 } from "@/lib/http";
 import { sanitizeMoney, sanitizeQuantity, sanitizeVatRate } from "@/lib/invoice-number-sanitize";
+import { deriveVatFields } from "@/lib/invoice-vat";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
 
@@ -16,6 +18,7 @@ type PatchBody = {
   productNameRaw?: string | null;
   quantity?: string | number | null;
   unit?: string | null;
+  priceWithoutVat?: string | number | null;
   priceWithVat?: string | number | null;
   lineTotal?: string | number | null;
   vatRate?: string | number | null;
@@ -105,6 +108,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       matchedProductId: true,
       quantity: true,
       unit: true,
+      priceWithoutVat: true,
       priceWithVat: true,
       lineTotal: true,
       vatRate: true,
@@ -120,11 +124,12 @@ export async function PATCH(request: Request, context: RouteContext) {
   const hasProductNameRaw = Object.prototype.hasOwnProperty.call(body, "productNameRaw");
   const hasQuantity = Object.prototype.hasOwnProperty.call(body, "quantity");
   const hasUnit = Object.prototype.hasOwnProperty.call(body, "unit");
+  const hasPriceWithoutVat = Object.prototype.hasOwnProperty.call(body, "priceWithoutVat");
   const hasPriceWithVat = Object.prototype.hasOwnProperty.call(body, "priceWithVat");
   const hasLineTotal = Object.prototype.hasOwnProperty.call(body, "lineTotal");
   const hasVatRate = Object.prototype.hasOwnProperty.call(body, "vatRate");
 
-  if (!hasMatchedProductId && !hasProductNameRaw && !hasQuantity && !hasUnit && !hasPriceWithVat && !hasLineTotal && !hasVatRate) {
+  if (!hasMatchedProductId && !hasProductNameRaw && !hasQuantity && !hasUnit && !hasPriceWithoutVat && !hasPriceWithVat && !hasLineTotal && !hasVatRate) {
     return jsonUtf8({ message: "Нет полей для обновления." }, { status: 400 });
   }
 
@@ -167,6 +172,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   let quantity = item.quantity;
+  let priceWithoutVat = item.priceWithoutVat;
   let priceWithVat = item.priceWithVat;
   let lineTotal = item.lineTotal;
   let vatRate = item.vatRate;
@@ -188,6 +194,13 @@ export async function PATCH(request: Request, context: RouteContext) {
       forcedReview = forcedReview || sanitizedPriceWithVat.forcedReview;
     }
 
+    if (hasPriceWithoutVat) {
+      const parsedPriceWithoutVat = parseNumberishInput(body.priceWithoutVat, "priceWithoutVat");
+      const sanitizedPriceWithoutVat = sanitizeMoney(parsedPriceWithoutVat);
+      priceWithoutVat = sanitizedPriceWithoutVat.value;
+      forcedReview = forcedReview || sanitizedPriceWithoutVat.forcedReview;
+    }
+
     if (hasLineTotal) {
       const parsedLineTotal = parseNumberishInput(body.lineTotal, "lineTotal");
       const sanitizedLineTotal = sanitizeMoney(parsedLineTotal);
@@ -207,6 +220,15 @@ export async function PATCH(request: Request, context: RouteContext) {
       { status: 400 },
     );
   }
+
+  const derivedVatFields = deriveVatFields({
+    priceWithoutVat: priceWithoutVat?.toNumber() ?? null,
+    priceWithVat: priceWithVat?.toNumber() ?? null,
+    vatRate: vatRate?.toNumber() ?? null,
+  });
+
+  priceWithoutVat = derivedVatFields.priceWithoutVat === null ? null : new Prisma.Decimal(derivedVatFields.priceWithoutVat);
+  priceWithVat = derivedVatFields.priceWithVat === null ? null : new Prisma.Decimal(derivedVatFields.priceWithVat);
 
   const unit = hasUnit ? (typeof body.unit === "string" ? body.unit.trim() || null : null) : item.unit;
   const hasStructuredFields = quantity !== null && Boolean(unit) && priceWithVat !== null;
@@ -230,7 +252,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       ...(hasProductNameRaw ? { productNameRaw } : {}),
       ...(hasQuantity ? { quantity } : {}),
       ...(hasUnit ? { unit } : {}),
-      ...(hasPriceWithVat ? { priceWithVat } : {}),
+      ...(hasPriceWithoutVat || hasPriceWithVat || hasVatRate ? { priceWithoutVat } : {}),
+      ...(hasPriceWithoutVat || hasPriceWithVat || hasVatRate ? { priceWithVat } : {}),
       ...(hasLineTotal ? { lineTotal } : {}),
       ...(hasVatRate ? { vatRate } : {}),
       needsReview,
@@ -258,6 +281,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       matchedProductBrand: updatedItem.matchedProduct?.brand ?? null,
       quantity: updatedItem.quantity?.toString() ?? null,
       unit: updatedItem.unit,
+      priceWithoutVat: updatedItem.priceWithoutVat?.toString() ?? null,
       priceWithVat: updatedItem.priceWithVat?.toString() ?? null,
       lineTotal: updatedItem.lineTotal?.toString() ?? null,
       vatRate: updatedItem.vatRate?.toString() ?? null,
