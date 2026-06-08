@@ -125,8 +125,8 @@ type InvoiceParseDebugInfo = {
 
 type InvoiceItemStatus =
   | "Готово"
-  | "Не сопоставлен"
-  | "Новый товар"
+  | "Нужно выбрать товар"
+  | "Новая позиция"
   | "Цена изменилась"
   | "Проверить цену"
   | "Проверить единицу"
@@ -283,7 +283,7 @@ function getMatchedProductLabel(item: InvoiceItem) {
       return "Новая позиция";
     }
 
-    return "Не сопоставлен";
+    return "Нужно выбрать товар";
   }
 
   return [item.matchedProductName, item.matchedProductArticle, item.matchedProductBrand].filter(Boolean).join(" \u2022 ");
@@ -291,11 +291,11 @@ function getMatchedProductLabel(item: InvoiceItem) {
 
 function getInvoiceItemStatus(item: InvoiceItem, change: InvoicePriceChange | null): InvoiceItemStatus {
   if (item.matchedProductStatus === "new" || (!item.matchedProductId && item.productCandidates.length === 0)) {
-    return "Новый товар";
+    return "Новая позиция";
   }
 
   if (!item.matchedProductId) {
-    return "Не сопоставлен";
+    return "Нужно выбрать товар";
   }
 
   if (!item.quantity) {
@@ -336,7 +336,7 @@ function getInvoiceItemStatusClassName(itemStatus: InvoiceItemStatus) {
     return "invoiceStatus-review";
   }
 
-  if (itemStatus === "Новый товар") {
+  if (itemStatus === "Новая позиция") {
     return "invoiceStatus-new";
   }
 
@@ -1523,20 +1523,20 @@ export default function InvoiceDetailsPage() {
   });
   const totalItemsCount = itemRows.length;
   const matchedItemsCount = itemRows.filter(({ item }) => Boolean(item.matchedProductId)).length;
-  const unmatchedItemsCount = itemRows.filter(({ itemStatus }) => itemStatus === "Не сопоставлен").length;
-  const newItemsCount = itemRows.filter(({ itemStatus }) => itemStatus === "Новый товар").length;
+  const unmatchedItemsCount = itemRows.filter(({ itemStatus }) => itemStatus === "Нужно выбрать товар").length;
+  const newItemsCount = itemRows.filter(({ itemStatus }) => itemStatus === "Новая позиция").length;
   const missingQuantityCount = itemRows.filter(({ itemStatus }) => itemStatus === "Нет количества").length;
   const missingPriceCount = itemRows.filter(({ itemStatus }) => itemStatus === "Нет цены").length;
   const unitReviewCount = itemRows.filter(({ itemStatus }) => itemStatus === "Проверить единицу").length;
   const priceReviewItemsCount = itemRows.filter(({ itemStatus }) => itemStatus === "Цена изменилась" || itemStatus === "Проверить цену").length;
   const problemItemsCount = itemRows.filter(({ itemStatus }) => itemStatus !== "Готово").length;
   const completionIssues = [
-    unmatchedItemsCount > 0 ? `${formatCount(unmatchedItemsCount, "товар не сопоставлен", "товара не сопоставлены", "товаров не сопоставлены")}` : null,
-    priceReviewItemsCount > 0 ? `${formatCount(priceReviewItemsCount, "строка требует проверки цены", "строки требуют проверки цены", "строк требуют проверки цены")}` : null,
-    newItemsCount > 0 ? `${formatCount(newItemsCount, "новая позиция не создана в каталоге", "новые позиции не созданы в каталоге", "новых позиций не созданы в каталоге")}` : null,
-    unitReviewCount > 0 ? `${formatCount(unitReviewCount, "строка требует проверки единицы цены", "строки требуют проверки единицы цены", "строк требуют проверки единицы цены")}` : null,
-    missingPriceCount > 0 ? `${formatCount(missingPriceCount, "строка без цены", "строки без цены", "строк без цены")}` : null,
-    missingQuantityCount > 0 ? `${formatCount(missingQuantityCount, "строка без количества", "строки без количества", "строк без количества")}` : null,
+    unmatchedItemsCount > 0 ? `Нужно выбрать товар: ${unmatchedItemsCount}` : null,
+    newItemsCount > 0 ? `Новые позиции: ${newItemsCount}` : null,
+    priceReviewItemsCount > 0 ? `Цены на проверке: ${priceReviewItemsCount}` : null,
+    unitReviewCount > 0 ? `Проверить единицу цены: ${unitReviewCount}` : null,
+    missingQuantityCount > 0 ? `Нет количества: ${missingQuantityCount}` : null,
+    missingPriceCount > 0 ? `Нет цены: ${missingPriceCount}` : null,
   ].filter((value): value is string => Boolean(value));
   const canApproveInvoice = completionIssues.length === 0 && invoice?.status !== "approved";
   const priceChangesChecked = hasItems && pendingPriceChangesCount === 0;
@@ -1779,6 +1779,10 @@ export default function InvoiceDetailsPage() {
             <strong>{invoice.invoiceNumber || "—"}</strong>
           </div>
           <div className="supplierMetaItem">
+            <span>Дата накладной</span>
+            <strong>{formatDate(invoice.invoiceDate)}</strong>
+          </div>
+          <div className="supplierMetaItem">
             <span>Сумма</span>
             <strong>{formatMoney(invoice.totalAmount)}</strong>
           </div>
@@ -1803,9 +1807,9 @@ export default function InvoiceDetailsPage() {
         <div className="invoiceCompletionChecks">
           <span>Всего строк: <strong>{totalItemsCount}</strong></span>
           <span>Сопоставлено товаров: <strong>{matchedItemsCount}</strong></span>
-          <span>Не сопоставлено: <strong>{unmatchedItemsCount}</strong></span>
+          <span>Нужно выбрать товар: <strong>{unmatchedItemsCount}</strong></span>
           <span>Новых товаров: <strong>{newItemsCount}</strong></span>
-          <span>Цен на проверке: <strong>{priceReviewItemsCount + pendingPriceChangesCount}</strong></span>
+          <span>Цен на проверке: <strong>{priceReviewItemsCount}</strong></span>
           <span>Строк с проблемами: <strong>{problemItemsCount}</strong></span>
         </div>
 
@@ -2103,9 +2107,9 @@ export default function InvoiceDetailsPage() {
                                   onClick={() => handleOpenProductSearch(item)}
                                   disabled={isBusy}
                                 >
-                                  {itemStatus === "Не сопоставлен" ? "Выбрать" : "Выбрать вручную"}
+                                  {itemStatus === "Нужно выбрать товар" ? "Выбрать" : "Выбрать вручную"}
                                 </button>
-                                {itemStatus === "Новый товар" ? (
+                                {itemStatus === "Новая позиция" ? (
                                   <button
                                     type="button"
                                     className="secondaryButton compactButton"
