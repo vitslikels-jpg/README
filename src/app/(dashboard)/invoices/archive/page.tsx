@@ -38,7 +38,7 @@ type InvoiceListItem = {
 
 const INVOICE_TABS = [
   { href: "/invoices", label: "Загрузка" },
-  { href: "/invoices/archive", label: "Загруженные" },
+  { href: "/invoices/archive", label: "Подтверждённые" },
 ] as const;
 
 const statusLabels: Record<InvoiceStatus, string> = {
@@ -117,7 +117,7 @@ export default function InvoicesArchivePage() {
     setErrorMessage("");
 
     try {
-      const params = new URLSearchParams({ enterpriseId });
+      const params = new URLSearchParams({ enterpriseId, status: "approved" });
       const response = await fetch(`/api/invoices?${params.toString()}`, {
         cache: "no-store",
         signal,
@@ -181,7 +181,7 @@ export default function InvoicesArchivePage() {
         <div className="invoicesHeroHeader">
           <div className="invoicesHeroCopy">
             <p className="panelEyebrow">Накладные</p>
-            <h2 className="pageTitle">Загруженные накладные</h2>
+            <h2 className="pageTitle">Подтверждённые накладные</h2>
             <p className="pageDescription">
               Здесь собраны все загруженные документы. Накладные сгруппированы по поставщикам, чтобы быстрее открывать нужный архив.
             </p>
@@ -220,7 +220,7 @@ export default function InvoicesArchivePage() {
           <div className="cardHeader">
             <div>
               <p className="panelEyebrow">Архив</p>
-              <h2 className="sectionTitle">Загруженные накладные</h2>
+              <h2 className="sectionTitle">Подтверждённые накладные</h2>
             </div>
           </div>
 
@@ -239,7 +239,7 @@ export default function InvoicesArchivePage() {
               <span className="invoicesEmptyIcon" aria-hidden="true">
                 <FileText size={28} strokeWidth={2} />
               </span>
-              <p className="emptyStateTitle">Загруженных накладных пока нет</p>
+              <p className="emptyStateTitle">Подтверждённых накладных пока нет</p>
               <p className="emptyStateText">После загрузки документы появятся здесь и будут сгруппированы по поставщикам.</p>
             </div>
           ) : (

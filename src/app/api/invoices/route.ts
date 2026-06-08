@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const enterpriseId = searchParams.get("enterpriseId")?.trim();
+  const statusFilter = searchParams.get("status")?.trim();
 
   if (!enterpriseId) {
     return jsonUtf8({ message: "Параметр enterpriseId обязателен." }, { status: 400 });
@@ -20,6 +21,11 @@ export async function GET(request: Request) {
     const documents = await prisma.invoiceDocument.findMany({
       where: {
         enterpriseId,
+        ...(statusFilter === "approved"
+          ? { status: "approved" }
+          : statusFilter === "active"
+            ? { status: { not: "approved" } }
+            : {}),
       },
       include: {
         files: {

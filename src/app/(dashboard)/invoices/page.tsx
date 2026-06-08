@@ -55,7 +55,7 @@ const MAX_FILES_PER_UPLOAD = 10;
 const acceptedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 const INVOICE_TABS = [
   { href: "/invoices", label: "Загрузка" },
-  { href: "/invoices/archive", label: "Загруженные" },
+  { href: "/invoices/archive", label: "Подтверждённые" },
 ] as const;
 
 const statusLabels: Record<InvoiceStatus, string> = {
@@ -160,6 +160,7 @@ export default function InvoicesPage() {
     try {
       const params = new URLSearchParams({
         enterpriseId,
+        status: "active",
       });
 
       const response = await fetch(`/api/invoices?${params.toString()}`, {
@@ -581,7 +582,7 @@ export default function InvoicesPage() {
           <div className="cardHeader">
             <div>
               <p className="panelEyebrow">Список</p>
-              <h2 className="sectionTitle">Последние загруженные</h2>
+              <h2 className="sectionTitle">В работе</h2>
             </div>
             <Link href="/invoices/archive" className="secondaryButton compactButton">
               Открыть все
@@ -631,7 +632,7 @@ export default function InvoicesPage() {
               <span className="invoicesEmptyIcon" aria-hidden="true">
                 <FileText size={28} strokeWidth={2} />
               </span>
-              <p className="emptyStateTitle">Накладных пока нет</p>
+              <p className="emptyStateTitle">Накладных в работе нет</p>
               <p className="emptyStateText">
                 Здесь появятся загруженные накладные, найденные товары и изменения цен.
               </p>
