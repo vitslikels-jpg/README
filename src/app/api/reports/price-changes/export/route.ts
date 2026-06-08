@@ -19,6 +19,7 @@ function formatDateTime(value: string | null) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Europe/Moscow",
   }).format(date);
 }
 
@@ -37,6 +38,7 @@ function formatDate(value: string | null) {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+    timeZone: "Europe/Moscow",
   }).format(date);
 }
 
