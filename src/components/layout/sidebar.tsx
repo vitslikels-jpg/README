@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import {
   Archive,
   BarChart3,
+  ChevronDown,
   FileText,
   Home,
   Layers3,
@@ -19,6 +20,7 @@ import {
 import { navigationItems, type NavigationItem } from "@/lib/navigation";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "citadel-sidebar-width";
+const SIDEBAR_EXPANDED_SECTIONS_STORAGE_KEY = "citadel-sidebar-expanded-sections";
 const SIDEBAR_MIN_WIDTH = 260;
 const SIDEBAR_MAX_WIDTH = 340;
 const SIDEBAR_DEFAULT_WIDTH = 260;
@@ -65,6 +67,10 @@ function NavigationIcon({ icon }: { icon: NavigationItem["icon"] }) {
   }
 }
 
+function isNestedRouteActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -77,6 +83,24 @@ export function Sidebar() {
 
     return Number.isFinite(parsedWidth) ? clampSidebarWidth(parsedWidth) : SIDEBAR_DEFAULT_WIDTH;
   });
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") {
+      return {};
+    }
+
+    const storedValue = window.localStorage.getItem(SIDEBAR_EXPANDED_SECTIONS_STORAGE_KEY);
+
+    if (!storedValue) {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(storedValue) as Record<string, boolean>;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
   const [isResizing, setIsResizing] = useState(false);
 
   useEffect(() => {
@@ -86,6 +110,14 @@ export function Sidebar() {
 
     window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(SIDEBAR_EXPANDED_SECTIONS_STORAGE_KEY, JSON.stringify(expandedSections));
+  }, [expandedSections]);
 
   useEffect(() => {
     if (!isResizing || typeof window === "undefined") {
@@ -139,6 +171,13 @@ export function Sidebar() {
     document.body.classList.add("sidebarResizing");
   }
 
+  function handleSectionToggle(href: string) {
+    setExpandedSections((current) => ({
+      ...current,
+      [href]: !current[href],
+    }));
+  }
+
   return (
     <aside className="sidebar" style={sidebarStyle}>
       <div className="sidebarBrand">
@@ -160,21 +199,64 @@ export function Sidebar() {
 
       <nav className="sidebarNav">
         {navigationItems.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href === "/invoices" && pathname.startsWith("/invoices/"));
+          const isItemActive =
+            item.href === "/invoices"
+              ? pathname === item.href || pathname.startsWith("/invoices/")
+              : item.href === "/reports"
+                ? pathname === item.href || pathname.startsWith("/reports/")
+                : isNestedRouteActive(pathname, item.href);
+
+          if (!item.children?.length) {
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`navItem ${item.icon === "smart" ? "navItemSmart" : ""} ${isItemActive ? "navItemActive" : ""}`}
+              >
+                <span className="navItemIcon" aria-hidden="true">
+                  <NavigationIcon icon={item.icon} />
+                </span>
+                <span className="navItemLabel">{item.label}</span>
+              </Link>
+            );
+          }
+
+          const isExpanded = isItemActive || expandedSections[item.href] === true;
 
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`navItem ${item.icon === "smart" ? "navItemSmart" : ""} ${isActive ? "navItemActive" : ""}`}
-            >
-              <span className="navItemIcon" aria-hidden="true">
-                <NavigationIcon icon={item.icon} />
-              </span>
-              <span className="navItemLabel">{item.label}</span>
-            </Link>
+            <div key={item.href} className="navGroup">
+              <button
+                type="button"
+                className={`navItem navItemButton ${isItemActive ? "navItemActive" : ""}`}
+                aria-expanded={isExpanded}
+                onClick={() => handleSectionToggle(item.href)}
+              >
+                <span className="navItemIcon" aria-hidden="true">
+                  <NavigationIcon icon={item.icon} />
+                </span>
+                <span className="navItemLabel">{item.label}</span>
+                <span className={`navItemChevron ${isExpanded ? "navItemChevronExpanded" : ""}`} aria-hidden="true">
+                  <ChevronDown size={16} strokeWidth={1.9} />
+                </span>
+              </button>
+
+              <div
+                className={`navSubmenu ${isExpanded ? "navSubmenuExpanded" : ""}`}
+                style={{ "--nav-submenu-max-height": `${item.children.length * 48 + 12}px` } as CSSProperties}
+              >
+                <div className="navSubmenuInner">
+                  {item.children.map((child) => {
+                    const isChildActive = isNestedRouteActive(pathname, child.href);
+
+                    return (
+                      <Link key={child.href} href={child.href} className={`navSubItem ${isChildActive ? "navSubItemActive" : ""}`}>
+                        <span className="navSubItemLabel">{child.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           );
         })}
       </nav>

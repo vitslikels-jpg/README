@@ -134,6 +134,13 @@ a {
     box-shadow 0.2s ease;
 }
 
+.navItemButton {
+  width: 100%;
+  cursor: pointer;
+  background: transparent;
+  text-align: left;
+}
+
 .navItemIcon {
   display: inline-flex;
   flex: 0 0 auto;
@@ -173,6 +180,81 @@ a {
 .navItemActive .navItemLabel {
   color: #166534;
   font-weight: 700;
+}
+
+.navItemChevron {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #5f7390;
+  transition:
+    transform 0.22s ease,
+    color 0.2s ease;
+}
+
+.navItemChevronExpanded {
+  transform: rotate(180deg);
+}
+
+.navGroup {
+  display: grid;
+  gap: 4px;
+}
+
+.navSubmenu {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-height 0.24s ease,
+    opacity 0.2s ease;
+}
+
+.navSubmenuExpanded {
+  max-height: var(--nav-submenu-max-height, 160px);
+  opacity: 1;
+}
+
+.navSubmenuInner {
+  display: grid;
+  gap: 4px;
+  padding: 0 0 2px;
+}
+
+.navSubItem {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  margin-left: 20px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #41556f;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.navSubItem:hover,
+.navSubItemActive {
+  background: rgba(248, 252, 249, 0.96);
+  border-color: rgba(137, 185, 151, 0.48);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    0 8px 18px rgba(95, 115, 144, 0.08);
+}
+
+.navSubItemLabel {
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.navSubItemActive .navSubItemLabel {
+  color: #166534;
 }
 
 .navItemSmart .navItemIcon {
@@ -5324,6 +5406,10 @@ body.sidebarResizing * {
     padding: 16px;
   }
 
+  .navSubItem {
+    margin-left: 16px;
+  }
+
   .homeHeroV2,
   .homePanel {
     padding: 18px;
@@ -5886,7 +5972,8 @@ body {
 }
 
 .navItemActive .navItemIcon,
-.navItemActive .navItemLabel {
+.navItemActive .navItemLabel,
+.navItemActive .navItemChevron {
   color: #ffffff;
 }
 
@@ -5899,6 +5986,29 @@ body {
 }
 
 .navItemSmart.navItemActive .navItemIcon {
+  color: #ffffff;
+}
+
+.navSubItem {
+  color: #111827;
+}
+
+.navSubItemLabel {
+  color: #111827;
+}
+
+.navSubItem:hover {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(9, 119, 46, 0.16);
+}
+
+.navSubItemActive {
+  border-color: rgba(9, 119, 46, 0.62);
+  background: linear-gradient(135deg, #0b8c39 0%, #05702b 100%);
+  box-shadow: 0 12px 24px rgba(8, 119, 46, 0.2);
+}
+
+.navSubItemActive .navSubItemLabel {
   color: #ffffff;
 }
 

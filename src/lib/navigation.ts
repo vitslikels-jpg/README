@@ -1,6 +1,10 @@
 export type NavigationItem = {
   href: string;
   label: string;
+  children?: Array<{
+    href: string;
+    label: string;
+  }>;
   icon:
     | "home"
     | "orders"
@@ -25,6 +29,14 @@ export const navigationItems: NavigationItem[] = [
   { href: "/catalog", label: "Прайсы", icon: "catalog" },
   { href: "/products", label: "Товары", icon: "products" },
   { href: "/categories", label: "Каталог", icon: "categories" },
-  { href: "/reports", label: "Отчеты", icon: "reports" },
+  {
+    href: "/reports",
+    label: "Отчеты",
+    icon: "reports",
+    children: [
+      { href: "/reports/overview", label: "Обзор" },
+      { href: "/reports/price-changes", label: "Изменение цен" },
+    ],
+  },
   { href: "/settings", label: "Настройки", icon: "settings" },
 ];

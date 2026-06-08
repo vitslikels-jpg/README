@@ -1,5 +1,5 @@
-import { ReportsPageContent } from "@/features/reports/components/reports-page";
+import { redirect } from "next/navigation";
 
 export default function ReportsPage() {
-  return <ReportsPageContent />;
+  redirect("/reports/overview");
 }
