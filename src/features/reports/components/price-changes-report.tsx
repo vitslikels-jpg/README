@@ -204,11 +204,38 @@ export function PriceChangesReport() {
   const [direction, setDirection] = useState<PriceChangeDirection>("all");
   const [report, setReport] = useState<PriceChangesReportResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
   const deferredQuery = useDeferredValue(query.trim());
   const isCustomPeriodIncomplete = period === "custom" && (!dateFrom || !dateTo);
+  const reportQueryString = useMemo(() => {
+    if (!activeEnterpriseId || isCustomPeriodIncomplete) {
+      return "";
+    }
+
+    const params = new URLSearchParams({
+      enterpriseId: activeEnterpriseId,
+      period,
+      direction,
+    });
+
+    if (period === "custom") {
+      params.set("dateFrom", dateFrom);
+      params.set("dateTo", dateTo);
+    }
+
+    if (supplierId) {
+      params.set("supplierId", supplierId);
+    }
+
+    if (deferredQuery) {
+      params.set("q", deferredQuery);
+    }
+
+    return params.toString();
+  }, [activeEnterpriseId, dateFrom, dateTo, deferredQuery, direction, isCustomPeriodIncomplete, period, supplierId]);
 
   useEffect(() => {
     setSupplierId("");
@@ -230,29 +257,11 @@ export function PriceChangesReport() {
     }
 
     const controller = new AbortController();
-    const params = new URLSearchParams({
-      enterpriseId: activeEnterpriseId,
-      period,
-      direction,
-    });
-
-    if (period === "custom") {
-      params.set("dateFrom", dateFrom);
-      params.set("dateTo", dateTo);
-    }
-
-    if (supplierId) {
-      params.set("supplierId", supplierId);
-    }
-
-    if (deferredQuery) {
-      params.set("q", deferredQuery);
-    }
 
     setIsLoading(true);
     setErrorMessage(null);
 
-    fetch(`/api/reports/price-changes?${params.toString()}`, {
+    fetch(`/api/reports/price-changes?${reportQueryString}`, {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -284,7 +293,7 @@ export function PriceChangesReport() {
     return () => {
       controller.abort();
     };
-  }, [activeEnterpriseId, dateFrom, dateTo, deferredQuery, direction, isCustomPeriodIncomplete, period, supplierId]);
+  }, [activeEnterpriseId, isCustomPeriodIncomplete, reportQueryString]);
 
   const summaryCards = useMemo(() => {
     if (!report) {
@@ -322,6 +331,53 @@ export function PriceChangesReport() {
 
   const emptyStateTitle = deferredQuery ? "По вашему поиску ничего не найдено" : "За выбранный период изменений цен не найдено";
 
+  const chartData = useMemo(() => {
+    if (!report?.items.length) {
+      return [];
+    }
+
+    const formatter = new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+    });
+    const grouped = new Map<string, { key: string; label: string; increased: number; decreased: number }>();
+
+    for (const item of report.items) {
+      const date = new Date(item.changedAt);
+
+      if (Number.isNaN(date.getTime())) {
+        continue;
+      }
+
+      const key = date.toISOString().slice(0, 10);
+      const current = grouped.get(key) ?? {
+        key,
+        label: formatter.format(date),
+        increased: 0,
+        decreased: 0,
+      };
+      const difference = Number(item.differenceAmount ?? "0");
+
+      if (difference > 0) {
+        current.increased += 1;
+      } else if (difference < 0) {
+        current.decreased += 1;
+      }
+
+      grouped.set(key, current);
+    }
+
+    return Array.from(grouped.values()).sort((left, right) => left.key.localeCompare(right.key));
+  }, [report]);
+
+  const chartMaxValue = useMemo(() => {
+    if (!chartData.length) {
+      return 0;
+    }
+
+    return chartData.reduce((maxValue, item) => Math.max(maxValue, item.increased, item.decreased), 0);
+  }, [chartData]);
+
   const emptyStateDescription = deferredQuery
     ? "Попробуйте изменить запрос или сбросить фильтры."
     : "Попробуйте изменить период, поставщика или направление изменения.";
@@ -337,6 +393,39 @@ export function PriceChangesReport() {
 
     event.preventDefault();
     toggleExpandedItem(itemId);
+  }
+
+  async function handleExport() {
+    if (!reportQueryString || isExporting) {
+      return;
+    }
+
+    setIsExporting(true);
+
+    try {
+      const response = await fetch(`/api/reports/price-changes/export?${reportQueryString}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        throw new Error(payload.message || "Не удалось скачать Excel.");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "price-changes-report.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: unknown) {
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось скачать Excel.");
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   if (!activeEnterpriseId) {
@@ -492,10 +581,96 @@ export function PriceChangesReport() {
       <section className="card">
         <div className="cardHeader">
           <div>
+            <p className="panelEyebrow">График</p>
+            <h3 className="pageTitle">Динамика изменений по дням</h3>
+            <p className="pageDescription">Красный — рост цены, зеленый — снижение цены.</p>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <p className="pageDescription">Собираю график...</p>
+        ) : report && chartData.length > 0 ? (
+          <div style={{ display: "grid", gap: 16 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, color: "var(--text-muted)", fontSize: "0.9rem" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 999, background: "#dc2626" }} />
+                Рост цены
+              </span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 999, background: "#15803d" }} />
+                Снижение цены
+              </span>
+            </div>
+
+            <div
+              data-testid="price-changes-chart"
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${chartData.length}, minmax(72px, 1fr))`,
+                gap: 12,
+                alignItems: "end",
+                overflowX: "auto",
+                paddingBottom: 4,
+              }}
+            >
+              {chartData.map((item) => (
+                <div key={item.key} style={{ display: "grid", gap: 8, minWidth: 72 }}>
+                  <div style={{ height: 180, display: "flex", alignItems: "end", justifyContent: "center", gap: 8 }}>
+                    <div
+                      title={`Рост: ${item.increased}`}
+                      style={{
+                        width: 18,
+                        minHeight: item.increased > 0 ? 12 : 4,
+                        height: chartMaxValue > 0 ? `${(item.increased / chartMaxValue) * 100}%` : 4,
+                        borderRadius: "10px 10px 0 0",
+                        background: "#dc2626",
+                      }}
+                    />
+                    <div
+                      title={`Снижение: ${item.decreased}`}
+                      style={{
+                        width: 18,
+                        minHeight: item.decreased > 0 ? 12 : 4,
+                        height: chartMaxValue > 0 ? `${(item.decreased / chartMaxValue) * 100}%` : 4,
+                        borderRadius: "10px 10px 0 0",
+                        background: "#15803d",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontWeight: 700 }}>{item.label}</div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                      ↑ {item.increased} • ↓ {item.decreased}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="emptyState" data-testid="price-changes-chart-empty-state">
+            <p className="emptyStateTitle">За выбранный период нет данных для графика</p>
+            <p className="emptyStateText">Измените фильтры или период, чтобы увидеть динамику по дням.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="cardHeader">
+          <div>
             <p className="panelEyebrow">Таблица</p>
             <h3 className="pageTitle">Изменения цен</h3>
             <p className="pageDescription">Источник на текущем этапе: накладные. Старые структуры не затрагиваются.</p>
           </div>
+          <button
+            type="button"
+            className="button buttonGhost"
+            onClick={handleExport}
+            disabled={!reportQueryString || isExporting}
+          >
+            {isExporting ? "Экспорт..." : "Экспорт в Excel"}
+          </button>
         </div>
 
         {isLoading ? (
