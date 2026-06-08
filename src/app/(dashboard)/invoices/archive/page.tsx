@@ -83,22 +83,8 @@ function formatInvoiceDate(value: string | null) {
   });
 }
 
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function getSupplierGroupName(invoice: InvoiceListItem) {
   return invoice.supplierName || invoice.detectedSupplierName || "Без поставщика";
-}
-
-function isImageFile(file: InvoiceFile | null) {
-  return Boolean(file?.mimeType?.startsWith("image/") || /\.(jpg|jpeg|png|webp)\b/i.test(file?.fileUrl || ""));
 }
 
 export default function InvoicesArchivePage() {
@@ -178,7 +164,7 @@ export default function InvoicesArchivePage() {
             <p className="panelEyebrow">Накладные</p>
             <h2 className="pageTitle">Подтверждённые накладные</h2>
             <p className="pageDescription">
-              Здесь собраны все загруженные документы. Накладные сгруппированы по поставщикам, чтобы быстрее открывать нужный архив.
+              Здесь лежит архив завершённых накладных. Документы сгруппированы по поставщикам.
             </p>
           </div>
         </div>
@@ -215,7 +201,7 @@ export default function InvoicesArchivePage() {
                 <FileText size={28} strokeWidth={2} />
               </span>
               <p className="emptyStateTitle">Подтверждённых накладных пока нет</p>
-              <p className="emptyStateText">После загрузки документы появятся здесь и будут сгруппированы по поставщикам.</p>
+              <p className="emptyStateText">После завершения накладные будут попадать сюда автоматически.</p>
             </div>
           ) : (
             <div className="pageStack">
@@ -229,72 +215,54 @@ export default function InvoicesArchivePage() {
                   </div>
 
                   <div className="invoicesList">
-                    {group.invoices.map((invoice) => {
-                      const previewFile = invoice.files[0] ?? null;
-                      const extraFilesCount = Math.max(0, invoice.filesCount - 1);
-
-                      return (
-                        <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="invoiceCardLink">
-                          <article className="invoiceCard">
-                            <div className="invoiceCardPreview">
-                              {isImageFile(previewFile) ? (
-                                <img
-                                  src={previewFile?.fileUrl}
-                                  alt={previewFile?.originalFileName || invoice.originalFileName || "Накладная"}
-                                  className="invoicePreviewImage"
-                                />
-                              ) : (
-                                <span className="invoicesEmptyIcon" aria-hidden="true">
-                                  <FileText size={28} strokeWidth={2} />
-                                </span>
-                              )}
-                              {extraFilesCount > 0 ? <span className="statusPill invoiceStatus-neutral">+{extraFilesCount} файла</span> : null}
+                    {group.invoices.map((invoice) => (
+                      <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="invoiceCardLink">
+                        <article className="invoiceCard">
+                          <div className="invoiceCardHeader">
+                            <div className="invoiceCardTitleBlock">
+                              <h3 className="invoiceCardTitle">{invoice.invoiceNumber ? `№${invoice.invoiceNumber}` : "Номер не распознан"}</h3>
                             </div>
 
-                            <div className="invoiceCardHeader">
-                              <div className="invoiceCardTitleBlock">
-                                <h3 className="invoiceCardTitle">{invoice.invoiceNumber ? `№${invoice.invoiceNumber}` : "Номер не распознан"}</h3>
-                                <p className="invoiceCardFileName">{invoice.originalFileName || "Без имени файла"}</p>
-                              </div>
+                            <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
+                          </div>
 
-                              <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
+                          <div className="invoiceMetaGrid">
+                            <div className="supplierMetaItem">
+                              <span>Дата накладной</span>
+                              <strong>{formatInvoiceDate(invoice.invoiceDate)}</strong>
                             </div>
-
-                            <div className="invoiceMetaGrid">
-                              <div className="supplierMetaItem">
-                                <span>Дата накладной</span>
-                                <strong>{formatInvoiceDate(invoice.invoiceDate)}</strong>
-                              </div>
-                              <div className="supplierMetaItem">
-                                <span>Сумма</span>
-                                <strong>{formatMoney(invoice.totalAmount)}</strong>
-                              </div>
-                              <div className="supplierMetaItem">
-                                <span>НДС</span>
-                                <strong>{formatMoney(invoice.vatAmount)}</strong>
-                              </div>
-                              <div className="supplierMetaItem">
-                                <span>Строк</span>
-                                <strong>{invoice.itemsCount}</strong>
-                              </div>
-                              <div className="supplierMetaItem">
-                                <span>Требует проверки</span>
-                                <strong>{invoice.reviewItemsCount}</strong>
-                              </div>
-                              <div className="supplierMetaItem">
-                                <span>Изменений цен</span>
-                                <strong>{invoice.priceChangesCount}</strong>
-                              </div>
+                            <div className="supplierMetaItem">
+                              <span>Сумма</span>
+                              <strong>{formatMoney(invoice.totalAmount)}</strong>
                             </div>
-
-                            <div className="invoiceCardFooter">
-                              <span>Загружена: {formatDateTime(invoice.createdAt)}</span>
-                              <span>Файлов: {invoice.filesCount}</span>
+                            <div className="supplierMetaItem">
+                              <span>НДС</span>
+                              <strong>{formatMoney(invoice.vatAmount)}</strong>
                             </div>
-                          </article>
-                        </Link>
-                      );
-                    })}
+                            <div className="supplierMetaItem">
+                              <span>Строк</span>
+                              <strong>{invoice.itemsCount}</strong>
+                            </div>
+                            <div className="supplierMetaItem">
+                              <span>Требует проверки</span>
+                              <strong>{invoice.reviewItemsCount}</strong>
+                            </div>
+                            <div className="supplierMetaItem">
+                              <span>Изменений цен</span>
+                              <strong>{invoice.priceChangesCount}</strong>
+                            </div>
+                            <div className="supplierMetaItem">
+                              <span>Файлов</span>
+                              <strong>{invoice.filesCount}</strong>
+                            </div>
+                            <div className="supplierMetaItem">
+                              <span>Статус</span>
+                              <strong>{statusLabels[invoice.status]}</strong>
+                            </div>
+                          </div>
+                        </article>
+                      </Link>
+                    ))}
                   </div>
                 </section>
               ))}
