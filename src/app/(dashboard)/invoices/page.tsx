@@ -380,34 +380,42 @@ export default function InvoicesPage() {
       const payload = (await response.json().catch(() => null)) as
         | {
             invoice?: { id: string; filesCount?: number; invoiceNumber?: string | null };
-            invoices?: Array<{ id: string; filesCount?: number; invoiceNumber?: string | null }>;
+            invoices?: Array<{
+              id: string;
+              filesCount?: number;
+              invoiceNumber?: string | null;
+              itemsCount?: number;
+              reviewItemsCount?: number;
+              priceChangesCount?: number;
+              processingError?: string | null;
+            }>;
             createdCount?: number;
+            processedCount?: number;
+            failedCount?: number;
             splitApplied?: boolean;
             message?: string;
           }
         | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "Не удалось загрузить накладную.");
+        throw new Error(payload?.message ?? "?? ??????? ????????? ?????????.");
       }
 
       await loadInvoices(activeEnterpriseId);
       const createdCount = payload?.createdCount ?? payload?.invoices?.length ?? 1;
-      const invoiceNumbers = (payload?.invoices ?? [])
-        .map((invoice) => invoice.invoiceNumber?.trim() || null)
-        .filter((invoiceNumber): invoiceNumber is string => Boolean(invoiceNumber));
-      const unknownNumbersCount = Math.max(0, createdCount - invoiceNumbers.length);
-      const summary =
-        createdCount === 1
-          ? files.length > 1
-            ? `Загружена 1 накладная из ${files.length} страниц.`
-            : "Загружена 1 накладная."
-          : `Найдено ${createdCount} накладные. Созданы отдельные документы.`;
-      const details = [
-        ...invoiceNumbers.map((invoiceNumber) => `№${invoiceNumber}`),
-        ...Array.from({ length: unknownNumbersCount }, () => "Номер не распознан — проверьте документ вручную."),
-      ];
-      const note = payload?.splitApplied ? "Файлы автоматически разделены по номерам накладных." : null;
+      const processedCount = payload?.processedCount ?? 0;
+      const failedCount = payload?.failedCount ?? 0;
+      const summary = `???????: ${createdCount}. ??????????: ${processedCount}. ??????: ${failedCount}.`;
+      const details = (payload?.invoices ?? []).map((invoice) => {
+        const invoiceLabel = invoice.invoiceNumber ? `?${invoice.invoiceNumber}` : "????? ?? ?????????";
+
+        if (invoice.processingError) {
+          return `${invoiceLabel} ? ??????: ${invoice.processingError}`;
+        }
+
+        return `${invoiceLabel} ? ??????? ${invoice.itemsCount ?? 0}, ??????? ???????? ${invoice.reviewItemsCount ?? 0}, ????????? ??? ${invoice.priceChangesCount ?? 0}`;
+      });
+      const note = payload?.splitApplied ? "????? ????????????? ????????? ?? ??????? ?????????." : null;
       setSuccessMessage(summary);
       setUploadResult({
         summary,
@@ -701,3 +709,4 @@ export default function InvoicesPage() {
     </div>
   );
 }
+

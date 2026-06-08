@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { jsonUtf8 } from "@/lib/http";
 import { detectInvoiceDocumentMetadata } from "@/lib/invoice-document-detector";
+import { runInvoiceProcessingPipeline } from "@/lib/invoice-processing-pipeline";
 import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
@@ -238,18 +239,48 @@ export async function POST(request: Request) {
       });
     }
 
+    const baseUrl = new URL(request.url).origin;
+    const cookieHeader = request.headers.get("cookie");
+    const processedInvoices = [];
+
+    for (const invoice of createdInvoices) {
+      const processedInvoice = await runInvoiceProcessingPipeline({
+        invoiceId: invoice.id,
+        enterpriseId,
+        baseUrl,
+        cookieHeader,
+      });
+
+      processedInvoices.push({
+        ...invoice,
+        invoiceNumber: processedInvoice.invoiceNumber ?? invoice.invoiceNumber,
+        status: processedInvoice.status ?? invoice.status,
+        itemsCount: processedInvoice.itemsCount,
+        reviewItemsCount: processedInvoice.reviewItemsCount,
+        priceChangesCount: processedInvoice.priceChangesCount,
+        processingError: processedInvoice.processingError,
+      });
+    }
+
+    const processedCount = processedInvoices.filter((invoice) => !invoice.processingError).length;
+    const failedCount = processedInvoices.length - processedCount;
+
     console.info("[invoice-upload:grouping]", {
       filesCount: storedFiles.length,
       detectedDocumentsCount: createdInvoices.length,
       invoiceNumbers: createdInvoices.map((invoice) => invoice.invoiceNumber ?? null),
       splitApplied: storedFiles.length > 1 && createdInvoices.length > 1,
+      processedCount,
+      failedCount,
     });
 
     return jsonUtf8(
       {
-        invoice: createdInvoices[0] ?? null,
-        invoices: createdInvoices,
-        createdCount: createdInvoices.length,
+        invoice: processedInvoices[0] ?? null,
+        invoices: processedInvoices,
+        createdCount: processedInvoices.length,
+        processedCount,
+        failedCount,
         splitApplied: storedFiles.length > 1 && createdInvoices.length > 1,
       },
       { status: 201 },
