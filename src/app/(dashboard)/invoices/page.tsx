@@ -53,6 +53,10 @@ type BatchInvoiceProcessResult = {
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const MAX_FILES_PER_UPLOAD = 10;
 const acceptedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+const INVOICE_TABS = [
+  { href: "/invoices", label: "Загрузка" },
+  { href: "/invoices/archive", label: "Загруженные" },
+] as const;
 
 const statusLabels: Record<InvoiceStatus, string> = {
   uploaded: "Загружена",
@@ -237,6 +241,7 @@ export default function InvoicesPage() {
     () => invoices.filter((invoice) => invoice.status === "uploaded" || invoice.itemsCount === 0),
     [invoices],
   );
+  const recentInvoices = useMemo(() => invoices.slice(0, 5), [invoices]);
 
   async function handleProcessNewInvoices() {
     if (!activeEnterpriseId || unprocessedInvoices.length === 0) {
@@ -510,6 +515,26 @@ export default function InvoicesPage() {
           </div>
         </div>
 
+        <div
+          className="ordersStatusTabs"
+          role="tablist"
+          aria-label="Разделы накладных"
+          style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", marginTop: 20, marginBottom: 0 }}
+        >
+          {INVOICE_TABS.map((tab) => (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              role="tab"
+              aria-selected={tab.href === "/invoices"}
+              className={`ordersStatusTab ${tab.href === "/invoices" ? "ordersStatusTabActive" : ""}`}
+              style={{ display: "grid", placeItems: "center", textDecoration: "none" }}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </div>
+
         <div className="invoicesStatsGrid" aria-label="Сводка по накладным">
           {stats.map((item) => {
             const Icon = item.icon;
@@ -556,8 +581,11 @@ export default function InvoicesPage() {
           <div className="cardHeader">
             <div>
               <p className="panelEyebrow">Список</p>
-              <h2 className="sectionTitle">Последние накладные</h2>
+              <h2 className="sectionTitle">Последние загруженные</h2>
             </div>
+            <Link href="/invoices/archive" className="secondaryButton compactButton">
+              Открыть все
+            </Link>
           </div>
 
           {errorMessage ? <p className="errorText">{errorMessage}</p> : null}
@@ -598,7 +626,7 @@ export default function InvoicesPage() {
               <p className="emptyStateTitle">Загрузка накладных</p>
               <p className="emptyStateText">Список накладных загружается.</p>
             </div>
-          ) : invoices.length === 0 ? (
+          ) : recentInvoices.length === 0 ? (
             <div className="emptyState invoicesEmptyState">
               <span className="invoicesEmptyIcon" aria-hidden="true">
                 <FileText size={28} strokeWidth={2} />
@@ -610,7 +638,7 @@ export default function InvoicesPage() {
             </div>
           ) : (
             <div className="invoicesList">
-              {invoices.map((invoice) => (
+              {recentInvoices.map((invoice) => (
                 <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="invoiceCardLink">
                   <article className="invoiceCard">
                   {(() => {

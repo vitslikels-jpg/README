@@ -160,7 +160,9 @@ export function Sidebar() {
 
       <nav className="sidebarNav">
         {navigationItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive =
+            pathname === item.href ||
+            (item.href === "/invoices" && pathname.startsWith("/invoices/"));
 
           return (
             <Link
