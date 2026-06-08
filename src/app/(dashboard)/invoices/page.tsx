@@ -53,11 +53,6 @@ type BatchInvoiceProcessResult = {
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const MAX_FILES_PER_UPLOAD = 10;
 const acceptedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
-const INVOICE_TABS = [
-  { href: "/invoices", label: "Загрузка" },
-  { href: "/invoices/archive", label: "Подтверждённые" },
-] as const;
-
 const statusLabels: Record<InvoiceStatus, string> = {
   uploaded: "Загружена",
   processing: "Обрабатывается",
@@ -514,26 +509,6 @@ export default function InvoicesPage() {
               {isUploading ? "Загружаем..." : "Загрузить накладную"}
             </button>
           </div>
-        </div>
-
-        <div
-          className="ordersStatusTabs"
-          role="tablist"
-          aria-label="Разделы накладных"
-          style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", marginTop: 20, marginBottom: 0 }}
-        >
-          {INVOICE_TABS.map((tab) => (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              role="tab"
-              aria-selected={tab.href === "/invoices"}
-              className={`ordersStatusTab ${tab.href === "/invoices" ? "ordersStatusTabActive" : ""}`}
-              style={{ display: "grid", placeItems: "center", textDecoration: "none" }}
-            >
-              {tab.label}
-            </Link>
-          ))}
         </div>
 
         <div className="invoicesStatsGrid" aria-label="Сводка по накладным">

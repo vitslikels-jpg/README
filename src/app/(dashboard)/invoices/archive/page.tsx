@@ -36,11 +36,6 @@ type InvoiceListItem = {
   reviewItemsCount: number;
 };
 
-const INVOICE_TABS = [
-  { href: "/invoices", label: "Загрузка" },
-  { href: "/invoices/archive", label: "Подтверждённые" },
-] as const;
-
 const statusLabels: Record<InvoiceStatus, string> = {
   uploaded: "Загружена",
   processing: "Обрабатывается",
@@ -186,26 +181,6 @@ export default function InvoicesArchivePage() {
               Здесь собраны все загруженные документы. Накладные сгруппированы по поставщикам, чтобы быстрее открывать нужный архив.
             </p>
           </div>
-        </div>
-
-        <div
-          className="ordersStatusTabs"
-          role="tablist"
-          aria-label="Разделы накладных"
-          style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", marginTop: 20, marginBottom: 0 }}
-        >
-          {INVOICE_TABS.map((tab) => (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              role="tab"
-              aria-selected={tab.href === "/invoices/archive"}
-              className={`ordersStatusTab ${tab.href === "/invoices/archive" ? "ordersStatusTabActive" : ""}`}
-              style={{ display: "grid", placeItems: "center", textDecoration: "none" }}
-            >
-              {tab.label}
-            </Link>
-          ))}
         </div>
       </section>
 

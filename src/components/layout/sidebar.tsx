@@ -225,20 +225,28 @@ export function Sidebar() {
 
           return (
             <div key={item.href} className="navGroup">
-              <button
-                type="button"
-                className={`navItem navItemButton ${isItemActive ? "navItemActive" : ""}`}
-                aria-expanded={isExpanded}
-                onClick={() => handleSectionToggle(item.href)}
-              >
-                <span className="navItemIcon" aria-hidden="true">
-                  <NavigationIcon icon={item.icon} />
-                </span>
-                <span className="navItemLabel">{item.label}</span>
-                <span className={`navItemChevron ${isExpanded ? "navItemChevronExpanded" : ""}`} aria-hidden="true">
-                  <ChevronDown size={16} strokeWidth={1.9} />
-                </span>
-              </button>
+              <div className="navGroupHeader">
+                <Link
+                  href={item.href}
+                  className={`navItem navGroupLink ${isItemActive ? "navItemActive" : ""}`}
+                >
+                  <span className="navItemIcon" aria-hidden="true">
+                    <NavigationIcon icon={item.icon} />
+                  </span>
+                  <span className="navItemLabel">{item.label}</span>
+                </Link>
+                <button
+                  type="button"
+                  className={`navGroupToggle ${isExpanded ? "navGroupToggleExpanded" : ""}`}
+                  aria-label={`Переключить раздел ${item.label}`}
+                  aria-expanded={isExpanded}
+                  onClick={() => handleSectionToggle(item.href)}
+                >
+                  <span className={`navItemChevron ${isExpanded ? "navItemChevronExpanded" : ""}`} aria-hidden="true">
+                    <ChevronDown size={16} strokeWidth={1.9} />
+                  </span>
+                </button>
+              </div>
 
               <div
                 className={`navSubmenu ${isExpanded ? "navSubmenuExpanded" : ""}`}

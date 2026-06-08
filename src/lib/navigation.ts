@@ -23,7 +23,15 @@ export type NavigationItem = {
 export const navigationItems: NavigationItem[] = [
   { href: "/", label: "Главная", icon: "home" },
   { href: "/orders", label: "Заказы", icon: "orders" },
-  { href: "/invoices", label: "Накладные", icon: "invoices" },
+  {
+    href: "/invoices",
+    label: "Накладные",
+    icon: "invoices",
+    children: [
+      { href: "/invoices", label: "Загрузка" },
+      { href: "/invoices/archive", label: "Подтверждённые" },
+    ],
+  },
   { href: "/smart-order", label: "Умный заказ", icon: "smart" },
   { href: "/suppliers", label: "Поставщики", icon: "suppliers" },
   { href: "/catalog", label: "Прайсы", icon: "catalog" },
