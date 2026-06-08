@@ -2072,6 +2072,11 @@ body.sidebarResizing * {
   gap: 24px;
 }
 
+.invoicesHeroCompact {
+  gap: 12px;
+  padding: 16px 18px;
+}
+
 .invoicesHeroHeader {
   display: flex;
   align-items: flex-start;
@@ -2079,8 +2084,27 @@ body.sidebarResizing * {
   gap: 20px;
 }
 
+.invoicesHeroHeaderCompact {
+  gap: 12px;
+  align-items: center;
+}
+
 .invoicesHeroCopy {
   max-width: 760px;
+}
+
+.invoicesHeroCompact .panelEyebrow {
+  margin-bottom: 4px;
+}
+
+.invoicesHeroCompact .pageTitle {
+  margin-bottom: 4px;
+  font-size: 1.5rem;
+}
+
+.invoicesHeroCompact .pageDescription {
+  margin: 0;
+  font-size: 0.95rem;
 }
 
 .invoicesHeroActions {
@@ -2088,6 +2112,11 @@ body.sidebarResizing * {
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
+}
+
+.invoicesHeroActionsCompact {
+  align-items: flex-end;
+  justify-content: center;
 }
 
 .invoicesHiddenInput {
@@ -2156,6 +2185,21 @@ body.sidebarResizing * {
   margin-top: 18px;
   font-size: 2rem;
   font-weight: 700;
+}
+
+.invoicesStatsBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+  min-height: 32px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8fbff;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .invoicesEmptyState {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { FileText, Receipt, SearchCheck, TrendingUp } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useEnterprise } from "@/features/enterprises/components/enterprise-context";
 
 type InvoiceStatus = "uploaded" | "processing" | "needs_review" | "parsed" | "approved" | "failed";
@@ -204,15 +204,8 @@ export default function InvoicesPage() {
     () => invoices.filter((invoice) => invoice.status === "uploaded" || invoice.itemsCount === 0),
     [invoices],
   );
-
   const recentInvoices = useMemo(() => invoices.slice(0, 5), [invoices]);
   const isBusy = isLoading || isUploading || isProcessingNewInvoices;
-
-  const stats = [
-    { title: "В работе", value: String(summary.totalInvoices), icon: Receipt },
-    { title: "Изменения цен", value: String(summary.pendingPriceChanges), icon: TrendingUp },
-    { title: "Требуют проверки", value: String(summary.needsReview), icon: SearchCheck },
-  ];
 
   async function handleProcessNewInvoices() {
     if (!activeEnterpriseId || unprocessedInvoices.length === 0) {
@@ -441,16 +434,15 @@ export default function InvoicesPage() {
 
   return (
     <div className="pageStack">
-      <section className="card invoicesHero">
-        <div className="invoicesHeroHeader">
+      <section className="card invoicesHero invoicesHeroCompact">
+        <div className="invoicesHeroHeader invoicesHeroHeaderCompact">
           <div className="invoicesHeroCopy">
             <p className="panelEyebrow">Накладные</p>
             <h2 className="pageTitle">Загрузка накладных</h2>
-            <p className="pageDescription">Загружайте фото или PDF накладных. После загрузки документы автоматически разделяются и обрабатываются.</p>
-            <p className="invoiceHint">Можно выбрать несколько фото одной накладной.</p>
+            <p className="pageDescription">Загрузите фото или PDF. Накладные будут автоматически разделены и обработаны.</p>
           </div>
 
-          <div className="invoicesHeroActions">
+          <div className="invoicesHeroActions invoicesHeroActionsCompact">
             <input
               ref={fileInputRef}
               type="file"
@@ -471,22 +463,10 @@ export default function InvoicesPage() {
           </div>
         </div>
 
-        <div className="invoicesStatsGrid" aria-label="Сводка по накладным">
-          {stats.map((item) => {
-            const Icon = item.icon;
-
-            return (
-              <article key={item.title} className="invoicesStatCard">
-                <div className="invoicesStatHeader">
-                  <span className="invoicesStatIcon" aria-hidden="true">
-                    <Icon size={18} strokeWidth={2} />
-                  </span>
-                  <span className="invoicesStatTitle">{item.title}</span>
-                </div>
-                <strong className="invoicesStatValue">{item.value}</strong>
-              </article>
-            );
-          })}
+        <div className="invoicesStatsBar" aria-label="Сводка по накладным">
+          <span>В работе: {summary.totalInvoices}</span>
+          <span>Изменения цен: {summary.pendingPriceChanges}</span>
+          <span>Требуют проверки: {summary.needsReview}</span>
         </div>
 
         {unprocessedInvoices.length > 0 ? (
@@ -543,9 +523,7 @@ export default function InvoicesPage() {
                 {processingNewInvoicesResults.map((result) => (
                   <li key={result.invoiceId}>
                     {result.invoiceNumber ? `№${result.invoiceNumber}` : "Номер не распознан"}{" "}
-                    {result.error
-                      ? `— ошибка: ${result.error}`
-                      : `— товаров ${result.itemsCount ?? 0}, требует проверки ${result.reviewItemsCount ?? 0}`}
+                    {result.error ? `— ошибка: ${result.error}` : `— товаров ${result.itemsCount ?? 0}, требует проверки ${result.reviewItemsCount ?? 0}`}
                   </li>
                 ))}
               </ul>
