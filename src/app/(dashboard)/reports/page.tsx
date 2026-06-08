@@ -1,5 +1,5 @@
-import { ProductMasterAuditReport } from "@/features/reports/components/product-master-audit-report";
+import { ReportsPageContent } from "@/features/reports/components/reports-page";
 
 export default function ReportsPage() {
-  return <ProductMasterAuditReport />;
+  return <ReportsPageContent />;
 }
