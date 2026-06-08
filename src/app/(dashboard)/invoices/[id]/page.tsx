@@ -225,6 +225,26 @@ function formatDate(value: string | null) {
   });
 }
 
+function resolveInvoiceDate(value: string | null, rawText: string | null) {
+  if (value) {
+    return value;
+  }
+
+  if (!rawText) {
+    return null;
+  }
+
+  const normalizedText = rawText.replace(/[^\d.\-/ ]+/g, " ");
+  const match = normalizedText.match(/\b(\d{2})[.\-/ ](\d{2})[.\-/ ](20\d{2})\b/);
+
+  if (!match) {
+    return null;
+  }
+
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
+
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("ru-RU", {
     day: "2-digit",
@@ -314,7 +334,7 @@ function getInvoiceItemStatus(item: InvoiceItem, change: InvoicePriceChange | nu
     return "Цена изменилась";
   }
 
-  if (item.needsReview || change?.status === "rejected") {
+  if (item.needsReview && (!item.quantity || !item.unit || !item.priceWithVat)) {
     return "Проверить цену";
   }
 
@@ -1489,6 +1509,7 @@ export default function InvoiceDetailsPage() {
   );
   const currentPreviewFile = previewImage ? invoiceImageFiles[previewImage.index] ?? null : null;
   const productSearchItem = productSearchItemId && invoice ? invoice.items.find((item) => item.id === productSearchItemId) ?? null : null;
+  const displayedInvoiceDate = invoice ? resolveInvoiceDate(invoice.invoiceDate, invoice.rawText) : null;
   const pendingPriceChangesCount = invoice?.priceChanges.filter((change) => change.status === "pending").length ?? 0;
   const hasRawText = Boolean(invoice?.rawText?.trim());
   const hasSupplier = Boolean(invoice?.supplierId);
@@ -1528,8 +1549,17 @@ export default function InvoiceDetailsPage() {
   const missingQuantityCount = itemRows.filter(({ itemStatus }) => itemStatus === "Нет количества").length;
   const missingPriceCount = itemRows.filter(({ itemStatus }) => itemStatus === "Нет цены").length;
   const unitReviewCount = itemRows.filter(({ itemStatus }) => itemStatus === "Проверить единицу").length;
-  const priceReviewItemsCount = itemRows.filter(({ itemStatus }) => itemStatus === "Цена изменилась" || itemStatus === "Проверить цену").length;
+  const priceReviewItemsCount = itemRows.filter(({ itemStatus }) => itemStatus === "Цена изменилась").length;
   const problemItemsCount = itemRows.filter(({ itemStatus }) => itemStatus !== "Готово").length;
+  const blockingRows = itemRows.filter(({ itemStatus }) =>
+    itemStatus === "Нужно выбрать товар" ||
+    itemStatus === "Новая позиция" ||
+    itemStatus === "Цена изменилась" ||
+    itemStatus === "Проверить единицу" ||
+    itemStatus === "Нет количества" ||
+    itemStatus === "Нет цены" ||
+    itemStatus === "Проверить цену",
+  );
   const completionIssues = [
     unmatchedItemsCount > 0 ? `Нужно выбрать товар: ${unmatchedItemsCount}` : null,
     newItemsCount > 0 ? `Новые позиции: ${newItemsCount}` : null,
@@ -1780,7 +1810,7 @@ export default function InvoiceDetailsPage() {
           </div>
           <div className="supplierMetaItem">
             <span>Дата накладной</span>
-            <strong>{formatDate(invoice.invoiceDate)}</strong>
+            <strong>{formatDate(displayedInvoiceDate)}</strong>
           </div>
           <div className="supplierMetaItem">
             <span>Сумма</span>
@@ -1823,6 +1853,73 @@ export default function InvoiceDetailsPage() {
                 <li key={issue}>{issue}</li>
               ))}
             </ul>
+            <div className="invoiceItemSearchPanel">
+              {blockingRows.map(({ item, itemStatus, priceChange }) => (
+                <div key={item.id} className="invoiceSearchModalResultCard">
+                  <div className="invoiceSearchModalResultMeta">
+                    <strong>{item.productNameRaw}</strong>
+                    <span>
+                      {itemStatus === "Нужно выбрать товар"
+                        ? "Нужно выбрать товар или создать новый."
+                        : itemStatus === "Новая позиция"
+                          ? "Новой позиции нет в каталоге."
+                          : itemStatus === "Цена изменилась"
+                            ? "Нужно подтвердить или отклонить изменение цены."
+                            : itemStatus === "Нет цены"
+                              ? "В строке нет цены."
+                              : itemStatus === "Нет количества"
+                                ? "В строке нет количества."
+                                : itemStatus === "Проверить единицу"
+                                  ? "Нужно проверить единицу цены."
+                                  : "Строка требует проверки."}
+                    </span>
+                  </div>
+                  <div className="compactProductActions invoiceItemRowActions">
+                    {(itemStatus === "Нужно выбрать товар" || itemStatus === "Новая позиция") ? (
+                      <>
+                        <button type="button" className="secondaryButton compactButton" onClick={() => handleOpenProductSearch(item)} disabled={isBusy}>
+                          Выбрать товар
+                        </button>
+                        <button
+                          type="button"
+                          className="secondaryButton compactButton"
+                          onClick={() => void handleCreateProduct(item)}
+                          disabled={isBusy}
+                          title={invoice.supplierId ? undefined : "Сначала выберите поставщика"}
+                        >
+                          {creatingProductItemId === item.id ? "Создаём..." : "Создать товар"}
+                        </button>
+                      </>
+                    ) : null}
+                    {itemStatus === "Цена изменилась" && priceChange ? (
+                      <>
+                        <button
+                          type="button"
+                          className="primaryButton compactButton"
+                          onClick={() => void handleUpdatePriceChange(priceChange.id, "approve")}
+                          disabled={isBusy}
+                        >
+                          {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Подтвердить цену"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondaryButton compactButton"
+                          onClick={() => void handleUpdatePriceChange(priceChange.id, "reject")}
+                          disabled={isBusy}
+                        >
+                          {updatingPriceChangeId === priceChange.id ? "Сохраняем..." : "Отклонить цену"}
+                        </button>
+                      </>
+                    ) : null}
+                    {(itemStatus === "Нет цены" || itemStatus === "Нет количества" || itemStatus === "Проверить единицу" || itemStatus === "Проверить цену") ? (
+                      <button type="button" className="secondaryButton compactButton" onClick={() => handleOpenItemEdit(item)} disabled={isBusy}>
+                        Редактировать
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
             <p className="invoiceHint">Сначала исправьте строки на проверке.</p>
           </>
         ) : (

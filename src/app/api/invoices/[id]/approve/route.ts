@@ -39,20 +39,35 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonUtf8({ message: "Накладная не найдена." }, { status: 404 });
   }
 
-  const [reviewItemsCount, pendingPriceChangesCount] = await Promise.all([
-    prisma.invoiceItem.count({
+  const [items, pendingPriceChanges] = await Promise.all([
+    prisma.invoiceItem.findMany({
       where: {
         invoiceDocumentId: id,
-        needsReview: true,
+      },
+      select: {
+        id: true,
+        productNameRaw: true,
+        matchedProductId: true,
+        quantity: true,
+        unit: true,
+        priceWithVat: true,
       },
     }),
-    prisma.invoicePriceChange.count({
+    prisma.invoicePriceChange.findMany({
       where: {
         invoiceDocumentId: id,
         status: "pending",
       },
+      select: {
+        id: true,
+        invoiceItemId: true,
+      },
     }),
   ]);
+
+  const blockingItems = items.filter((item) => !item.matchedProductId || item.quantity === null || !item.unit || item.priceWithVat === null);
+  const reviewItemsCount = blockingItems.length;
+  const pendingPriceChangesCount = pendingPriceChanges.length;
 
   if (reviewItemsCount > 0 || pendingPriceChangesCount > 0) {
     return jsonUtf8(
@@ -60,6 +75,14 @@ export async function POST(request: Request, context: RouteContext) {
         error: "Накладную нельзя подтвердить",
         reviewItemsCount,
         pendingPriceChangesCount,
+        blockingItems: blockingItems.map((item) => ({
+          id: item.id,
+          productNameRaw: item.productNameRaw,
+          matchedProductId: item.matchedProductId,
+          quantity: item.quantity?.toString() ?? null,
+          unit: item.unit,
+          priceWithVat: item.priceWithVat?.toString() ?? null,
+        })),
       },
       { status: 400 },
     );

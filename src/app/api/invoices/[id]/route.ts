@@ -1,6 +1,7 @@
 import { unlink } from "fs/promises";
 import path from "path";
 import { jsonUtf8 } from "@/lib/http";
+import { detectInvoiceDocumentMetadata } from "@/lib/invoice-document-detector";
 import { comparePricesSafely } from "@/lib/invoice-price-normalizer";
 import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
 import { matchInvoiceProduct } from "@/lib/invoice-product-match";
@@ -93,6 +94,26 @@ function getSafeInvoiceFilePath(storageKey: string | null, fileUrl: string | nul
   }
 
   return normalizedPath;
+}
+
+function parseDetectedInvoiceDate(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedValue)) {
+    const parsedDate = new Date(`${normalizedValue}T00:00:00.000Z`);
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+  }
+
+  const fallbackDate = new Date(normalizedValue);
+  return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
 }
 
 async function deleteInvoiceFiles(files: Array<{ storageKey: string | null; fileUrl: string | null }>) {
@@ -219,6 +240,54 @@ export async function GET(request: Request, context: RouteContext) {
     return jsonUtf8({ message: "Накладная не найдена." }, { status: 404 });
   }
 
+  let resolvedInvoiceDate = invoice.invoiceDate;
+
+  if (!resolvedInvoiceDate) {
+    const filesForDetection =
+      invoice.files.length > 0
+        ? invoice.files
+        : [
+            {
+              id: "legacy-file",
+              fileUrl: invoice.fileUrl,
+              storageKey: invoice.storageKey,
+              originalFileName: invoice.originalFileName,
+              mimeType: null,
+              pageIndex: 0,
+            },
+          ];
+
+    const detectableFile =
+      filesForDetection.find((file) => {
+        const candidate = `${file.mimeType || ""} ${file.storageKey || ""} ${file.fileUrl || ""} ${file.originalFileName || ""}`.toLowerCase();
+        return candidate.includes("image/") || /\.(jpg|jpeg|png|webp)\b/.test(candidate);
+      }) ?? null;
+
+    if (detectableFile) {
+      try {
+        const metadata = await detectInvoiceDocumentMetadata(detectableFile);
+        const detectedInvoiceDate = parseDetectedInvoiceDate(metadata?.invoiceDate ?? null);
+
+        if (detectedInvoiceDate) {
+          await prisma.invoiceDocument.update({
+            where: {
+              id: invoice.id,
+            },
+            data: {
+              invoiceDate: detectedInvoiceDate,
+            },
+          });
+          resolvedInvoiceDate = detectedInvoiceDate;
+        }
+      } catch (error) {
+        console.warn("[invoice:get:date-detect-failed]", {
+          invoiceId: invoice.id,
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+  }
+
   const supplierMatch =
     invoice.rawText && invoice.supplierId ? await matchInvoiceSupplier(invoice.rawText, enterpriseId).catch(() => null) : null;
   const invoiceItems = await Promise.all(
@@ -324,7 +393,7 @@ export async function GET(request: Request, context: RouteContext) {
     confidence: invoice.confidence,
     supplierMatchType: supplierMatch?.supplierId === invoice.supplierId ? supplierMatch.matchType : null,
     invoiceNumber: invoice.invoiceNumber,
-    invoiceDate: invoice.invoiceDate,
+    invoiceDate: resolvedInvoiceDate,
     totalAmount: invoice.totalAmount?.toString() ?? null,
     vatAmount: invoice.vatAmount?.toString() ?? null,
     originalFileName: invoice.originalFileName,
