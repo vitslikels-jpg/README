@@ -210,6 +210,7 @@ export async function GET(request: Request) {
           },
           invoiceDocument: {
             select: {
+              invoiceNumber: true,
               invoiceDate: true,
             },
           },
@@ -257,6 +258,8 @@ export async function GET(request: Request) {
           differencePercent: change.differencePercent?.toString() ?? null,
           potentialImpactAmount: potentialImpactAmount?.toString() ?? null,
           quantity: change.invoiceItem.quantity?.toString() ?? null,
+          invoiceNumber: change.invoiceDocument.invoiceNumber?.trim() || null,
+          invoiceDate: change.invoiceDocument.invoiceDate?.toISOString() ?? null,
           source: "invoice" as const,
           status: change.status === "approved" ? ("confirmed" as const) : ("requires_review" as const),
         };

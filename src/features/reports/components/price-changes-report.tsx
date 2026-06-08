@@ -1,7 +1,7 @@
 "use client";
 
-import type { CSSProperties } from "react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import type { CSSProperties, KeyboardEvent } from "react";
+import { Fragment, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useEnterprise } from "@/features/enterprises/components/enterprise-context";
 
 type PriceChangeDirection = "all" | "up" | "down";
@@ -28,6 +28,8 @@ type PriceChangeReportItem = {
   differencePercent: string | null;
   potentialImpactAmount: string | null;
   quantity: string | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
   source: PriceChangeSource;
   status: PriceChangeStatus;
 };
@@ -45,21 +47,12 @@ type PriceChangesReportResponse = {
   items: PriceChangeReportItem[];
 };
 
-function formatDateForInput(date: Date) {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getMonthStartInputValue() {
-  const date = new Date();
-  return formatDateForInput(new Date(date.getFullYear(), date.getMonth(), 1));
-}
-
-function getTodayInputValue() {
-  return formatDateForInput(new Date());
-}
+const PERIOD_OPTIONS: Array<{ id: PriceChangePeriod; label: string }> = [
+  { id: "today", label: "Сегодня" },
+  { id: "7d", label: "7 дней" },
+  { id: "month", label: "Месяц" },
+  { id: "custom", label: "Произвольный" },
+];
 
 const fieldControlStyle: CSSProperties = {
   width: "100%",
@@ -125,7 +118,11 @@ function formatSignedPercent(value: string | number | null) {
   }).format(amount)}%`;
 }
 
-function formatDateTime(value: string) {
+function formatDateTime(value: string | null) {
+  if (!value) {
+    return "—";
+  }
+
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
@@ -138,6 +135,24 @@ function formatDateTime(value: string) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+  }).format(date);
+}
+
+function formatDate(value: string | null) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
   }).format(date);
 }
 
@@ -182,32 +197,35 @@ function isApiErrorResponse(value: unknown): value is { message?: string } {
 export function PriceChangesReport() {
   const { activeEnterpriseId, activeEnterprise } = useEnterprise();
   const [period, setPeriod] = useState<PriceChangePeriod>("7d");
-  const [dateFrom, setDateFrom] = useState(getMonthStartInputValue);
-  const [dateTo, setDateTo] = useState(getTodayInputValue);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [query, setQuery] = useState("");
   const [direction, setDirection] = useState<PriceChangeDirection>("all");
   const [report, setReport] = useState<PriceChangesReportResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
   const deferredQuery = useDeferredValue(query.trim());
-  const customRangeIncomplete = period === "custom" && (!dateFrom || !dateTo);
+  const isCustomPeriodIncomplete = period === "custom" && (!dateFrom || !dateTo);
 
   useEffect(() => {
     setSupplierId("");
+    setExpandedItemId(null);
   }, [activeEnterpriseId]);
 
   useEffect(() => {
     if (!activeEnterpriseId) {
       setReport(null);
       setErrorMessage(null);
+      setIsLoading(false);
       return;
     }
 
-    if (customRangeIncomplete) {
-      setReport(null);
-      setErrorMessage("Для произвольного периода заполните обе даты.");
+    if (isCustomPeriodIncomplete) {
+      setErrorMessage(null);
+      setIsLoading(false);
       return;
     }
 
@@ -266,7 +284,7 @@ export function PriceChangesReport() {
     return () => {
       controller.abort();
     };
-  }, [activeEnterpriseId, customRangeIncomplete, dateFrom, dateTo, deferredQuery, direction, period, supplierId]);
+  }, [activeEnterpriseId, dateFrom, dateTo, deferredQuery, direction, isCustomPeriodIncomplete, period, supplierId]);
 
   const summaryCards = useMemo(() => {
     if (!report) {
@@ -297,6 +315,30 @@ export function PriceChangesReport() {
     ];
   }, [report]);
 
+  const customPeriodHint =
+    period === "custom" && isCustomPeriodIncomplete
+      ? "Выберите дату начала и дату окончания. После этого отчет обновится автоматически."
+      : null;
+
+  const emptyStateTitle = deferredQuery ? "По вашему поиску ничего не найдено" : "За выбранный период изменений цен не найдено";
+
+  const emptyStateDescription = deferredQuery
+    ? "Попробуйте изменить запрос или сбросить фильтры."
+    : "Попробуйте изменить период, поставщика или направление изменения.";
+
+  function toggleExpandedItem(itemId: string) {
+    setExpandedItemId((current) => (current === itemId ? null : itemId));
+  }
+
+  function handleRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, itemId: string) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    toggleExpandedItem(itemId);
+  }
+
   if (!activeEnterpriseId) {
     return (
       <section className="card pagePlaceholder">
@@ -313,23 +355,20 @@ export function PriceChangesReport() {
         <p className="panelEyebrow">Отчеты</p>
         <h2 className="pageTitle">Изменение закупочных цен</h2>
         <p className="pageDescription">
-          Read-only отчет по изменениям цен для <strong>{activeEnterprise?.name ?? "активного предприятия"}</strong> на базе
-          найденных `InvoicePriceChange`.
+          Read-only отчет по изменениям цен для <strong>{activeEnterprise?.name ?? "активного предприятия"}</strong> на базе найденных{" "}
+          <code>InvoicePriceChange</code>.
         </p>
 
         <div style={{ display: "grid", gap: 12, marginTop: 20 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {[
-              { id: "today", label: "Сегодня" },
-              { id: "7d", label: "7 дней" },
-              { id: "month", label: "Месяц" },
-              { id: "custom", label: "Период" },
-            ].map((item) => (
+            {PERIOD_OPTIONS.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 className="button buttonGhost"
-                onClick={() => setPeriod(item.id as PriceChangePeriod)}
+                data-period-button={item.id}
+                aria-pressed={period === item.id}
+                onClick={() => setPeriod(item.id)}
                 style={{
                   minWidth: 0,
                   background: period === item.id ? "rgba(15, 23, 42, 0.08)" : undefined,
@@ -339,6 +378,21 @@ export function PriceChangesReport() {
               </button>
             ))}
           </div>
+
+          {customPeriodHint ? (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 12,
+                border: "1px solid rgba(59, 130, 246, 0.18)",
+                background: "rgba(59, 130, 246, 0.06)",
+                color: "var(--text-muted)",
+                fontSize: "0.92rem",
+              }}
+            >
+              {customPeriodHint}
+            </div>
+          ) : null}
 
           <div
             style={{
@@ -352,11 +406,23 @@ export function PriceChangesReport() {
               <>
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: "0.84rem", color: "var(--text-muted)" }}>Дата от</span>
-                  <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} style={fieldControlStyle} />
+                  <input
+                    data-testid="price-changes-date-from"
+                    type="date"
+                    value={dateFrom}
+                    onChange={(event) => setDateFrom(event.target.value)}
+                    style={fieldControlStyle}
+                  />
                 </label>
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: "0.84rem", color: "var(--text-muted)" }}>Дата до</span>
-                  <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} style={fieldControlStyle} />
+                  <input
+                    data-testid="price-changes-date-to"
+                    type="date"
+                    value={dateTo}
+                    onChange={(event) => setDateTo(event.target.value)}
+                    style={fieldControlStyle}
+                  />
                 </label>
               </>
             ) : null}
@@ -446,70 +512,163 @@ export function PriceChangesReport() {
                   <th>Новая цена</th>
                   <th>Разница ₽</th>
                   <th>Разница %</th>
+                  <th>Накладная</th>
                   <th>Источник</th>
                   <th>Статус</th>
                 </tr>
               </thead>
               <tbody>
-                {report.items.map((item) => (
-                  <tr key={item.id}>
-                    <td>{formatDateTime(item.changedAt)}</td>
-                    <td style={{ whiteSpace: "normal", minWidth: 180 }}>{item.supplierName}</td>
-                    <td style={{ minWidth: 280, maxWidth: 420, whiteSpace: "normal", wordBreak: "break-word" }}>
-                      <strong style={{ display: "block" }}>{item.productName}</strong>
-                      {item.productNameRaw !== item.productName ? (
-                        <span style={{ display: "block", color: "var(--text-muted)", fontSize: "0.82rem", marginTop: 4 }}>
-                          В накладной: {item.productNameRaw}
-                        </span>
-                      ) : null}
-                      {item.quantity ? (
-                        <span style={{ display: "block", color: "var(--text-muted)", fontSize: "0.82rem", marginTop: 4 }}>
-                          Кол-во: {item.quantity}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>{formatMoney(item.oldPrice)}</td>
-                    <td>{formatMoney(item.newPrice)}</td>
-                    <td style={{ color: getDirectionColor(item.differenceAmount), fontWeight: 700 }}>{formatSignedMoney(item.differenceAmount)}</td>
-                    <td style={{ color: getDirectionColor(item.differencePercent), fontWeight: 700 }}>{formatSignedPercent(item.differencePercent)}</td>
-                    <td>
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          background: "rgba(59, 130, 246, 0.12)",
-                          border: "1px solid rgba(59, 130, 246, 0.22)",
-                          fontSize: "0.8rem",
-                          fontWeight: 700,
-                        }}
+                {report.items.map((item) => {
+                  const isExpanded = expandedItemId === item.id;
+
+                  return (
+                    <Fragment key={item.id}>
+                      <tr
+                        data-price-change-row={item.id}
+                        onClick={() => toggleExpandedItem(item.id)}
+                        onKeyDown={(event) => handleRowKeyDown(event, item.id)}
+                        tabIndex={0}
+                        style={{ cursor: "pointer" }}
                       >
-                        {getSourceLabel(item.source)}
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        style={{
-                          ...getStatusStyles(item.status),
-                          display: "inline-flex",
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          fontSize: "0.8rem",
-                          fontWeight: 700,
-                        }}
-                      >
-                        {getStatusLabel(item.status)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                        <td>{formatDateTime(item.changedAt)}</td>
+                        <td style={{ whiteSpace: "normal", minWidth: 180 }}>{item.supplierName}</td>
+                        <td style={{ minWidth: 280, maxWidth: 420, whiteSpace: "normal", wordBreak: "break-word" }}>
+                          <strong style={{ display: "block" }}>{item.productName}</strong>
+                          {item.productNameRaw !== item.productName ? (
+                            <span style={{ display: "block", color: "var(--text-muted)", fontSize: "0.82rem", marginTop: 4 }}>
+                              В накладной: {item.productNameRaw}
+                            </span>
+                          ) : null}
+                          {item.quantity ? (
+                            <span style={{ display: "block", color: "var(--text-muted)", fontSize: "0.82rem", marginTop: 4 }}>
+                              Кол-во: {item.quantity}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td>{formatMoney(item.oldPrice)}</td>
+                        <td>{formatMoney(item.newPrice)}</td>
+                        <td style={{ color: getDirectionColor(item.differenceAmount), fontWeight: 700 }}>{formatSignedMoney(item.differenceAmount)}</td>
+                        <td style={{ color: getDirectionColor(item.differencePercent), fontWeight: 700 }}>{formatSignedPercent(item.differencePercent)}</td>
+                        <td>{item.invoiceNumber?.trim() || "—"}</td>
+                        <td>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              padding: "6px 10px",
+                              borderRadius: 999,
+                              background: "rgba(59, 130, 246, 0.12)",
+                              border: "1px solid rgba(59, 130, 246, 0.22)",
+                              fontSize: "0.8rem",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {getSourceLabel(item.source)}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: "grid", gap: 8 }}>
+                            <span
+                              style={{
+                                ...getStatusStyles(item.status),
+                                display: "inline-flex",
+                                width: "fit-content",
+                                padding: "6px 10px",
+                                borderRadius: 999,
+                                fontSize: "0.8rem",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {getStatusLabel(item.status)}
+                            </span>
+                            <button
+                              type="button"
+                              className="button buttonGhost"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleExpandedItem(item.id);
+                              }}
+                              style={{ minWidth: 0 }}
+                            >
+                              {isExpanded ? "Скрыть" : "Подробнее"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {isExpanded ? (
+                        <tr data-price-change-details={item.id}>
+                          <td colSpan={10} style={{ padding: 0 }}>
+                            <div
+                              style={{
+                                display: "grid",
+                                gap: 12,
+                                padding: 16,
+                                borderTop: "1px solid var(--border)",
+                                background: "rgba(248, 250, 252, 0.8)",
+                              }}
+                            >
+                              <strong style={{ fontSize: "0.96rem" }}>Детали изменения</strong>
+
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+                                <div>
+                                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Поставщик</div>
+                                  <div>{item.supplierName}</div>
+                                </div>
+                                <div>
+                                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Товар</div>
+                                  <div>{item.productName}</div>
+                                </div>
+                                <div>
+                                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Старая цена</div>
+                                  <div>{formatMoney(item.oldPrice)}</div>
+                                </div>
+                                <div>
+                                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Новая цена</div>
+                                  <div>{formatMoney(item.newPrice)}</div>
+                                </div>
+                                <div>
+                                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Изменение ₽</div>
+                                  <div style={{ color: getDirectionColor(item.differenceAmount), fontWeight: 700 }}>
+                                    {formatSignedMoney(item.differenceAmount)}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Изменение %</div>
+                                  <div style={{ color: getDirectionColor(item.differencePercent), fontWeight: 700 }}>
+                                    {formatSignedPercent(item.differencePercent)}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Номер накладной</div>
+                                  <div>{item.invoiceNumber?.trim() || "—"}</div>
+                                </div>
+                                <div>
+                                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Дата накладной</div>
+                                  <div>{formatDate(item.invoiceDate)}</div>
+                                </div>
+                                <div>
+                                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Статус изменения</div>
+                                  <div>{getStatusLabel(item.status)}</div>
+                                </div>
+                                <div>
+                                  <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Источник</div>
+                                  <div>{getSourceLabel(item.source)}</div>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : (
-          <div className="emptyState">
-            <p className="emptyStateTitle">Изменений не найдено</p>
-            <p className="emptyStateText">Попробуйте другой период, поставщика или направление изменений.</p>
+          <div className="emptyState" data-testid="price-changes-empty-state">
+            <p className="emptyStateTitle">{emptyStateTitle}</p>
+            <p className="emptyStateText">{emptyStateDescription}</p>
           </div>
         )}
       </section>
