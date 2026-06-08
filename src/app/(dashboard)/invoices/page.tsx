@@ -7,14 +7,6 @@ import { useEnterprise } from "@/features/enterprises/components/enterprise-cont
 
 type InvoiceStatus = "uploaded" | "processing" | "needs_review" | "parsed" | "approved" | "failed";
 
-type InvoiceFile = {
-  id: string;
-  fileUrl: string;
-  originalFileName: string | null;
-  mimeType: string | null;
-  pageIndex: number;
-};
-
 type InvoiceListItem = {
   id: string;
   supplierId: string | null;
@@ -25,9 +17,6 @@ type InvoiceListItem = {
   invoiceDate: string | null;
   totalAmount: string | null;
   vatAmount: string | null;
-  originalFileName: string | null;
-  fileUrl: string | null;
-  files: InvoiceFile[];
   filesCount: number;
   createdAt: string;
   itemsCount: number;
@@ -57,7 +46,7 @@ const acceptedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "app
 const statusLabels: Record<InvoiceStatus, string> = {
   uploaded: "Загружена",
   processing: "Обрабатывается",
-  needs_review: "Требует проверки",
+  needs_review: "Проверка",
   parsed: "Разобрана",
   approved: "Подтверждена",
   failed: "Ошибка",
@@ -78,13 +67,12 @@ function formatMoney(value: string | null) {
   }
 
   const amount = Number(value);
-
   if (!Number.isFinite(amount)) {
     return value;
   }
 
   return `${new Intl.NumberFormat("ru-RU", {
-    minimumFractionDigits: 2,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount)} ₽`;
 }
@@ -102,7 +90,7 @@ function formatInvoiceDate(value: string | null) {
 }
 
 function getSupplierName(invoice: InvoiceListItem) {
-  return invoice.supplierName || invoice.detectedSupplierName || "Поставщик не определён";
+  return invoice.supplierName || invoice.detectedSupplierName || "Без поставщика";
 }
 
 function getClientFileError(file: File) {
@@ -221,21 +209,9 @@ export default function InvoicesPage() {
   const isBusy = isLoading || isUploading || isProcessingNewInvoices;
 
   const stats = [
-    {
-      title: "Накладные в работе",
-      value: String(summary.totalInvoices),
-      icon: Receipt,
-    },
-    {
-      title: "Изменения цен",
-      value: String(summary.pendingPriceChanges),
-      icon: TrendingUp,
-    },
-    {
-      title: "Требуют проверки",
-      value: String(summary.needsReview),
-      icon: SearchCheck,
-    },
+    { title: "В работе", value: String(summary.totalInvoices), icon: Receipt },
+    { title: "Изменения цен", value: String(summary.pendingPriceChanges), icon: TrendingUp },
+    { title: "Требуют проверки", value: String(summary.needsReview), icon: SearchCheck },
   ];
 
   async function handleProcessNewInvoices() {
@@ -263,7 +239,6 @@ export default function InvoicesPage() {
           method: "POST",
         });
         const processPayload = (await processResponse.json().catch(() => null)) as { message?: string } | null;
-
         if (!processResponse.ok) {
           throw new Error(processPayload?.message ?? "Не удалось распознать текст.");
         }
@@ -272,22 +247,16 @@ export default function InvoicesPage() {
           method: "POST",
         });
         const aiPayload = (await aiResponse.json().catch(() => null)) as { message?: string } | null;
-
         if (!aiResponse.ok) {
           throw new Error(aiPayload?.message ?? "AI не нашёл товары.");
         }
 
         const detectResponse = await fetch(`/api/invoices/${invoice.id}/detect-price-changes`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            enterpriseId: activeEnterpriseId,
-          }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enterpriseId: activeEnterpriseId }),
         });
         const detectPayload = (await detectResponse.json().catch(() => null)) as { message?: string } | null;
-
         if (!detectResponse.ok) {
           throw new Error(detectPayload?.message ?? "Не удалось проверить изменения цен.");
         }
@@ -350,7 +319,6 @@ export default function InvoicesPage() {
     }
 
     const invalidFile = files.find((file) => getClientFileError(file));
-
     if (invalidFile) {
       setSuccessMessage("");
       setUploadResult(null);
@@ -367,7 +335,6 @@ export default function InvoicesPage() {
     try {
       const formData = new FormData();
       formData.append("enterpriseId", activeEnterpriseId);
-
       for (const file of files) {
         formData.append("file", file);
       }
@@ -379,10 +346,8 @@ export default function InvoicesPage() {
 
       const payload = (await response.json().catch(() => null)) as
         | {
-            invoice?: { id: string; filesCount?: number; invoiceNumber?: string | null };
             invoices?: Array<{
               id: string;
-              filesCount?: number;
               invoiceNumber?: string | null;
               itemsCount?: number;
               reviewItemsCount?: number;
@@ -409,7 +374,6 @@ export default function InvoicesPage() {
       const summaryText = `Создано: ${createdCount}. Обработано: ${processedCount}. Ошибки: ${failedCount}.`;
       const details = (payload?.invoices ?? []).map((invoice) => {
         const invoiceLabel = invoice.invoiceNumber ? `№${invoice.invoiceNumber}` : "Номер не распознан";
-
         if (invoice.processingError) {
           return `${invoiceLabel} — ошибка: ${invoice.processingError}`;
         }
@@ -460,7 +424,6 @@ export default function InvoicesPage() {
       const response = await fetch(`/api/invoices/${invoiceId}?${query.toString()}`, {
         method: "DELETE",
       });
-
       const payload = (await response.json().catch(() => null)) as { message?: string } | null;
 
       if (!response.ok) {
@@ -483,9 +446,7 @@ export default function InvoicesPage() {
           <div className="invoicesHeroCopy">
             <p className="panelEyebrow">Накладные</p>
             <h2 className="pageTitle">Загрузка накладных</h2>
-            <p className="pageDescription">
-              Загружайте фото или PDF накладных. После загрузки документы автоматически разделяются и обрабатываются.
-            </p>
+            <p className="pageDescription">Загружайте фото или PDF накладных. После загрузки документы автоматически разделяются и обрабатываются.</p>
             <p className="invoiceHint">Можно выбрать несколько фото одной накладной.</p>
           </div>
 
@@ -608,65 +569,33 @@ export default function InvoicesPage() {
               <p className="emptyStateText">Здесь появятся загруженные накладные, найденные товары и изменения цен.</p>
             </div>
           ) : (
-            <div className="invoicesList">
+            <div className="invoicesCompactList">
               {recentInvoices.map((invoice) => (
-                <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="invoiceCardLink">
-                  <article className="invoiceCard">
-                    <div className="invoiceCardHeader">
-                      <div className="invoiceCardTitleBlock">
-                        <h3 className="invoiceCardTitle">{getSupplierName(invoice)}</h3>
-                      </div>
-
-                      <div className="invoiceHeaderActions">
-                        <button
-                          type="button"
-                          className="secondaryButton compactButton"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void handleDeleteInvoice(invoice.id);
-                          }}
-                          disabled={deletingInvoiceId === invoice.id}
-                        >
-                          {deletingInvoiceId === invoice.id ? "Удаляем..." : "Удалить"}
-                        </button>
-                        <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
-                      </div>
+                <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="invoiceRowLink">
+                  <article className="invoiceRow">
+                    <div className="invoiceRowMain">
+                      <span className="invoiceRowField invoiceRowPrimary">{invoice.invoiceNumber ? `№${invoice.invoiceNumber}` : "Без номера"}</span>
+                      <span className="invoiceRowField">{formatInvoiceDate(invoice.invoiceDate)}</span>
+                      <span className="invoiceRowField">{getSupplierName(invoice)}</span>
+                      <span className="invoiceRowField">{formatMoney(invoice.totalAmount)}</span>
+                      <span className="invoiceRowField">НДС {formatMoney(invoice.vatAmount)}</span>
+                      <span className="invoiceRowField">{invoice.itemsCount} строк</span>
                     </div>
 
-                    <div className="invoiceMetaGrid">
-                      <div className="supplierMetaItem">
-                        <span>Номер</span>
-                        <strong>{invoice.invoiceNumber || "—"}</strong>
-                      </div>
-                      <div className="supplierMetaItem">
-                        <span>Дата накладной</span>
-                        <strong>{formatInvoiceDate(invoice.invoiceDate)}</strong>
-                      </div>
-                      <div className="supplierMetaItem">
-                        <span>Сумма</span>
-                        <strong>{formatMoney(invoice.totalAmount)}</strong>
-                      </div>
-                      <div className="supplierMetaItem">
-                        <span>НДС</span>
-                        <strong>{formatMoney(invoice.vatAmount)}</strong>
-                      </div>
-                      <div className="supplierMetaItem">
-                        <span>Строк</span>
-                        <strong>{invoice.itemsCount}</strong>
-                      </div>
-                      <div className="supplierMetaItem">
-                        <span>Требует проверки</span>
-                        <strong>{invoice.reviewItemsCount}</strong>
-                      </div>
-                      <div className="supplierMetaItem">
-                        <span>Файлов</span>
-                        <strong>{invoice.filesCount}</strong>
-                      </div>
-                      <div className="supplierMetaItem">
-                        <span>Статус</span>
-                        <strong>{statusLabels[invoice.status]}</strong>
-                      </div>
+                    <div className="invoiceRowActions">
+                      <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
+                      <button
+                        type="button"
+                        className="secondaryButton compactButton"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void handleDeleteInvoice(invoice.id);
+                        }}
+                        disabled={deletingInvoiceId === invoice.id}
+                      >
+                        {deletingInvoiceId === invoice.id ? "Удаляем..." : "Удалить"}
+                      </button>
                     </div>
                   </article>
                 </Link>

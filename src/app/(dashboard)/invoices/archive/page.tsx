@@ -7,14 +7,6 @@ import { useEnterprise } from "@/features/enterprises/components/enterprise-cont
 
 type InvoiceStatus = "uploaded" | "processing" | "needs_review" | "parsed" | "approved" | "failed";
 
-type InvoiceFile = {
-  id: string;
-  fileUrl: string;
-  originalFileName: string | null;
-  mimeType: string | null;
-  pageIndex: number;
-};
-
 type InvoiceListItem = {
   id: string;
   supplierId: string | null;
@@ -25,9 +17,6 @@ type InvoiceListItem = {
   invoiceDate: string | null;
   totalAmount: string | null;
   vatAmount: string | null;
-  originalFileName: string | null;
-  fileUrl: string | null;
-  files: InvoiceFile[];
   filesCount: number;
   createdAt: string;
   itemsCount: number;
@@ -39,7 +28,7 @@ type InvoiceListItem = {
 const statusLabels: Record<InvoiceStatus, string> = {
   uploaded: "Загружена",
   processing: "Обрабатывается",
-  needs_review: "Требует проверки",
+  needs_review: "Проверка",
   parsed: "Разобрана",
   approved: "Подтверждена",
   failed: "Ошибка",
@@ -60,13 +49,12 @@ function formatMoney(value: string | null) {
   }
 
   const amount = Number(value);
-
   if (!Number.isFinite(amount)) {
     return value;
   }
 
   return `${new Intl.NumberFormat("ru-RU", {
-    minimumFractionDigits: 2,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount)} ₽`;
 }
@@ -195,9 +183,7 @@ export default function InvoicesArchivePage() {
           <div className="invoicesHeroCopy">
             <p className="panelEyebrow">Накладные</p>
             <h2 className="pageTitle">Подтверждённые накладные</h2>
-            <p className="pageDescription">
-              Здесь лежит архив завершённых накладных. Документы сгруппированы по поставщикам.
-            </p>
+            <p className="pageDescription">Здесь лежит архив завершённых накладных. Документы сгруппированы по поставщикам.</p>
           </div>
         </div>
       </section>
@@ -246,65 +232,33 @@ export default function InvoicesArchivePage() {
                     </h3>
                   </div>
 
-                  <div className="invoicesList">
+                  <div className="invoicesCompactList">
                     {group.invoices.map((invoice) => (
-                      <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="invoiceCardLink">
-                        <article className="invoiceCard">
-                          <div className="invoiceCardHeader">
-                            <div className="invoiceCardTitleBlock">
-                              <h3 className="invoiceCardTitle">{invoice.invoiceNumber ? `№${invoice.invoiceNumber}` : "Номер не распознан"}</h3>
-                            </div>
-
-                            <div className="invoiceHeaderActions">
-                              <button
-                                type="button"
-                                className="secondaryButton compactButton"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  void handleDeleteInvoice(invoice.id);
-                                }}
-                                disabled={deletingInvoiceId === invoice.id}
-                              >
-                                {deletingInvoiceId === invoice.id ? "Удаляем..." : "Удалить"}
-                              </button>
-                              <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
-                            </div>
+                      <Link key={invoice.id} href={`/invoices/${invoice.id}`} className="invoiceRowLink">
+                        <article className="invoiceRow">
+                          <div className="invoiceRowMain">
+                            <span className="invoiceRowField invoiceRowPrimary">{invoice.invoiceNumber ? `№${invoice.invoiceNumber}` : "Без номера"}</span>
+                            <span className="invoiceRowField">{formatInvoiceDate(invoice.invoiceDate)}</span>
+                            <span className="invoiceRowField">{group.supplierName}</span>
+                            <span className="invoiceRowField">{formatMoney(invoice.totalAmount)}</span>
+                            <span className="invoiceRowField">НДС {formatMoney(invoice.vatAmount)}</span>
+                            <span className="invoiceRowField">{invoice.itemsCount} строк</span>
                           </div>
 
-                          <div className="invoiceMetaGrid">
-                            <div className="supplierMetaItem">
-                              <span>Дата накладной</span>
-                              <strong>{formatInvoiceDate(invoice.invoiceDate)}</strong>
-                            </div>
-                            <div className="supplierMetaItem">
-                              <span>Сумма</span>
-                              <strong>{formatMoney(invoice.totalAmount)}</strong>
-                            </div>
-                            <div className="supplierMetaItem">
-                              <span>НДС</span>
-                              <strong>{formatMoney(invoice.vatAmount)}</strong>
-                            </div>
-                            <div className="supplierMetaItem">
-                              <span>Строк</span>
-                              <strong>{invoice.itemsCount}</strong>
-                            </div>
-                            <div className="supplierMetaItem">
-                              <span>Требует проверки</span>
-                              <strong>{invoice.reviewItemsCount}</strong>
-                            </div>
-                            <div className="supplierMetaItem">
-                              <span>Изменений цен</span>
-                              <strong>{invoice.priceChangesCount}</strong>
-                            </div>
-                            <div className="supplierMetaItem">
-                              <span>Файлов</span>
-                              <strong>{invoice.filesCount}</strong>
-                            </div>
-                            <div className="supplierMetaItem">
-                              <span>Статус</span>
-                              <strong>{statusLabels[invoice.status]}</strong>
-                            </div>
+                          <div className="invoiceRowActions">
+                            <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
+                            <button
+                              type="button"
+                              className="secondaryButton compactButton"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                void handleDeleteInvoice(invoice.id);
+                              }}
+                              disabled={deletingInvoiceId === invoice.id}
+                            >
+                              {deletingInvoiceId === invoice.id ? "Удаляем..." : "Удалить"}
+                            </button>
                           </div>
                         </article>
                       </Link>
