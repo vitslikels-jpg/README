@@ -43,7 +43,6 @@ export const navigationItems: NavigationItem[] = [
     icon: "reports",
     children: [
       { href: "/reports/price-changes", label: "Изменение цен" },
-      { href: "/reports/top-price-changes", label: "ТОП изменений цен" },
       { href: "/reports/overview", label: "Аудит каталога" },
     ],
   },

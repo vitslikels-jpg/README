@@ -3,49 +3,17 @@
 import type { CSSProperties, KeyboardEvent } from "react";
 import { Fragment, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useEnterprise } from "@/features/enterprises/components/enterprise-context";
+import type {
+  PriceChangeReportItem,
+  PriceChangeSource,
+  PriceChangeStatus,
+  PriceChangeSupplierStat,
+  PriceChangesReportResponse,
+  TopPriceChangeItem,
+} from "@/lib/reports/price-changes";
 
 type PriceChangeDirection = "all" | "up" | "down";
 type PriceChangePeriod = "today" | "7d" | "month" | "custom";
-type PriceChangeStatus = "confirmed" | "requires_review";
-type PriceChangeSource = "invoice";
-
-type PriceChangeSupplierOption = {
-  id: string;
-  name: string;
-};
-
-type PriceChangeReportItem = {
-  id: string;
-  changedAt: string;
-  supplierId: string;
-  supplierName: string;
-  productId: string;
-  productName: string;
-  productNameRaw: string;
-  oldPrice: string | null;
-  newPrice: string;
-  differenceAmount: string | null;
-  differencePercent: string | null;
-  potentialImpactAmount: string | null;
-  quantity: string | null;
-  invoiceNumber: string | null;
-  invoiceDate: string | null;
-  source: PriceChangeSource;
-  status: PriceChangeStatus;
-};
-
-type PriceChangesReportResponse = {
-  summary: {
-    totalChanges: number;
-    increasedCount: number;
-    decreasedCount: number;
-    averageChangePercent: number | null;
-    potentialImpactAmount: string | null;
-    hasPotentialImpactData: boolean;
-  };
-  suppliers: PriceChangeSupplierOption[];
-  items: PriceChangeReportItem[];
-};
 
 const PERIOD_OPTIONS: Array<{ id: PriceChangePeriod; label: string }> = [
   { id: "today", label: "Сегодня" },
@@ -156,7 +124,7 @@ function formatDate(value: string | null) {
   }).format(date);
 }
 
-function getDirectionColor(value: string | null) {
+function getDirectionColor(value: string | number | null) {
   const amount = Number(value);
 
   if (!Number.isFinite(amount) || amount === 0) {
@@ -192,6 +160,119 @@ function getSourceLabel(source: PriceChangeSource) {
 
 function isApiErrorResponse(value: unknown): value is { message?: string } {
   return Boolean(value && typeof value === "object" && "message" in value);
+}
+
+function SectionEmptyState({
+  title,
+  description,
+  testId,
+}: {
+  title: string;
+  description: string;
+  testId?: string;
+}) {
+  return (
+    <div className="emptyState" data-testid={testId}>
+      <p className="emptyStateTitle">{title}</p>
+      <p className="emptyStateText">{description}</p>
+    </div>
+  );
+}
+
+function TopChangesTable({
+  items,
+  emptyTitle,
+  emptyDescription,
+}: {
+  items: TopPriceChangeItem[];
+  emptyTitle: string;
+  emptyDescription: string;
+}) {
+  if (!items.length) {
+    return <SectionEmptyState title={emptyTitle} description={emptyDescription} />;
+  }
+
+  return (
+    <div className="productsTableWrap">
+      <table className="productsTable">
+        <thead>
+          <tr>
+            <th>Товар</th>
+            <th>Поставщик</th>
+            <th>Старая цена</th>
+            <th>Новая цена</th>
+            <th>Изменение %</th>
+            <th>Изменение ₽</th>
+            <th>Дата</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.id}>
+              <td style={{ minWidth: 320, maxWidth: 420, whiteSpace: "normal", wordBreak: "break-word" }}>
+                <strong>{item.productName}</strong>
+              </td>
+              <td style={{ whiteSpace: "normal", minWidth: 180 }}>{item.supplierName}</td>
+              <td>{formatMoney(item.oldPrice)}</td>
+              <td>{formatMoney(item.newPrice)}</td>
+              <td style={{ color: getDirectionColor(item.differencePercent), fontWeight: 700 }}>
+                {formatSignedPercent(item.differencePercent)}
+              </td>
+              <td style={{ color: getDirectionColor(item.differenceAmount), fontWeight: 700 }}>
+                {formatSignedMoney(item.differenceAmount)}
+              </td>
+              <td>{formatDateTime(item.changedAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SupplierStatsTable({
+  items,
+  emptyTitle,
+  emptyDescription,
+}: {
+  items: PriceChangeSupplierStat[];
+  emptyTitle: string;
+  emptyDescription: string;
+}) {
+  if (!items.length) {
+    return <SectionEmptyState title={emptyTitle} description={emptyDescription} />;
+  }
+
+  return (
+    <div className="productsTableWrap">
+      <table className="productsTable">
+        <thead>
+          <tr>
+            <th>Поставщик</th>
+            <th>Количество изменений</th>
+            <th>Подорожаний</th>
+            <th>Снижений</th>
+            <th>Среднее изменение %</th>
+            <th>Последнее изменение</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.supplierId}>
+              <td style={{ whiteSpace: "normal", minWidth: 240 }}>{item.supplierName}</td>
+              <td>{item.totalChanges}</td>
+              <td style={{ color: "#dc2626", fontWeight: 700 }}>{item.increasedCount}</td>
+              <td style={{ color: "#15803d", fontWeight: 700 }}>{item.decreasedCount}</td>
+              <td style={{ color: getDirectionColor(item.averageChangePercent), fontWeight: 700 }}>
+                {formatSignedPercent(item.averageChangePercent)}
+              </td>
+              <td>{formatDateTime(item.lastChangedAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export function PriceChangesReport() {
@@ -301,20 +382,36 @@ export function PriceChangesReport() {
     }
 
     return [
-      { label: "Всего изменений", value: String(report.summary.totalChanges), color: "var(--text)" },
-      { label: "Подорожало", value: String(report.summary.increasedCount), color: "#dc2626" },
-      { label: "Подешевело", value: String(report.summary.decreasedCount), color: "#15803d" },
+      {
+        label: "Всего изменений",
+        value: String(report.summary.totalChanges),
+        color: "var(--text)",
+      },
+      {
+        label: "Уникальных товаров",
+        value: String(report.summary.uniqueProductsCount),
+        color: "var(--text)",
+      },
+      {
+        label: "Максимальный рост цены",
+        value: formatSignedPercent(report.summary.maxIncreasePercent),
+        color: getDirectionColor(report.summary.maxIncreasePercent),
+      },
+      {
+        label: "Максимальное снижение цены",
+        value: formatSignedPercent(report.summary.maxDecreasePercent),
+        color: getDirectionColor(report.summary.maxDecreasePercent),
+      },
+      {
+        label: "Самый нестабильный поставщик",
+        value: report.summary.mostUnstableSupplier?.supplierName ?? "—",
+        color: "var(--text)",
+        meta: report.summary.mostUnstableSupplier ? `${report.summary.mostUnstableSupplier.totalChanges} изменений` : "Нет данных",
+      },
       {
         label: "Среднее изменение %",
         value: formatSignedPercent(report.summary.averageChangePercent),
-        color:
-          report.summary.averageChangePercent === null
-            ? "var(--text)"
-            : report.summary.averageChangePercent > 0
-              ? "#dc2626"
-              : report.summary.averageChangePercent < 0
-                ? "#15803d"
-                : "var(--text)",
+        color: getDirectionColor(report.summary.averageChangePercent),
       },
       {
         label: "Потенциальное влияние",
@@ -331,56 +428,17 @@ export function PriceChangesReport() {
 
   const emptyStateTitle = deferredQuery ? "По вашему поиску ничего не найдено" : "За выбранный период изменений цен не найдено";
 
-  const chartData = useMemo(() => {
-    if (!report?.items.length) {
-      return [];
-    }
-
-    const formatter = new Intl.DateTimeFormat("ru-RU", {
-      day: "2-digit",
-      month: "2-digit",
-    });
-    const grouped = new Map<string, { key: string; label: string; increased: number; decreased: number }>();
-
-    for (const item of report.items) {
-      const date = new Date(item.changedAt);
-
-      if (Number.isNaN(date.getTime())) {
-        continue;
-      }
-
-      const key = date.toISOString().slice(0, 10);
-      const current = grouped.get(key) ?? {
-        key,
-        label: formatter.format(date),
-        increased: 0,
-        decreased: 0,
-      };
-      const difference = Number(item.differenceAmount ?? "0");
-
-      if (difference > 0) {
-        current.increased += 1;
-      } else if (difference < 0) {
-        current.decreased += 1;
-      }
-
-      grouped.set(key, current);
-    }
-
-    return Array.from(grouped.values()).sort((left, right) => left.key.localeCompare(right.key));
-  }, [report]);
-
-  const chartMaxValue = useMemo(() => {
-    if (!chartData.length) {
-      return 0;
-    }
-
-    return chartData.reduce((maxValue, item) => Math.max(maxValue, item.increased, item.decreased), 0);
-  }, [chartData]);
-
   const emptyStateDescription = deferredQuery
     ? "Попробуйте изменить запрос или сбросить фильтры."
     : "Попробуйте изменить период, поставщика или направление изменения.";
+
+  const chartMaxValue = useMemo(() => {
+    if (!report?.chart.length) {
+      return 0;
+    }
+
+    return report.chart.reduce((maxValue, item) => Math.max(maxValue, item.increased, item.decreased), 0);
+  }, [report]);
 
   function toggleExpandedItem(itemId: string) {
     setExpandedItemId((current) => (current === itemId ? null : itemId));
@@ -444,7 +502,7 @@ export function PriceChangesReport() {
         <p className="panelEyebrow">Отчеты</p>
         <h2 className="pageTitle">Изменение закупочных цен</h2>
         <p className="pageDescription">
-          Read-only отчет по изменениям цен для <strong>{activeEnterprise?.name ?? "активного предприятия"}</strong> на базе найденных{" "}
+          Read-only отчет по изменениям цен для <strong>{activeEnterprise?.name ?? "активного предприятия"}</strong> на базе{" "}
           <code>InvoicePriceChange</code>.
         </p>
 
@@ -562,8 +620,8 @@ export function PriceChangesReport() {
         <section className="card">
           <div className="cardHeader">
             <div>
-              <p className="panelEyebrow">Сводка</p>
-              <h3 className="pageTitle">Кратко по изменениям</h3>
+              <p className="panelEyebrow">KPI</p>
+              <h3 className="pageTitle">Ключевые показатели</h3>
             </div>
           </div>
 
@@ -571,7 +629,10 @@ export function PriceChangesReport() {
             {summaryCards.map((card) => (
               <div key={card.label} style={{ padding: 14, border: "1px solid var(--border)", borderRadius: 14 }}>
                 <p className="panelEyebrow">{card.label}</p>
-                <div style={{ marginTop: 8, fontSize: "1.2rem", fontWeight: 700, color: card.color }}>{card.value}</div>
+                <div style={{ marginTop: 8, fontSize: "1.1rem", fontWeight: 700, color: card.color }}>{card.value}</div>
+                {"meta" in card && card.meta ? (
+                  <div style={{ marginTop: 6, fontSize: "0.84rem", color: "var(--text-muted)" }}>{card.meta}</div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -589,7 +650,7 @@ export function PriceChangesReport() {
 
         {isLoading ? (
           <p className="pageDescription">Собираю график...</p>
-        ) : report && chartData.length > 0 ? (
+        ) : report && report.chart.length > 0 ? (
           <div style={{ display: "grid", gap: 16 }}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 16, color: "var(--text-muted)", fontSize: "0.9rem" }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -606,14 +667,14 @@ export function PriceChangesReport() {
               data-testid="price-changes-chart"
               style={{
                 display: "grid",
-                gridTemplateColumns: `repeat(${chartData.length}, minmax(72px, 1fr))`,
+                gridTemplateColumns: `repeat(${report.chart.length}, minmax(72px, 1fr))`,
                 gap: 12,
                 alignItems: "end",
                 overflowX: "auto",
                 paddingBottom: 4,
               }}
             >
-              {chartData.map((item) => (
+              {report.chart.map((item) => (
                 <div key={item.key} style={{ display: "grid", gap: 8, minWidth: 72 }}>
                   <div style={{ height: 180, display: "flex", alignItems: "end", justifyContent: "center", gap: 8 }}>
                     <div
@@ -649,10 +710,71 @@ export function PriceChangesReport() {
             </div>
           </div>
         ) : (
-          <div className="emptyState" data-testid="price-changes-chart-empty-state">
-            <p className="emptyStateTitle">За выбранный период нет данных для графика</p>
-            <p className="emptyStateText">Измените фильтры или период, чтобы увидеть динамику по дням.</p>
+          <SectionEmptyState
+            title="За выбранный период нет данных для графика"
+            description="Измените фильтры или период, чтобы увидеть динамику по дням."
+            testId="price-changes-chart-empty-state"
+          />
+        )}
+      </section>
+
+      <section className="card">
+        <div className="cardHeader">
+          <div>
+            <p className="panelEyebrow">ТОП подорожаний</p>
+            <h3 className="pageTitle">Самые сильные роста цены</h3>
+            <p className="pageDescription">Компактный список 20 самых сильных подорожаний по изменению в процентах.</p>
           </div>
+        </div>
+
+        {isLoading ? (
+          <p className="pageDescription">Собираю ТОП подорожаний...</p>
+        ) : (
+          <TopChangesTable
+            items={report?.topIncreases ?? []}
+            emptyTitle="За выбранный период сильных подорожаний не найдено"
+            emptyDescription="Попробуйте изменить период, поставщика, запрос или направление изменения."
+          />
+        )}
+      </section>
+
+      <section className="card">
+        <div className="cardHeader">
+          <div>
+            <p className="panelEyebrow">ТОП снижений</p>
+            <h3 className="pageTitle">Самые сильные снижения цены</h3>
+            <p className="pageDescription">Компактный список 20 самых сильных снижений по изменению в процентах.</p>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <p className="pageDescription">Собираю ТОП снижений...</p>
+        ) : (
+          <TopChangesTable
+            items={report?.topDecreases ?? []}
+            emptyTitle="За выбранный период снижений цены не найдено"
+            emptyDescription="Измените фильтры или период, если хотите расширить выборку."
+          />
+        )}
+      </section>
+
+      <section className="card">
+        <div className="cardHeader">
+          <div>
+            <p className="panelEyebrow">Поставщики</p>
+            <h3 className="pageTitle">Статистика по поставщикам</h3>
+            <p className="pageDescription">Сортировка по количеству изменений за выбранный период.</p>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <p className="pageDescription">Собираю статистику поставщиков...</p>
+        ) : (
+          <SupplierStatsTable
+            items={report?.supplierStats ?? []}
+            emptyTitle="По поставщикам пока нет данных"
+            emptyDescription="За выбранный период не найдено изменений цен по поставщикам."
+          />
         )}
       </section>
 
@@ -660,7 +782,7 @@ export function PriceChangesReport() {
         <div className="cardHeader">
           <div>
             <p className="panelEyebrow">Таблица</p>
-            <h3 className="pageTitle">Изменения цен</h3>
+            <h3 className="pageTitle">Все изменения цен</h3>
             <p className="pageDescription">Источник на текущем этапе: накладные. Старые структуры не затрагиваются.</p>
           </div>
           <button
@@ -693,7 +815,7 @@ export function PriceChangesReport() {
                 </tr>
               </thead>
               <tbody>
-                {report.items.map((item) => {
+                {report.items.map((item: PriceChangeReportItem) => {
                   const isExpanded = expandedItemId === item.id;
 
                   return (
@@ -803,15 +925,11 @@ export function PriceChangesReport() {
                                 </div>
                                 <div>
                                   <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Изменение ₽</div>
-                                  <div style={{ color: getDirectionColor(item.differenceAmount), fontWeight: 700 }}>
-                                    {formatSignedMoney(item.differenceAmount)}
-                                  </div>
+                                  <div style={{ color: getDirectionColor(item.differenceAmount), fontWeight: 700 }}>{formatSignedMoney(item.differenceAmount)}</div>
                                 </div>
                                 <div>
                                   <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Изменение %</div>
-                                  <div style={{ color: getDirectionColor(item.differencePercent), fontWeight: 700 }}>
-                                    {formatSignedPercent(item.differencePercent)}
-                                  </div>
+                                  <div style={{ color: getDirectionColor(item.differencePercent), fontWeight: 700 }}>{formatSignedPercent(item.differencePercent)}</div>
                                 </div>
                                 <div>
                                   <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>Номер накладной</div>
@@ -841,10 +959,11 @@ export function PriceChangesReport() {
             </table>
           </div>
         ) : (
-          <div className="emptyState" data-testid="price-changes-empty-state">
-            <p className="emptyStateTitle">{emptyStateTitle}</p>
-            <p className="emptyStateText">{emptyStateDescription}</p>
-          </div>
+          <SectionEmptyState
+            title={emptyStateTitle}
+            description={emptyStateDescription}
+            testId="price-changes-empty-state"
+          />
         )}
       </section>
     </div>

@@ -4,9 +4,8 @@ import { prisma } from "@/lib/prisma";
 
 export type ReportPeriod = "today" | "7d" | "month" | "custom";
 export type ReportDirection = "all" | "up" | "down";
-
-type PriceChangeStatus = "confirmed" | "requires_review";
-type PriceChangeSource = "invoice";
+export type PriceChangeStatus = "confirmed" | "requires_review";
+export type PriceChangeSource = "invoice";
 
 export type PriceChangeReportItem = {
   id: string;
@@ -28,6 +27,36 @@ export type PriceChangeReportItem = {
   status: PriceChangeStatus;
 };
 
+export type PriceChangeChartItem = {
+  key: string;
+  label: string;
+  increased: number;
+  decreased: number;
+};
+
+export type TopPriceChangeItem = {
+  id: string;
+  productId: string;
+  productName: string;
+  supplierId: string;
+  supplierName: string;
+  oldPrice: string | null;
+  newPrice: string;
+  differenceAmount: string | null;
+  differencePercent: string | null;
+  changedAt: string;
+};
+
+export type PriceChangeSupplierStat = {
+  supplierId: string;
+  supplierName: string;
+  totalChanges: number;
+  increasedCount: number;
+  decreasedCount: number;
+  averageChangePercent: number | null;
+  lastChangedAt: string | null;
+};
+
 export type PriceChangesReportResponse = {
   summary: {
     totalChanges: number;
@@ -36,11 +65,23 @@ export type PriceChangesReportResponse = {
     averageChangePercent: number | null;
     potentialImpactAmount: string | null;
     hasPotentialImpactData: boolean;
+    maxIncreasePercent: number | null;
+    maxDecreasePercent: number | null;
+    mostUnstableSupplier: {
+      supplierId: string;
+      supplierName: string;
+      totalChanges: number;
+    } | null;
+    uniqueProductsCount: number;
   };
   suppliers: Array<{
     id: string;
     name: string;
   }>;
+  chart: PriceChangeChartItem[];
+  topIncreases: TopPriceChangeItem[];
+  topDecreases: TopPriceChangeItem[];
+  supplierStats: PriceChangeSupplierStat[];
   items: PriceChangeReportItem[];
 };
 
@@ -135,6 +176,21 @@ function resolveDateRange(period: ReportPeriod, dateFromRaw: string | null, date
   return { start, end };
 }
 
+function toTopItem(item: PriceChangeReportItem): TopPriceChangeItem {
+  return {
+    id: item.id,
+    productId: item.productId,
+    productName: item.productName,
+    supplierId: item.supplierId,
+    supplierName: item.supplierName,
+    oldPrice: item.oldPrice,
+    newPrice: item.newPrice,
+    differenceAmount: item.differenceAmount,
+    differencePercent: item.differencePercent,
+    changedAt: item.changedAt,
+  };
+}
+
 export async function buildPriceChangesReport(
   params: BuildPriceChangesReportParams,
 ): Promise<ReportSuccessResult | ReportErrorResult> {
@@ -173,7 +229,7 @@ export async function buildPriceChangesReport(
     return {
       ok: false,
       status: 400,
-      message: resolvedRange.error ?? "Некорректный период отчёта.",
+      message: resolvedRange.error ?? "Некорректный период отчета.",
     };
   }
 
@@ -342,6 +398,138 @@ export async function buildPriceChangesReport(
     const potentialImpactAmount =
       impactValues.length > 0 ? impactValues.reduce((sum, value) => sum.plus(value), ZERO).toDecimalPlaces(2) : null;
 
+    const chartMap = new Map<string, PriceChangeChartItem>();
+
+    for (const item of items) {
+      const date = new Date(item.changedAt);
+
+      if (Number.isNaN(date.getTime())) {
+        continue;
+      }
+
+      const key = date.toISOString().slice(0, 10);
+      const current = chartMap.get(key) ?? {
+        key,
+        label: new Intl.DateTimeFormat("ru-RU", {
+          day: "2-digit",
+          month: "2-digit",
+        }).format(date),
+        increased: 0,
+        decreased: 0,
+      };
+      const differenceAmount = Number(item.differenceAmount ?? "0");
+
+      if (differenceAmount > 0) {
+        current.increased += 1;
+      } else if (differenceAmount < 0) {
+        current.decreased += 1;
+      }
+
+      chartMap.set(key, current);
+    }
+
+    const chart = Array.from(chartMap.values()).sort((left, right) => left.key.localeCompare(right.key));
+
+    const itemsWithPercent = items.filter(
+      (item): item is PriceChangeReportItem & { differencePercent: string } =>
+        item.differencePercent !== null && Number.isFinite(Number(item.differencePercent)),
+    );
+
+    const topIncreases = itemsWithPercent
+      .filter((item) => Number(item.differencePercent) > 0)
+      .sort((left, right) => Number(right.differencePercent) - Number(left.differencePercent))
+      .slice(0, 20)
+      .map(toTopItem);
+
+    const topDecreases = itemsWithPercent
+      .filter((item) => Number(item.differencePercent) < 0)
+      .sort((left, right) => Number(left.differencePercent) - Number(right.differencePercent))
+      .slice(0, 20)
+      .map(toTopItem);
+
+    const supplierStatsMap = new Map<
+      string,
+      {
+        supplierId: string;
+        supplierName: string;
+        totalChanges: number;
+        increasedCount: number;
+        decreasedCount: number;
+        percentValues: number[];
+        lastChangedAt: string | null;
+      }
+    >();
+
+    for (const item of items) {
+      const current = supplierStatsMap.get(item.supplierId) ?? {
+        supplierId: item.supplierId,
+        supplierName: item.supplierName,
+        totalChanges: 0,
+        increasedCount: 0,
+        decreasedCount: 0,
+        percentValues: [],
+        lastChangedAt: null,
+      };
+      const differenceAmount = Number(item.differenceAmount ?? "0");
+      const differencePercent = item.differencePercent === null ? null : Number(item.differencePercent);
+
+      current.totalChanges += 1;
+
+      if (differenceAmount > 0) {
+        current.increasedCount += 1;
+      } else if (differenceAmount < 0) {
+        current.decreasedCount += 1;
+      }
+
+      if (differencePercent !== null && Number.isFinite(differencePercent)) {
+        current.percentValues.push(differencePercent);
+      }
+
+      if (!current.lastChangedAt || new Date(item.changedAt).getTime() > new Date(current.lastChangedAt).getTime()) {
+        current.lastChangedAt = item.changedAt;
+      }
+
+      supplierStatsMap.set(item.supplierId, current);
+    }
+
+    const supplierStats: PriceChangeSupplierStat[] = Array.from(supplierStatsMap.values())
+      .map((item) => ({
+        supplierId: item.supplierId,
+        supplierName: item.supplierName,
+        totalChanges: item.totalChanges,
+        increasedCount: item.increasedCount,
+        decreasedCount: item.decreasedCount,
+        averageChangePercent:
+          item.percentValues.length > 0
+            ? item.percentValues.reduce((sum, value) => sum + value, 0) / item.percentValues.length
+            : null,
+        lastChangedAt: item.lastChangedAt,
+      }))
+      .sort((left, right) => {
+        if (right.totalChanges !== left.totalChanges) {
+          return right.totalChanges - left.totalChanges;
+        }
+
+        return new Date(right.lastChangedAt ?? 0).getTime() - new Date(left.lastChangedAt ?? 0).getTime();
+      });
+
+    const maxIncreasePercent =
+      topIncreases.length > 0
+        ? Number(
+            topIncreases.reduce((maxItem, item) =>
+              Number(item.differencePercent ?? "0") > Number(maxItem.differencePercent ?? "0") ? item : maxItem,
+            ).differencePercent,
+          )
+        : null;
+    const maxDecreasePercent =
+      topDecreases.length > 0
+        ? Number(
+            topDecreases.reduce((minItem, item) =>
+              Number(item.differencePercent ?? "0") < Number(minItem.differencePercent ?? "0") ? item : minItem,
+            ).differencePercent,
+          )
+        : null;
+
     return {
       ok: true,
       data: {
@@ -352,8 +540,23 @@ export async function buildPriceChangesReport(
           averageChangePercent,
           potentialImpactAmount: potentialImpactAmount?.toString() ?? null,
           hasPotentialImpactData: impactValues.length > 0,
+          maxIncreasePercent,
+          maxDecreasePercent,
+          mostUnstableSupplier:
+            supplierStats.length > 0
+              ? {
+                  supplierId: supplierStats[0].supplierId,
+                  supplierName: supplierStats[0].supplierName,
+                  totalChanges: supplierStats[0].totalChanges,
+                }
+              : null,
+          uniqueProductsCount: new Set(items.map((item) => item.productId)).size,
         },
         suppliers,
+        chart,
+        topIncreases,
+        topDecreases,
+        supplierStats,
         items,
       },
     };
