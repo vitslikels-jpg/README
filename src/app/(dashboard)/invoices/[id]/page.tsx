@@ -2109,17 +2109,15 @@ export default function InvoiceDetailsPage() {
                                 >
                                   {itemStatus === "Нужно выбрать товар" ? "Выбрать" : "Выбрать вручную"}
                                 </button>
-                                {itemStatus === "Новая позиция" ? (
-                                  <button
-                                    type="button"
-                                    className="secondaryButton compactButton"
-                                    onClick={() => void handleCreateProduct(item)}
-                                    disabled={isBusy}
-                                    title={invoice.supplierId ? undefined : "Сначала выберите поставщика"}
-                                  >
-                                    {creatingProductItemId === item.id ? "Создаём..." : "Создать товар"}
-                                  </button>
-                                ) : null}
+                                <button
+                                  type="button"
+                                  className="secondaryButton compactButton"
+                                  onClick={() => void handleCreateProduct(item)}
+                                  disabled={isBusy}
+                                  title={invoice.supplierId ? undefined : "Сначала выберите поставщика"}
+                                >
+                                  {creatingProductItemId === item.id ? "Создаём..." : "Создать товар"}
+                                </button>
                               </>
                             ) : itemStatus !== "Цена изменилась" ? (
                               <button
@@ -2364,6 +2362,26 @@ export default function InvoiceDetailsPage() {
               </div>
             </div>
 
+            <div className="invoiceItemSearchPanel">
+              <div className="invoiceSearchModalHeader">
+                <div>
+                  <p className="panelEyebrow">Новая позиция</p>
+                  <h3 className="sectionTitle">Не нашли нужный товар?</h3>
+                  <p className="pageDescription">Можно сразу создать новый товар из строки накладной.</p>
+                </div>
+                <button
+                  type="button"
+                  className="primaryButton compactButton"
+                  onClick={() => void handleCreateProduct(productSearchItem)}
+                  disabled={isBusy}
+                  title={invoice.supplierId ? undefined : "Сначала выберите поставщика"}
+                >
+                  {creatingProductItemId === productSearchItem.id ? "Создаём..." : "Создать новый товар из строки накладной"}
+                </button>
+              </div>
+              {!invoice.supplierId ? <p className="invoiceHint">Сначала выберите поставщика.</p> : null}
+            </div>
+
             {productSearchError ? <p className="errorText">{productSearchError}</p> : null}
             {isSearchingProducts ? <p className="invoiceHint">Ищем товары...</p> : null}
 
@@ -2383,15 +2401,6 @@ export default function InvoiceDetailsPage() {
                       Искать среди всех поставщиков
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    className="secondaryButton compactButton"
-                    onClick={() => void handleCreateProduct(productSearchItem)}
-                    disabled={isBusy || !invoice.supplierId}
-                    title={invoice.supplierId ? undefined : "Сначала выберите поставщика"}
-                  >
-                    {creatingProductItemId === productSearchItem.id ? "Создаём..." : "Создать новый товар"}
-                  </button>
                 </div>
               </div>
             ) : null}
