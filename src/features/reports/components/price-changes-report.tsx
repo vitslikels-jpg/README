@@ -489,7 +489,6 @@ export function PriceChangesReport() {
   if (!activeEnterpriseId) {
     return (
       <section className="card pagePlaceholder">
-        <p className="panelEyebrow">Отчеты</p>
         <h2 className="pageTitle">Сначала выберите предприятие</h2>
         <p className="pageDescription">Отчет по изменению цен строится только для активного предприятия.</p>
       </section>
@@ -499,12 +498,7 @@ export function PriceChangesReport() {
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <section className="card">
-        <p className="panelEyebrow">Отчеты</p>
         <h2 className="pageTitle">Изменение закупочных цен</h2>
-        <p className="pageDescription">
-          Read-only отчет по изменениям цен для <strong>{activeEnterprise?.name ?? "активного предприятия"}</strong> на базе{" "}
-          <code>InvoicePriceChange</code>.
-        </p>
 
         <div style={{ display: "grid", gap: 12, marginTop: 20 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -785,14 +779,6 @@ export function PriceChangesReport() {
             <h3 className="pageTitle">Все изменения цен</h3>
             <p className="pageDescription">Источник на текущем этапе: накладные. Старые структуры не затрагиваются.</p>
           </div>
-          <button
-            type="button"
-            className="button buttonGhost"
-            onClick={handleExport}
-            disabled={!reportQueryString || isExporting}
-          >
-            {isExporting ? "Экспорт..." : "Экспорт в Excel"}
-          </button>
         </div>
 
         {isLoading ? (
@@ -965,6 +951,17 @@ export function PriceChangesReport() {
             testId="price-changes-empty-state"
           />
         )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+          <button
+            type="button"
+            className="button buttonGhost"
+            onClick={handleExport}
+            disabled={!reportQueryString || isExporting}
+          >
+            {isExporting ? "Экспорт..." : "Экспорт в Excel"}
+          </button>
+        </div>
       </section>
     </div>
   );
