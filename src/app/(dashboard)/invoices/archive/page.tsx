@@ -92,6 +92,7 @@ export default function InvoicesArchivePage() {
   const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
 
   const loadInvoices = useCallback(async (enterpriseId: string, signal?: AbortSignal) => {
     setIsLoading(true);
@@ -137,6 +138,37 @@ export default function InvoicesArchivePage() {
     void loadInvoices(activeEnterpriseId, controller.signal);
     return () => controller.abort();
   }, [activeEnterpriseId, loadInvoices]);
+
+  async function handleDeleteInvoice(invoiceId: string) {
+    if (!activeEnterpriseId) {
+      return;
+    }
+
+    if (!window.confirm("Удалить накладную? Это действие нельзя отменить.")) {
+      return;
+    }
+
+    setDeletingInvoiceId(invoiceId);
+    setErrorMessage("");
+
+    try {
+      const query = new URLSearchParams({ enterpriseId: activeEnterpriseId });
+      const response = await fetch(`/api/invoices/${invoiceId}?${query.toString()}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Не удалось удалить накладную.");
+      }
+
+      await loadInvoices(activeEnterpriseId);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось удалить накладную.");
+    } finally {
+      setDeletingInvoiceId(null);
+    }
+  }
 
   const groupedInvoices = useMemo(() => {
     const groups = new Map<string, InvoiceListItem[]>();
@@ -223,7 +255,21 @@ export default function InvoicesArchivePage() {
                               <h3 className="invoiceCardTitle">{invoice.invoiceNumber ? `№${invoice.invoiceNumber}` : "Номер не распознан"}</h3>
                             </div>
 
-                            <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
+                            <div className="invoiceHeaderActions">
+                              <button
+                                type="button"
+                                className="secondaryButton compactButton"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  void handleDeleteInvoice(invoice.id);
+                                }}
+                                disabled={deletingInvoiceId === invoice.id}
+                              >
+                                {deletingInvoiceId === invoice.id ? "Удаляем..." : "Удалить"}
+                              </button>
+                              <span className={`statusPill ${statusClassNames[invoice.status]}`}>{statusLabels[invoice.status]}</span>
+                            </div>
                           </div>
 
                           <div className="invoiceMetaGrid">
