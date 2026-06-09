@@ -40,7 +40,7 @@ export function detectInvoicePriceLayoutProfile(supplierName?: string | null): I
 export function normalizeInvoiceLinePrices(input: InvoiceLinePriceInput): InvoiceLinePriceNormalizationResult {
   const profile = detectInvoicePriceLayoutProfile(input.supplierName);
   const quantity = input.quantity !== null && input.quantity > 0 ? input.quantity : null;
-  const vatRate = input.vatRate;
+  let vatRate = input.vatRate;
   const lineTotal = input.lineTotal;
 
   let priceWithoutVat = input.priceWithoutVat;
@@ -74,6 +74,10 @@ export function normalizeInvoiceLinePrices(input: InvoiceLinePriceInput): Invoic
       priceWithoutVat = roundMoney(priceWithVat / multiplier);
       derivedPriceWithoutVat = true;
     }
+  }
+
+  if (vatRate === null && priceWithoutVat !== null && priceWithoutVat > 0 && priceWithVat !== null) {
+    vatRate = roundMoney(((priceWithVat / priceWithoutVat) - 1) * 100);
   }
 
   return {
