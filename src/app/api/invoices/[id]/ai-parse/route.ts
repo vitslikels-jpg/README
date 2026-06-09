@@ -8,6 +8,7 @@ import {
 import { jsonUtf8 } from "@/lib/http";
 import { filterInvoiceItems } from "@/lib/invoice-item-filter";
 import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
+import { normalizeInvoiceLinePrices } from "@/lib/invoice-line-price-normalizer";
 import { sanitizeMoney, sanitizeQuantity, sanitizeVatRate } from "@/lib/invoice-number-sanitize";
 import { matchInvoiceProduct } from "@/lib/invoice-product-match";
 import { matchInvoiceSupplier } from "@/lib/invoice-supplier-match";
@@ -77,6 +78,7 @@ async function clearInvoiceParsedData(invoiceId: string) {
 }
 
 function sanitizeParsedItem(item: {
+  supplierName?: string | null;
   name: string | null;
   quantity: number | null;
   unit: string | null;
@@ -106,10 +108,19 @@ function sanitizeParsedItem(item: {
     lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
   };
 
-  const derivedVatFields = deriveVatFields({
+  const normalizedLinePrices = normalizeInvoiceLinePrices({
+    supplierName: item.supplierName,
+    quantity: sanitizedItem.quantity,
     priceWithoutVat: sanitizedItem.priceWithoutVat,
     priceWithVat: sanitizedItem.priceWithVat,
     vatRate: sanitizedItem.vatRate,
+    lineTotal: sanitizedItem.lineTotal,
+  });
+
+  const derivedVatFields = deriveVatFields({
+    priceWithoutVat: normalizedLinePrices.priceWithoutVat,
+    priceWithVat: normalizedLinePrices.priceWithVat,
+    vatRate: normalizedLinePrices.vatRate,
   });
 
   return {
@@ -132,9 +143,13 @@ function buildDraftItems(
   }>,
   baseConfidenceWhenReview: number,
   baseConfidenceWhenReady: number,
+  supplierName?: string | null,
 ) {
   return items.map((item) => {
-    const sanitizedItem = sanitizeParsedItem(item);
+    const sanitizedItem = sanitizeParsedItem({
+      ...item,
+      supplierName,
+    });
     const needsReview = sanitizedItem.forcedReview || needsItemReview(sanitizedItem);
 
     return {
@@ -145,7 +160,7 @@ function buildDraftItems(
   });
 }
 
-function buildFallbackDraftItems(tableRows: string[]) {
+function buildFallbackDraftItems(tableRows: string[], supplierName?: string | null) {
   const fallbackItems = parseInvoiceItemsFromText(tableRows.join("\n"));
 
   return {
@@ -157,14 +172,23 @@ function buildFallbackDraftItems(tableRows: string[]) {
       const forcedReview =
         sanitizedQuantity.forcedReview || sanitizedPriceWithVat.forcedReview || sanitizedLineTotal.forcedReview;
 
+      const normalizedLinePrices = normalizeInvoiceLinePrices({
+        supplierName,
+        quantity: sanitizedQuantity.value?.toNumber() ?? null,
+        priceWithoutVat: null,
+        priceWithVat: sanitizedPriceWithVat.value?.toNumber() ?? null,
+        vatRate: null,
+        lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
+      });
+
       return {
         name: item.productNameRaw,
         quantity: sanitizedQuantity.value?.toNumber() ?? null,
         unit: item.unit,
-        priceWithVat: sanitizedPriceWithVat.value?.toNumber() ?? null,
-        priceWithoutVat: null,
-        vatRate: null,
-        lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
+        priceWithVat: normalizedLinePrices.priceWithVat,
+        priceWithoutVat: normalizedLinePrices.priceWithoutVat,
+        vatRate: normalizedLinePrices.vatRate,
+        lineTotal: normalizedLinePrices.lineTotal,
         forcedReview,
         confidence: forcedReview ? 0.5 : item.confidence,
         needsReview: true,
@@ -177,9 +201,10 @@ async function createInvoiceItems(params: {
   invoiceId: string;
   enterpriseId: string;
   supplierId: string | null;
+  supplierName?: string | null;
   items: ParsedItemDraft[];
 }) {
-  const { invoiceId, enterpriseId, supplierId, items } = params;
+  const { invoiceId, enterpriseId, supplierId, supplierName, items } = params;
   const createdItemsCount = items.length;
   let reviewItemsCount = 0;
   let matchedItemsCount = 0;
@@ -218,10 +243,18 @@ async function createInvoiceItems(params: {
         quantity: sanitizedQuantity.value,
         unit: item.unit,
         ...(() => {
-          const derivedVatFields = deriveVatFields({
+          const normalizedLinePrices = normalizeInvoiceLinePrices({
+            supplierName,
+            quantity: sanitizedQuantity.value?.toNumber() ?? null,
             priceWithoutVat: sanitizedPriceWithoutVat.value?.toNumber() ?? null,
             priceWithVat: sanitizedPriceWithVat.value?.toNumber() ?? null,
             vatRate: sanitizedVatRate.value?.toNumber() ?? null,
+            lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
+          });
+          const derivedVatFields = deriveVatFields({
+            priceWithoutVat: normalizedLinePrices.priceWithoutVat,
+            priceWithVat: normalizedLinePrices.priceWithVat,
+            vatRate: normalizedLinePrices.vatRate,
           });
 
           return {
@@ -427,12 +460,12 @@ export async function POST(request: Request, context: RouteContext) {
       });
 
       if (textTableDetected && tableRows.length > 0) {
-        parsedItems = buildDraftItems(parsedInvoice.items, 0.65, 0.85);
+        parsedItems = buildDraftItems(parsedInvoice.items, 0.65, 0.85, structure.supplierName);
         textParsedItemsCount = parsedItems.length;
         rawTextPreview = buildRowsPreview(tableRows);
 
         if (parsedItems.length === 0) {
-          const fallbackResult = buildFallbackDraftItems(tableRows);
+          const fallbackResult = buildFallbackDraftItems(tableRows, structure.supplierName);
           parsedItems = fallbackResult.items;
           textParsedItemsCount = parsedItems.length;
           fallbackUsed = fallbackResult.items.length > 0;
@@ -469,7 +502,7 @@ export async function POST(request: Request, context: RouteContext) {
         });
 
         if (visionItemsCount > 0) {
-          parsedItems = buildDraftItems(visionResult.items, 0.7, 0.9);
+          parsedItems = buildDraftItems(visionResult.items, 0.7, 0.9, visionResult.supplierName ?? metadata.supplierName);
           visionUsed = true;
           fallbackUsed = false;
           metadata = {
@@ -589,6 +622,7 @@ export async function POST(request: Request, context: RouteContext) {
       invoiceId: id,
       enterpriseId,
       supplierId: resolvedSupplierId,
+      supplierName: metadata.supplierName,
       items: parsedItems,
     });
 

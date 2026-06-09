@@ -234,6 +234,8 @@ function buildTableRowsPrompt(rawText: string, structure: InvoiceGeminiStructure
 }
 
 function buildItemsPrompt(tableRows: string[], structure: InvoiceGeminiStructureResult) {
+  const hasHorecaProfile = /хорека|horeca/u.test(structure.supplierName ?? "");
+
   return [
     "Parse Russian invoice table rows into structured items.",
     "Return strict JSON only.",
@@ -241,6 +243,20 @@ function buildItemsPrompt(tableRows: string[], structure: InvoiceGeminiStructure
     "If a row is partially damaged, still return an item with name and null numeric fields.",
     "Do not invent values. Unknown values must be null.",
     "Use the known document structure and column hints if helpful.",
+    "If the table has columns like 'Цена', 'Цена без НДС', 'Стоимость товаров без НДС', 'Ставка НДС', 'Сумма НДС', 'Всего с НДС' or 'Итого с НДС', then map them strictly:",
+    "- priceWithoutVat = unit price without VAT",
+    "- vatRate = VAT rate",
+    "- lineTotal = final line total with VAT",
+    "- priceWithVat = lineTotal / quantity when lineTotal and quantity are present",
+    "Do not confuse unit price, line subtotal without VAT, VAT amount, and line total with VAT.",
+    ...(hasHorecaProfile
+      ? [
+          "Supplier-specific hint: Horeca invoices often use this layout:",
+          "- unit price column is without VAT",
+          "- final line total column is with VAT for the whole row",
+          "- in this case priceWithVat must be derived from lineTotal / quantity",
+        ]
+      : []),
     "Rows:",
     tableRows.map((row, index) => `${index + 1}. ${row}`).join("\n"),
     "Structure hints:",

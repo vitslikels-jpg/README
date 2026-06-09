@@ -1,6 +1,8 @@
-﻿import { jsonUtf8 } from "@/lib/http";
+﻿import { Prisma } from "@prisma/client";
+import { jsonUtf8 } from "@/lib/http";
 import { filterInvoiceItems } from "@/lib/invoice-item-filter";
 import { parseInvoiceItemsFromText } from "@/lib/invoice-item-parser";
+import { normalizeInvoiceLinePrices } from "@/lib/invoice-line-price-normalizer";
 import { sanitizeMoney, sanitizeQuantity } from "@/lib/invoice-number-sanitize";
 import { matchInvoiceProduct } from "@/lib/invoice-product-match";
 import { ensureEnterpriseExists } from "@/lib/orders";
@@ -196,6 +198,7 @@ export async function POST(request: Request, context: RouteContext) {
     select: {
       id: true,
       supplierId: true,
+      detectedSupplierName: true,
       rawText: true,
     },
   });
@@ -253,15 +256,26 @@ export async function POST(request: Request, context: RouteContext) {
         productNameRaw: parsedItem.productNameRaw,
       });
 
-      const structuredParsed =
-        sanitizedQuantity.value !== null && Boolean(parsedItem.unit) && sanitizedPriceWithVat.value !== null;
+      const normalizedLinePrices = normalizeInvoiceLinePrices({
+        supplierName: invoice.detectedSupplierName,
+        quantity: sanitizedQuantity.value?.toNumber() ?? null,
+        priceWithoutVat: null,
+        priceWithVat: sanitizedPriceWithVat.value?.toNumber() ?? null,
+        vatRate: null,
+        lineTotal: sanitizedLineTotal.value?.toNumber() ?? null,
+      });
 
       const baseItem = {
         ...parsedItem,
         quantity: sanitizedQuantity.value,
-        priceWithVat: sanitizedPriceWithVat.value,
-        lineTotal: sanitizedLineTotal.value,
+        priceWithoutVat:
+          normalizedLinePrices.priceWithoutVat === null ? null : new Prisma.Decimal(normalizedLinePrices.priceWithoutVat),
+        priceWithVat:
+          normalizedLinePrices.priceWithVat === null ? null : new Prisma.Decimal(normalizedLinePrices.priceWithVat),
+        vatRate: normalizedLinePrices.vatRate === null ? null : new Prisma.Decimal(normalizedLinePrices.vatRate),
+        lineTotal: normalizedLinePrices.lineTotal === null ? null : new Prisma.Decimal(normalizedLinePrices.lineTotal),
       };
+      const structuredParsed = baseItem.quantity !== null && Boolean(parsedItem.unit) && baseItem.priceWithVat !== null;
 
       if (productMatch.status === "matched") {
         return {
@@ -307,7 +321,9 @@ export async function POST(request: Request, context: RouteContext) {
           matchedProductId: item.matchedProductId,
           quantity: item.quantity,
           unit: item.unit,
+          priceWithoutVat: item.priceWithoutVat,
           priceWithVat: item.priceWithVat,
+          vatRate: item.vatRate,
           lineTotal: item.lineTotal,
           confidence: item.confidence,
           needsReview: item.needsReview,

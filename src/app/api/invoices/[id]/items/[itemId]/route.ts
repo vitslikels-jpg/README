@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { jsonUtf8 } from "@/lib/http";
+import { normalizeInvoiceLinePrices } from "@/lib/invoice-line-price-normalizer";
 import { sanitizeMoney, sanitizeQuantity, sanitizeVatRate } from "@/lib/invoice-number-sanitize";
 import { deriveVatFields } from "@/lib/invoice-vat";
 import { ensureEnterpriseExists } from "@/lib/orders";
@@ -90,6 +91,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     },
     select: {
       id: true,
+      detectedSupplierName: true,
     },
   });
 
@@ -221,10 +223,18 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  const derivedVatFields = deriveVatFields({
+  const normalizedLinePrices = normalizeInvoiceLinePrices({
+    supplierName: invoice.detectedSupplierName,
+    quantity: quantity?.toNumber() ?? null,
     priceWithoutVat: priceWithoutVat?.toNumber() ?? null,
     priceWithVat: priceWithVat?.toNumber() ?? null,
     vatRate: vatRate?.toNumber() ?? null,
+    lineTotal: lineTotal?.toNumber() ?? null,
+  });
+  const derivedVatFields = deriveVatFields({
+    priceWithoutVat: normalizedLinePrices.priceWithoutVat,
+    priceWithVat: normalizedLinePrices.priceWithVat,
+    vatRate: normalizedLinePrices.vatRate,
   });
 
   priceWithoutVat = derivedVatFields.priceWithoutVat === null ? null : new Prisma.Decimal(derivedVatFields.priceWithoutVat);
