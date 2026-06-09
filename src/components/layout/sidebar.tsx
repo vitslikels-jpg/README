@@ -71,6 +71,30 @@ function isNestedRouteActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function getActiveChildHref(pathname: string, item: NavigationItem) {
+  if (!item.children?.length) {
+    return null;
+  }
+
+  const exactMatch = item.children.find((child) => pathname === child.href);
+
+  if (exactMatch) {
+    return exactMatch.href;
+  }
+
+  return item.children.reduce<string | null>((activeHref, child) => {
+    if (child.href === item.href || !pathname.startsWith(`${child.href}/`)) {
+      return activeHref;
+    }
+
+    if (!activeHref || child.href.length > activeHref.length) {
+      return child.href;
+    }
+
+    return activeHref;
+  }, null);
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -199,12 +223,9 @@ export function Sidebar() {
 
       <nav className="sidebarNav">
         {navigationItems.map((item) => {
-          const isItemActive =
-            item.href === "/invoices"
-              ? pathname === item.href || pathname.startsWith("/invoices/")
-              : item.href === "/reports"
-                ? pathname === item.href || pathname.startsWith("/reports/")
-                : isNestedRouteActive(pathname, item.href);
+          const isItemRouteActive = isNestedRouteActive(pathname, item.href);
+          const activeChildHref = getActiveChildHref(pathname, item);
+          const isItemActive = isItemRouteActive && activeChildHref === null;
 
           if (!item.children?.length) {
             return (
@@ -221,7 +242,7 @@ export function Sidebar() {
             );
           }
 
-          const isExpanded = isItemActive || expandedSections[item.href] === true;
+          const isExpanded = isItemRouteActive || expandedSections[item.href] === true;
 
           return (
             <div key={item.href} className="navGroup">
@@ -254,7 +275,7 @@ export function Sidebar() {
               >
                 <div className="navSubmenuInner">
                   {item.children.map((child) => {
-                    const isChildActive = isNestedRouteActive(pathname, child.href);
+                    const isChildActive = activeChildHref === child.href;
 
                     return (
                       <Link key={child.href} href={child.href} className={`navSubItem ${isChildActive ? "navSubItemActive" : ""}`}>
