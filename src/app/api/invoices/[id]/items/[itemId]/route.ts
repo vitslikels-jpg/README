@@ -239,6 +239,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   priceWithoutVat = derivedVatFields.priceWithoutVat === null ? null : new Prisma.Decimal(derivedVatFields.priceWithoutVat);
   priceWithVat = derivedVatFields.priceWithVat === null ? null : new Prisma.Decimal(derivedVatFields.priceWithVat);
+  vatRate = normalizedLinePrices.vatRate === null ? null : new Prisma.Decimal(normalizedLinePrices.vatRate);
 
   const unit = hasUnit ? (typeof body.unit === "string" ? body.unit.trim() || null : null) : item.unit;
   const hasStructuredFields = quantity !== null && Boolean(unit) && priceWithVat !== null;

@@ -127,6 +127,7 @@ function sanitizeParsedItem(item: {
     ...sanitizedItem,
     priceWithoutVat: derivedVatFields.priceWithoutVat,
     priceWithVat: derivedVatFields.priceWithVat,
+    vatRate: normalizedLinePrices.vatRate,
     forcedReview,
   };
 }
