@@ -29,7 +29,7 @@ export function detectInvoicePriceLayoutProfile(supplierName?: string | null): I
   if (
     normalizedSupplierName.includes("хорека") ||
     normalizedSupplierName.includes("horeca") ||
-    normalizedSupplierName.includes("хорека мдц")
+    normalizedSupplierName.includes("horeka")
   ) {
     return "unit_without_vat_plus_line_total_with_vat";
   }

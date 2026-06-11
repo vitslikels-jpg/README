@@ -54,6 +54,29 @@ function needsItemReview(item: {
   return item.quantity === null || !item.unit || item.priceWithVat === null;
 }
 
+function countStructuredItems(items: Array<{
+  quantity: number | null;
+  unit: string | null;
+  priceWithVat: number | null;
+}>) {
+  return items.filter((item) => !needsItemReview(item)).length;
+}
+
+function looksLikePoorOcrText(rawText: string) {
+  const letters = rawText.match(/\p{L}/gu) ?? [];
+
+  if (letters.length < 40) {
+    return true;
+  }
+
+  const cyrillicLetters = rawText.match(/\p{Script=Cyrillic}/gu) ?? [];
+  const latinLetters = rawText.match(/\p{Script=Latin}/gu) ?? [];
+  const cyrillicRatio = cyrillicLetters.length / letters.length;
+  const latinRatio = latinLetters.length / letters.length;
+
+  return cyrillicRatio < 0.45 || latinRatio > 0.35;
+}
+
 function buildRawTextPreview(rawText: string) {
   return rawText.replace(/\s+/g, " ").trim().slice(0, 1000);
 }
@@ -394,10 +417,12 @@ export async function POST(request: Request, context: RouteContext) {
 
   const rawText = invoice.rawText?.trim() ?? "";
   const invoiceFiles = invoice.files as InvoiceVisionInputFile[];
+  const poorOcrText = rawText ? looksLikePoorOcrText(rawText) : false;
 
   console.info("[invoice-ai-parse:start]", {
     invoiceId: id,
     rawTextLength: rawText.length,
+    poorOcrText,
   });
 
   await prisma.invoiceDocument.update({
@@ -485,7 +510,10 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
 
-    if (tableRowsCount === 0 || textParsedItemsCount === 0) {
+    const shouldAttemptVision =
+      invoiceFiles.length > 0 && (tableRowsCount === 0 || textParsedItemsCount === 0 || poorOcrText);
+
+    if (shouldAttemptVision) {
       visionAttempted = true;
 
       try {
@@ -503,16 +531,24 @@ export async function POST(request: Request, context: RouteContext) {
         });
 
         if (visionItemsCount > 0) {
-          parsedItems = buildDraftItems(visionResult.items, 0.7, 0.9, visionResult.supplierName ?? metadata.supplierName);
-          visionUsed = true;
-          fallbackUsed = false;
-          metadata = {
-            supplierName: visionResult.supplierName ?? metadata.supplierName,
-            invoiceNumber: visionResult.invoiceNumber ?? metadata.invoiceNumber,
-            invoiceDate: visionResult.invoiceDate ?? metadata.invoiceDate,
-            totalAmount: visionResult.totalAmount ?? metadata.totalAmount,
-            vatAmount: visionResult.vatAmount ?? metadata.vatAmount,
-          };
+          const visionDraftItems = buildDraftItems(visionResult.items, 0.7, 0.9, visionResult.supplierName ?? metadata.supplierName);
+          const shouldPreferVision =
+            parsedItems.length === 0 ||
+            (poorOcrText && countStructuredItems(visionDraftItems) > 0) ||
+            countStructuredItems(visionDraftItems) > countStructuredItems(parsedItems);
+
+          if (shouldPreferVision) {
+            parsedItems = visionDraftItems;
+            visionUsed = true;
+            fallbackUsed = false;
+            metadata = {
+              supplierName: visionResult.supplierName ?? metadata.supplierName,
+              invoiceNumber: visionResult.invoiceNumber ?? metadata.invoiceNumber,
+              invoiceDate: visionResult.invoiceDate ?? metadata.invoiceDate,
+              totalAmount: visionResult.totalAmount ?? metadata.totalAmount,
+              vatAmount: visionResult.vatAmount ?? metadata.vatAmount,
+            };
+          }
         }
       } catch (error) {
         if (error instanceof InvoiceVisionUnsupportedError) {

@@ -66,9 +66,12 @@ function normalizeNumber(value: unknown) {
     return null;
   }
 
-  const numericValue =
-    typeof value === "number" ? value : Number(String(value).replace(/\s+/g, "").replace(",", "."));
+  const normalizedValue = String(value)
+    .replace(/\s+/g, "")
+    .replace("%", "")
+    .replace(",", ".");
 
+  const numericValue = typeof value === "number" ? value : Number(normalizedValue);
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
@@ -89,9 +92,9 @@ function normalizeItem(value: unknown): InvoiceVisionItem | null {
     quantity: normalizeNumber(item.quantity),
     unit: normalizeText(item.unit),
     priceWithVat: normalizeNumber(item.priceWithVat ?? item.price),
-    priceWithoutVat: normalizeNumber(item.priceWithoutVat),
+    priceWithoutVat: normalizeNumber(item.priceWithoutVat ?? item.unitPriceWithoutVat),
     vatRate: normalizeNumber(item.vatRate ?? item.vat),
-    lineTotal: normalizeNumber(item.lineTotal ?? item.amount ?? item.total),
+    lineTotal: normalizeNumber(item.lineTotal ?? item.lineTotalWithVat ?? item.amount ?? item.total),
   };
 }
 
@@ -117,7 +120,7 @@ function normalizeVisionResult(value: unknown): InvoiceGeminiVisionParseResult {
     const entries = value.map(normalizeVisionEntry).filter((entry): entry is InvoiceGeminiVisionParseResult => Boolean(entry));
 
     if (entries.length === 0) {
-      throw new Error("Gemini vision ?????? ???????????? JSON.");
+      throw new Error("Gemini vision вернул некорректный JSON.");
     }
 
     return {
@@ -133,7 +136,7 @@ function normalizeVisionResult(value: unknown): InvoiceGeminiVisionParseResult {
   const entry = normalizeVisionEntry(value);
 
   if (!entry) {
-    throw new Error("Gemini vision ?????? ???????????? JSON.");
+    throw new Error("Gemini vision вернул некорректный JSON.");
   }
 
   return entry;
@@ -143,7 +146,7 @@ function getInvoiceFilePath(storageKey: string | null, fileUrl: string | null) {
   const normalizedKey = (storageKey || fileUrl?.replace(/^\/+/, "") || "").replaceAll("\\", "/");
 
   if (!normalizedKey.startsWith("uploads/invoices/")) {
-    throw new Error("Файл накладной вне разрешённой папки.");
+    throw new Error("Файл накладной вне разрешенной папки.");
   }
 
   const absolutePath = path.join(process.cwd(), "public", normalizedKey);
@@ -217,18 +220,23 @@ function buildVisionPrompt(rawText: string | null | undefined) {
     : "OCR text hint: not available";
 
   return [
-    "Разбери русскую накладную по изображениям.",
+    "Разбери русскую накладную по изображению.",
     "Верни только строгий JSON без markdown.",
-    "Не придумывай данные. Если значение неизвестно, верни null.",
-    "Найди только реальные товарные строки. Игнорируй реквизиты, ИНН, адреса, подписи, печати, итоги, страницу, служебные блоки.",
-    "Если таблица плохо читается, всё равно постарайся вернуть товары с name и null в непонятных числовых полях.",
-    "Р•СЃР»Рё РІ С‚Р°Р±Р»РёС†Рµ РµСЃС‚СЊ РєРѕР»РѕРЅРєРё Р¦РµРЅР° / Р¦РµРЅР° Р±РµР· РќР”РЎ / РЎС‚РѕРёРјРѕСЃС‚СЊ С‚РѕРІР°СЂРѕРІ Р±РµР· РќР”РЎ / РЎС‚Р°РІРєР° РќР”РЎ / РЎСѓРјРјР° РќР”РЎ / Р’СЃРµРіРѕ СЃ РќР”РЎ, С‚Рѕ:",
-    "- priceWithoutVat = С†РµРЅР° Р·Р° РµРґРёРЅРёС†Сѓ Р±РµР· РќР”РЎ",
-    "- vatRate = СЃС‚Р°РІРєР° РќР”РЎ",
-    "- lineTotal = РёС‚РѕРіРѕРІР°СЏ СЃСѓРјРјР° СЃС‚СЂРѕРєРё СЃ РќР”РЎ",
-    "- priceWithVat = lineTotal / quantity, РµСЃР»Рё РµСЃС‚СЊ quantity Рё lineTotal",
-    "РќРµ РїСѓС‚Р°Р№ С†РµРЅСѓ Р·Р° РµРґРёРЅРёС†Сѓ, СЃС‚РѕРёРјРѕСЃС‚СЊ СЃС‚СЂРѕРєРё Р±РµР· РќР”РЎ, СЃСѓРјРјСѓ РќР”РЎ Рё РёС‚РѕРіРѕРІСѓСЋ СЃСѓРјРјСѓ СЃ РќР”РЎ.",
-    "Р”Р»СЏ РҐРѕСЂРµРєРё / Horeca С‡Р°СЃС‚Рѕ РёРјРµРЅРЅРѕ С‚Р°РєРѕР№ РјР°РєРµС‚: С†РµРЅР° Р±РµР· РќР”РЎ Р·Р° 1 С€С‚СѓРєСѓ + РёС‚РѕРіРѕРІР°СЏ СЃСѓРјРјР° СЃ РќР”РЎ Р·Р° СЃС‚СЂРѕРєСѓ.",
+    "Не придумывай данные. Если значение не видно или неясно, верни null.",
+    "Нужны только реальные товарные строки. Игнорируй реквизиты, ИНН, адреса, подписи, печати, итоги по документу, заголовки разделов и служебные блоки.",
+    "Если строка товара читается частично, все равно верни item с name и null в непонятных числовых полях.",
+    "Очень важно: не путай фасовку внутри названия товара с количеством в строке.",
+    "Например, '100шт', '1кг/6шт', '110*160', '160*200', '200*300', '72мкм', '75мкм' это часть названия, а не quantity.",
+    "Если в колонке количества написано '600,000', '400,000', '500,000', это quantity = 600 / 400 / 500.",
+    "Если в таблице есть колонки 'Количество (объем)', 'Цена за единицу измерения', 'Стоимость товаров без налога - всего', 'Налоговая ставка', 'Сумма налога', 'Стоимость товаров с налогом - всего', то маппинг должен быть строгим:",
+    "- quantity = колонка количества",
+    "- priceWithoutVat = цена за единицу без НДС",
+    "- vatRate = ставка НДС",
+    "- lineTotal = итоговая сумма строки с НДС, то есть колонка 'Стоимость товаров с налогом - всего'",
+    "- priceWithVat = lineTotal / quantity, если видны quantity и lineTotal",
+    "Не путай priceWithoutVat, сумму строки без НДС, сумму НДС и итог с НДС.",
+    "Для поставщика Horeca / Хорека часто именно такой макет: колонка 4 = цена без НДС за 1 шт, колонка 5 = сумма без НДС по строке, колонка 8 = сумма НДС, колонка 9 = сумма по строке с НДС.",
+    "Для Horeca lineTotal нужно брать именно из колонки 9, а не из колонки 5 и не из колонки 8.",
     "JSON schema:",
     JSON.stringify({
       supplierName: null,
@@ -281,7 +289,7 @@ export async function parseInvoiceWithGeminiVision(
         {
           role: "system",
           content:
-            "Ты разбираешь русские накладные по изображениям и возвращаешь только JSON. Не логируй и не повторяй картинку, только факты.",
+            "Ты разбираешь русские накладные по изображениям и возвращаешь только JSON. Никаких пояснений, только факты из документа.",
         },
         {
           role: "user",
@@ -316,7 +324,7 @@ export async function parseInvoiceWithGeminiVision(
       normalizedError.includes("vision") ||
       normalizedError.includes("multimodal")
     ) {
-      throw new InvoiceVisionUnsupportedError("Текущий AI-провайдер не поддерживает разбор изображения напрямую");
+      throw new InvoiceVisionUnsupportedError("Текущий AI-провайдер не поддерживает разбор изображения напрямую.");
     }
 
     throw new Error(`Gemini vision не разобрал накладную: HTTP ${response.status}.`);
