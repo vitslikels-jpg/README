@@ -1,4 +1,4 @@
-import { OrderOptimizationPage } from "@/features/order-optimizations/components/order-optimization-page";
+import { OrderOptimizationPage } from "@/features/order-optimizations/components/smart-order-page";
 
 export default function SmartOrderRoutePage() {
   return <OrderOptimizationPage />;
