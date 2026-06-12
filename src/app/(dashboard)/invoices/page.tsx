@@ -6,9 +6,11 @@ import { FileText } from "lucide-react";
 import { useEnterprise } from "@/features/enterprises/components/enterprise-context";
 
 type InvoiceStatus = "uploaded" | "processing" | "needs_review" | "parsed" | "approved" | "failed";
+type InvoiceSource = "manual" | "telegram";
 
 type InvoiceListItem = {
   id: string;
+  source: InvoiceSource;
   supplierId: string | null;
   supplierName: string | null;
   detectedSupplierName: string | null;
@@ -46,7 +48,7 @@ const acceptedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "app
 const statusLabels: Record<InvoiceStatus, string> = {
   uploaded: "Загружена",
   processing: "Обрабатывается",
-  needs_review: "Проверка",
+  needs_review: "Требует проверки",
   parsed: "Разобрана",
   approved: "Подтверждена",
   failed: "Ошибка",
@@ -59,6 +61,11 @@ const statusClassNames: Record<InvoiceStatus, string> = {
   parsed: "invoiceStatus-neutral",
   approved: "invoiceStatus-approved",
   failed: "invoiceStatus-failed",
+};
+
+const sourceLabels: Record<InvoiceSource, string> = {
+  manual: "Вручную",
+  telegram: "Telegram",
 };
 
 function formatMoney(value: string | null) {
@@ -555,6 +562,7 @@ export default function InvoicesPage() {
                       <span className="invoiceRowField invoiceRowPrimary">{invoice.invoiceNumber ? `№${invoice.invoiceNumber}` : "Без номера"}</span>
                       <span className="invoiceRowField">{formatInvoiceDate(invoice.invoiceDate)}</span>
                       <span className="invoiceRowField">{getSupplierName(invoice)}</span>
+                      <span className="invoiceRowField">{sourceLabels[invoice.source]}</span>
                       <span className="invoiceRowField">{formatMoney(invoice.totalAmount)}</span>
                       <span className="invoiceRowField">НДС {formatMoney(invoice.vatAmount)}</span>
                       <span className="invoiceRowField">{invoice.itemsCount} строк</span>
