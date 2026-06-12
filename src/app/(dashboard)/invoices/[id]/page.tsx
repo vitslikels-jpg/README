@@ -1850,7 +1850,7 @@ export default function InvoiceDetailsPage() {
   }
 
   return (
-    <div className="pageStack">
+    <div className="pageStack" data-invoice-ui-version="2026-06-12-2">
       <section className="heroCard invoiceHeroCompact">
         <Link className="secondaryButton compactButton invoicesBackLink" href="/invoices">
           <ArrowLeft size={16} strokeWidth={2} />
