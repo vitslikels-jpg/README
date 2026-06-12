@@ -22,7 +22,8 @@ type RequestBody = {
 
 function normalizeProductName(value: string | null | undefined) {
   return normalizeCatalogText(value)
-    .replace(/ё/g, "е")
+    .replace(/\u0451/g, "\u0435")
+    .replace(/\u0401/g, "\u0415")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -77,13 +78,13 @@ export async function POST(request: Request, context: RouteContext) {
   const enterpriseId = body.enterpriseId?.trim();
 
   if (!enterpriseId) {
-    return jsonUtf8({ message: "Поле enterpriseId обязательно." }, { status: 400 });
+    return jsonUtf8({ message: "\u041f\u043e\u043b\u0435 enterpriseId \u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u043e." }, { status: 400 });
   }
 
   const enterprise = await ensureEnterpriseExists(enterpriseId);
 
   if (!enterprise) {
-    return jsonUtf8({ message: "Предприятие не найдено." }, { status: 404 });
+    return jsonUtf8({ message: "\u041f\u0440\u0435\u0434\u043f\u0440\u0438\u044f\u0442\u0438\u0435 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e." }, { status: 404 });
   }
 
   const invoice = await prisma.invoiceDocument.findFirst({
@@ -100,11 +101,11 @@ export async function POST(request: Request, context: RouteContext) {
   });
 
   if (!invoice) {
-    return jsonUtf8({ message: "Накладная не найдена." }, { status: 404 });
+    return jsonUtf8({ message: "\u041d\u0430\u043a\u043b\u0430\u0434\u043d\u0430\u044f \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430." }, { status: 404 });
   }
 
   if (!invoice.supplierId) {
-    return jsonUtf8({ message: "Сначала выберите поставщика." }, { status: 400 });
+    return jsonUtf8({ message: "\u0421\u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0430." }, { status: 400 });
   }
 
   const item = await prisma.invoiceItem.findFirst({
@@ -127,17 +128,17 @@ export async function POST(request: Request, context: RouteContext) {
   });
 
   if (!item) {
-    return jsonUtf8({ message: "Строка накладной не найдена." }, { status: 404 });
+    return jsonUtf8({ message: "\u0421\u0442\u0440\u043e\u043a\u0430 \u043d\u0430\u043a\u043b\u0430\u0434\u043d\u043e\u0439 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u0430." }, { status: 404 });
   }
 
   if (item.matchedProductId) {
-    return jsonUtf8({ message: "Для этой строки товар уже выбран." }, { status: 400 });
+    return jsonUtf8({ message: "\u0414\u043b\u044f \u044d\u0442\u043e\u0439 \u0441\u0442\u0440\u043e\u043a\u0438 \u0442\u043e\u0432\u0430\u0440 \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d." }, { status: 400 });
   }
 
   const normalizedItemName = normalizeProductName(item.productNameRaw);
 
   if (!normalizedItemName) {
-    return jsonUtf8({ message: "У строки нет корректного названия товара." }, { status: 400 });
+    return jsonUtf8({ message: "\u0423 \u0441\u0442\u0440\u043e\u043a\u0438 \u043d\u0435\u0442 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u043e\u0433\u043e \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044f \u0442\u043e\u0432\u0430\u0440\u0430." }, { status: 400 });
   }
 
   const currentDocument = await prisma.document.findFirst({
@@ -179,7 +180,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (duplicateProduct) {
     return jsonUtf8(
       {
-        message: `Такой товар уже есть в каталоге: ${duplicateProduct.name}. Выберите его вручную.`,
+        message: `\u0422\u0430\u043a\u043e\u0439 \u0442\u043e\u0432\u0430\u0440 \u0443\u0436\u0435 \u0435\u0441\u0442\u044c \u0432 \u043a\u0430\u0442\u0430\u043b\u043e\u0433\u0435: ${duplicateProduct.name}. \u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0435\u0433\u043e \u0432\u0440\u0443\u0447\u043d\u0443\u044e.`, 
         existingProduct: {
           id: duplicateProduct.id,
           name: duplicateProduct.name,
@@ -192,7 +193,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const productName = item.productNameRaw.trim();
-  const fallbackUnit = item.unit?.trim() || "шт";
+  const fallbackUnit = item.unit?.trim() || "\u0448\u0442";
   const unitFromItem = normalizeOptionalString(item.unit);
   const catalogUnit = await resolveUnit(item.unit ?? fallbackUnit);
   const unitCode = catalogUnit?.code ?? normalizeCatalogUnit(item.unit ?? fallbackUnit);

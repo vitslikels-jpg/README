@@ -1333,7 +1333,30 @@ export default function InvoiceDetailsPage() {
         }),
       });
 
-      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      const payload = (await response.json().catch(() => null)) as {
+        message?: string;
+        existingProduct?: {
+          id: string;
+          name: string;
+          supplierId: string;
+          supplierName: string | null;
+        } | null;
+      } | null;
+
+      if (response.status === 409 && payload?.existingProduct?.id) {
+        await handleSelectProduct(item.id, payload.existingProduct.id);
+        setProductSearchError("");
+        setSuccessMessage(`Товар уже был в каталоге и привязан к строке: ${payload.existingProduct.name}.`);
+        return;
+      }
+
+      if (response.status === 400 && payload?.message === "Для этой строки товар уже выбран.") {
+        await loadInvoice(activeEnterpriseId, params.id);
+        handleCloseProductSearch();
+        setProductSearchError("");
+        setSuccessMessage("Товар уже привязан к этой строке.");
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(payload?.message ?? "Не удалось создать товар.");
