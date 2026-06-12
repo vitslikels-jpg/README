@@ -1,5 +1,10 @@
 import { Prisma } from "@prisma/client";
-import { normalizeCatalogText } from "@/lib/catalog-model.shared.js";
+import {
+  buildCatalogDedupeKey,
+  normalizeCatalogText,
+  normalizeCatalogUnit,
+  normalizeOptionalString,
+} from "@/lib/catalog-model.shared.js";
 import { jsonUtf8 } from "@/lib/http";
 import { ensureEnterpriseExists } from "@/lib/orders";
 import { prisma } from "@/lib/prisma";
@@ -20,6 +25,24 @@ function normalizeProductName(value: string | null | undefined) {
     .replace(/ё/g, "е")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+async function resolveUnit(unitValue: string | null | undefined) {
+  const unitCode = normalizeCatalogUnit(unitValue);
+
+  if (!unitCode) {
+    return null;
+  }
+
+  return prisma.unit.findUnique({
+    where: {
+      code: unitCode,
+    },
+    select: {
+      id: true,
+      code: true,
+    },
+  });
 }
 
 async function recalculateInvoiceStatus(invoiceId: string) {
@@ -72,6 +95,7 @@ export async function POST(request: Request, context: RouteContext) {
       id: true,
       enterpriseId: true,
       supplierId: true,
+      invoiceDate: true,
     },
   });
 
@@ -94,7 +118,10 @@ export async function POST(request: Request, context: RouteContext) {
       matchedProductId: true,
       quantity: true,
       unit: true,
+      priceWithoutVat: true,
       priceWithVat: true,
+      vatRate: true,
+      lineTotal: true,
       confidence: true,
     },
   });
@@ -122,22 +149,8 @@ export async function POST(request: Request, context: RouteContext) {
     select: {
       id: true,
     },
-    orderBy: [
-      {
-        uploadedAt: "desc",
-      },
-      {
-        createdAt: "desc",
-      },
-    ],
+    orderBy: [{ uploadedAt: "desc" }, { createdAt: "desc" }],
   });
-
-  if (!currentDocument) {
-    return jsonUtf8(
-      { message: "У выбранного поставщика нет текущего прайса. Сначала загрузите прайс поставщика." },
-      { status: 400 },
-    );
-  }
 
   const existingProducts = await prisma.product.findMany({
     where: {
@@ -178,24 +191,70 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  const normalizedUnit = item.unit?.trim() || "шт";
+  const productName = item.productNameRaw.trim();
+  const fallbackUnit = item.unit?.trim() || "шт";
+  const unitFromItem = normalizeOptionalString(item.unit);
+  const catalogUnit = await resolveUnit(item.unit ?? fallbackUnit);
+  const unitCode = catalogUnit?.code ?? normalizeCatalogUnit(item.unit ?? fallbackUnit);
+  const normalizedName = normalizeCatalogText(productName);
+  const priceWithVat = item.priceWithVat?.toString() ?? null;
+  const priceWithoutVat = item.priceWithoutVat?.toString() ?? null;
+  const vatRate = item.vatRate?.toString() ?? null;
+  const quantity = item.quantity?.toString() ?? null;
+  const lineTotal = item.lineTotal?.toString() ?? null;
+  const effectivePrice = priceWithVat ?? priceWithoutVat;
   const hasStructuredFields = item.quantity !== null && Boolean(item.unit?.trim()) && item.priceWithVat !== null;
+  const unitDedupePart = unitCode ?? normalizeCatalogText(fallbackUnit);
+  const offerDedupeKey = buildCatalogDedupeKey([normalizedName, null, unitDedupePart]);
+  const masterDedupeKey = buildCatalogDedupeKey([normalizedName, null, unitDedupePart]);
+  const invoiceRawData = {
+    source: "invoice_manual_create",
+    invoiceId: id,
+    invoiceItemId: itemId,
+    quantity,
+    unit: unitFromItem,
+    priceWithoutVat,
+    priceWithVat,
+    vatRate,
+    lineTotal,
+  } satisfies Prisma.InputJsonValue;
 
   const result = await prisma.$transaction(async (tx) => {
+    let documentId = currentDocument?.id;
+
+    if (!documentId) {
+      const generatedDocument = await tx.document.create({
+        data: {
+          enterpriseId,
+          supplierId: invoice.supplierId!,
+          type: "price_list",
+          sourceFormat: "unknown",
+          originalFileName: `invoice-${invoice.id}-generated-price`,
+          storedFilePath: `generated/invoices/${invoice.id}/items/${item.id}`,
+          mimeType: "application/json",
+          fileSize: 0,
+          status: "parsed",
+          isCurrent: true,
+          uploadedAt: invoice.invoiceDate ?? new Date(),
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      documentId = generatedDocument.id;
+    }
+
     const product = await tx.product.create({
       data: {
         enterpriseId,
         supplierId: invoice.supplierId!,
-        documentId: currentDocument.id,
-        name: item.productNameRaw.trim(),
-        unit: normalizedUnit,
-        price: item.priceWithVat?.toString() ?? null,
+        documentId,
+        name: productName,
+        unit: fallbackUnit,
+        price: effectivePrice,
         sourceRow: 0,
-        rawData: {
-          source: "invoice_manual_create",
-          invoiceId: id,
-          invoiceItemId: itemId,
-        } satisfies Prisma.InputJsonValue,
+        rawData: invoiceRawData,
       },
       select: {
         id: true,
@@ -204,6 +263,112 @@ export async function POST(request: Request, context: RouteContext) {
         documentId: true,
         unit: true,
         price: true,
+      },
+    });
+
+    const productMaster = await tx.productMaster.upsert({
+      where: {
+        enterpriseId_dedupeKey: {
+          enterpriseId,
+          dedupeKey: masterDedupeKey,
+        },
+      },
+      update: {
+        unitId: catalogUnit?.id ?? null,
+        name: productName,
+        normalizedName,
+        legacyUnit: unitFromItem,
+      },
+      create: {
+        enterpriseId,
+        unitId: catalogUnit?.id ?? null,
+        name: productName,
+        normalizedName,
+        legacyUnit: unitFromItem,
+        dedupeKey: masterDedupeKey,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    const supplierOffer = await tx.supplierOffer.upsert({
+      where: {
+        supplierId_dedupeKey: {
+          supplierId: invoice.supplierId!,
+          dedupeKey: offerDedupeKey,
+        },
+      },
+      update: {
+        enterpriseId,
+        unitId: catalogUnit?.id ?? null,
+        name: productName,
+        normalizedName,
+        legacyUnit: unitFromItem,
+      },
+      create: {
+        enterpriseId,
+        supplierId: invoice.supplierId!,
+        unitId: catalogUnit?.id ?? null,
+        name: productName,
+        normalizedName,
+        legacyUnit: unitFromItem,
+        dedupeKey: offerDedupeKey,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    await tx.productMapping.upsert({
+      where: {
+        supplierOfferId_productMasterId: {
+          supplierOfferId: supplierOffer.id,
+          productMasterId: productMaster.id,
+        },
+      },
+      update: {
+        enterpriseId,
+        confidence: "1",
+        matchKey: productMaster.id,
+        matchSource: "manual_invoice_create",
+        status: "active",
+      },
+      create: {
+        enterpriseId,
+        supplierOfferId: supplierOffer.id,
+        productMasterId: productMaster.id,
+        confidence: "1",
+        matchKey: productMaster.id,
+        matchSource: "manual_invoice_create",
+        status: "active",
+      },
+    });
+
+    await tx.priceSnapshot.updateMany({
+      where: {
+        supplierOfferId: supplierOffer.id,
+        isCurrent: true,
+      },
+      data: {
+        isCurrent: false,
+      },
+    });
+
+    await tx.priceSnapshot.create({
+      data: {
+        enterpriseId,
+        supplierId: invoice.supplierId!,
+        supplierOfferId: supplierOffer.id,
+        documentId,
+        legacyProductId: product.id,
+        unitId: catalogUnit?.id ?? null,
+        legacyUnit: unitFromItem,
+        price: effectivePrice,
+        sourceRow: 0,
+        capturedAt: invoice.invoiceDate ?? new Date(),
+        isCurrent: true,
+        rawData: invoiceRawData,
       },
     });
 
