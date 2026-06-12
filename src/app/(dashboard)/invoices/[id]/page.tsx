@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, FileText, Minus, Plus, RotateCcw, X } from "lucide-react";
 import { useEnterprise } from "@/features/enterprises/components/enterprise-context";
+import { extractInvoiceSupplierDetails } from "@/lib/invoice-supplier-details";
 import { deriveVatFields } from "@/lib/invoice-vat";
 
 type InvoiceStatus = "uploaded" | "processing" | "needs_review" | "parsed" | "approved" | "failed";
@@ -87,6 +88,14 @@ type EditInvoiceItemDraft = {
   priceWithVat: string;
   lineTotal: string;
   vatRate: string;
+};
+
+type CreateSupplierDraft = {
+  supplierName: string;
+  legalName: string;
+  inn: string;
+  alias: string;
+  comment: string;
 };
 
 type InvoiceDetails = {
@@ -492,6 +501,13 @@ export default function InvoiceDetailsPage() {
   const [isSearchingSuppliers, setIsSearchingSuppliers] = useState(false);
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
   const [isCreatingSupplier, setIsCreatingSupplier] = useState(false);
+  const [createSupplierDraft, setCreateSupplierDraft] = useState<CreateSupplierDraft>({
+    supplierName: "",
+    legalName: "",
+    inn: "",
+    alias: "",
+    comment: "",
+  });
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editItemDraft, setEditItemDraft] = useState<EditInvoiceItemDraft | null>(null);
   const [isSavingItemEdit, setIsSavingItemEdit] = useState(false);
@@ -564,6 +580,21 @@ export default function InvoiceDetailsPage() {
 
     return () => controller.abort();
   }, [activeEnterpriseId, loadInvoice, params?.id]);
+
+  const extractedSupplierDetails = useMemo(
+    () => extractInvoiceSupplierDetails(invoice?.rawText, invoice?.detectedSupplierName),
+    [invoice?.detectedSupplierName, invoice?.rawText],
+  );
+
+  useEffect(() => {
+    setCreateSupplierDraft({
+      supplierName: extractedSupplierDetails.supplierName ?? "",
+      legalName: extractedSupplierDetails.legalName ?? "",
+      inn: extractedSupplierDetails.inn ?? "",
+      alias: extractedSupplierDetails.aliases.find((value) => value !== extractedSupplierDetails.supplierName) ?? "",
+      comment: "",
+    });
+  }, [extractedSupplierDetails]);
 
   useEffect(() => {
     if (!activeEnterpriseId || !productSearchItemId) {
@@ -1081,6 +1112,13 @@ export default function InvoiceDetailsPage() {
   function handleOpenSupplierSearch() {
     setIsSupplierSearchOpen(true);
     setSupplierSearchQuery(invoice?.supplierName || invoice?.detectedSupplierName || "");
+    setCreateSupplierDraft({
+      supplierName: extractedSupplierDetails.supplierName ?? "",
+      legalName: extractedSupplierDetails.legalName ?? "",
+      inn: extractedSupplierDetails.inn ?? "",
+      alias: extractedSupplierDetails.aliases.find((value) => value !== extractedSupplierDetails.supplierName) ?? "",
+      comment: "",
+    });
     setSupplierSearchResults([]);
     setSupplierSearchError("");
     setProductSearchItemId(null);
@@ -1098,6 +1136,13 @@ export default function InvoiceDetailsPage() {
     setSupplierSearchQuery("");
     setSupplierSearchResults([]);
     setSupplierSearchError("");
+  }
+
+  function handleChangeCreateSupplierDraft(field: keyof CreateSupplierDraft, value: string) {
+    setCreateSupplierDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
   }
 
   function handleCloseProductSearch() {
@@ -1473,12 +1518,8 @@ export default function InvoiceDetailsPage() {
       return;
     }
 
-    if (!invoice.detectedSupplierName?.trim()) {
+    if (!createSupplierDraft.supplierName.trim()) {
       setErrorMessage("В накладной нет названия поставщика.");
-      return;
-    }
-
-    if (!window.confirm("Создать нового поставщика из накладной?")) {
       return;
     }
 
@@ -1495,6 +1536,11 @@ export default function InvoiceDetailsPage() {
         },
         body: JSON.stringify({
           enterpriseId: activeEnterpriseId,
+          supplierName: createSupplierDraft.supplierName,
+          legalName: createSupplierDraft.legalName,
+          inn: createSupplierDraft.inn,
+          alias: createSupplierDraft.alias,
+          comment: createSupplierDraft.comment,
         }),
       });
 
@@ -2094,21 +2140,32 @@ export default function InvoiceDetailsPage() {
           <FileText size={20} strokeWidth={2} />
           <div>
             <strong>{invoice.supplierId ? getSupplierName(invoice) : "Поставщик не найден"}</strong>
-            <p>{invoice.supplierId ? "Поставщик выбран для этой накладной." : "Выберите поставщика, чтобы поиск товаров был точнее."}</p>
+            <p>
+              {invoice.supplierId
+                ? "Поставщик выбран для этой накладной."
+                : "Создайте нового поставщика из накладной или свяжите её с существующим."}
+            </p>
           </div>
         </div>
 
-        {!invoice.supplierId && invoice.detectedSupplierName ? (
-          <div className="invoiceSupplierActions">
-            <p className="invoiceHint">
-              AI нашёл поставщика: <strong>{invoice.detectedSupplierName}</strong>
+        {!invoice.supplierId ? (
+          <div className="emptyState invoiceSearchEmptyState">
+            <p className="emptyStateTitle">Поставщик не найден</p>
+            <p className="emptyStateText">
+              {extractedSupplierDetails.supplierName ? `Название: ${extractedSupplierDetails.supplierName}` : "Название не удалось уверенно вытащить."}
             </p>
-            <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
-              Связать с существующим поставщиком
-            </button>
-            <button type="button" className="primaryButton compactButton" onClick={() => void handleCreateSupplierFromInvoice()} disabled={isBusy}>
-              {isCreatingSupplier ? "Создаём..." : "Создать нового поставщика"}
-            </button>
+            {extractedSupplierDetails.legalName && extractedSupplierDetails.legalName !== extractedSupplierDetails.supplierName ? (
+              <p className="emptyStateText">Юр. название: {extractedSupplierDetails.legalName}</p>
+            ) : null}
+            {extractedSupplierDetails.inn ? <p className="emptyStateText">ИНН: {extractedSupplierDetails.inn}</p> : null}
+            <div className="invoiceSupplierActions">
+              <button type="button" className="secondaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
+                Связать с существующим поставщиком
+              </button>
+              <button type="button" className="primaryButton compactButton" onClick={handleOpenSupplierSearch} disabled={isBusy}>
+                Создать поставщика из накладной
+              </button>
+            </div>
           </div>
         ) : null}
       </section>
@@ -2568,13 +2625,83 @@ export default function InvoiceDetailsPage() {
             <div className="invoiceSearchModalHeader">
               <div>
                 <p className="panelEyebrow">Поставщик</p>
-                <h2 className="sectionTitle">Связать с существующим поставщиком</h2>
-                {invoice?.detectedSupplierName ? <p className="pageDescription">AI нашёл: {invoice.detectedSupplierName}</p> : null}
+                <h2 className="sectionTitle">Связать или создать поставщика</h2>
+                {extractedSupplierDetails.supplierName ? <p className="pageDescription">Из накладной: {extractedSupplierDetails.supplierName}</p> : null}
               </div>
               <button type="button" className="secondaryButton compactButton" onClick={handleCloseSupplierSearch} disabled={isBusy}>
                 Закрыть
               </button>
             </div>
+
+            {!invoice?.supplierId ? (
+              <div className="card">
+                <div className="cardHeader">
+                  <div>
+                    <p className="panelEyebrow">Новый поставщик</p>
+                    <h3 className="sectionTitle">Создать поставщика из накладной</h3>
+                  </div>
+                </div>
+
+                <div className="invoiceSearchModalToolbar">
+                  <label className="field">
+                    <span>Название поставщика</span>
+                    <input
+                      type="text"
+                      value={createSupplierDraft.supplierName}
+                      onChange={(event) => handleChangeCreateSupplierDraft("supplierName", event.target.value)}
+                      placeholder="ООО Хорека Фуд"
+                      disabled={isBusy}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Юр. название</span>
+                    <input
+                      type="text"
+                      value={createSupplierDraft.legalName}
+                      onChange={(event) => handleChangeCreateSupplierDraft("legalName", event.target.value)}
+                      placeholder="Полное юр. название"
+                      disabled={isBusy}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>ИНН</span>
+                    <input
+                      type="text"
+                      value={createSupplierDraft.inn}
+                      onChange={(event) => handleChangeCreateSupplierDraft("inn", event.target.value)}
+                      placeholder="10 или 12 цифр"
+                      disabled={isBusy}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Alias</span>
+                    <input
+                      type="text"
+                      value={createSupplierDraft.alias}
+                      onChange={(event) => handleChangeCreateSupplierDraft("alias", event.target.value)}
+                      placeholder="Доп. вариант названия из накладной"
+                      disabled={isBusy}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Комментарий</span>
+                    <input
+                      type="text"
+                      value={createSupplierDraft.comment}
+                      onChange={(event) => handleChangeCreateSupplierDraft("comment", event.target.value)}
+                      placeholder="Что сохранить по поставщику"
+                      disabled={isBusy}
+                    />
+                  </label>
+                </div>
+
+                <div className="invoiceSupplierActions">
+                  <button type="button" className="primaryButton compactButton" onClick={() => void handleCreateSupplierFromInvoice()} disabled={isBusy}>
+                    {isCreatingSupplier ? "Создаём..." : "Создать поставщика из накладной"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             <div className="invoiceSearchModalToolbar">
               <label className="field">
