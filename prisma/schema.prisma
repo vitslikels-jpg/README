@@ -110,8 +110,49 @@ model Enterprise {
   orders             Order[]
   orderOptimizations OrderOptimization[]
   invoiceDocuments   InvoiceDocument[]
+  iikoStores         IikoStore[]
+  iikoProducts       IikoProduct[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
+}
+
+model IikoStore {
+  id           String     @id @default(cuid())
+  enterpriseId String
+  externalId   String
+  name         String?
+  code         String?
+  rawData      Json
+  lastSyncedAt DateTime
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  enterprise   Enterprise @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+
+  @@unique([enterpriseId, externalId])
+  @@index([enterpriseId])
+}
+
+model IikoProduct {
+  id                     String     @id @default(cuid())
+  enterpriseId           String
+  externalId             String
+  name                   String?
+  code                   String?
+  type                   String?
+  mainUnit               String?
+  parentId               String?
+  parentName             String?
+  estimatedPurchasePrice Decimal?   @db.Decimal(14, 2)
+  defaultSalePrice       Decimal?   @db.Decimal(14, 2)
+  rawData                Json
+  lastSyncedAt           DateTime
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+  enterprise             Enterprise @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+
+  @@unique([enterpriseId, externalId])
+  @@index([enterpriseId])
+  @@index([enterpriseId, type])
 }
 
 model Supplier {

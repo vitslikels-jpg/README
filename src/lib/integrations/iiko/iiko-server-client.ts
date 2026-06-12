@@ -25,6 +25,9 @@ type IikoServerConfig =
       details: string;
     };
 
+export type IikoStorePayload = Record<string, unknown>;
+export type IikoProductPayload = Record<string, unknown>;
+
 const DEFAULT_TIMEOUT_MS = 15000;
 
 function getEnvValue(name: string) {
@@ -117,6 +120,82 @@ async function fetchWithTimeout(input: string, timeoutMs: number, init?: Request
   } finally {
     cleanup();
   }
+}
+
+async function authenticateIikoServer() {
+  const config = getIikoServerConfig();
+
+  if (!config.ok) {
+    throw new Error(config.details);
+  }
+
+  const { serverUrl, username, password, timeoutMs } = config;
+  const authUrl = new URL("/resto/api/auth", serverUrl);
+  authUrl.searchParams.set("login", username);
+  authUrl.searchParams.set("pass", buildPasswordHash(password));
+
+  const authResponse = await fetchWithTimeout(authUrl.toString(), timeoutMs, {
+    method: "GET",
+    headers: {
+      Accept: "text/plain, application/json, */*",
+    },
+  });
+  const authText = await readResponseText(authResponse);
+
+  if (!authResponse.ok) {
+    throw new Error(authText || `iiko вернул HTTP ${authResponse.status} на авторизации.`);
+  }
+
+  const sessionCookie = authResponse.headers.get("set-cookie");
+
+  return {
+    serverUrl,
+    timeoutMs,
+    accessToken: authText,
+    sessionCookie,
+  };
+}
+
+async function fetchIikoJson<T>(path: string): Promise<T> {
+  const session = await authenticateIikoServer();
+  const url = new URL(path, session.serverUrl);
+  const headers = new Headers({
+    Accept: "application/json, */*",
+  });
+
+  if (session.accessToken) {
+    url.searchParams.set("key", session.accessToken);
+  } else if (session.sessionCookie) {
+    headers.set("Cookie", session.sessionCookie);
+  }
+
+  const response = await fetchWithTimeout(url.toString(), session.timeoutMs, {
+    method: "GET",
+    headers,
+  });
+  const responseText = await readResponseText(response);
+
+  if (!response.ok) {
+    throw new Error(responseText || `iiko вернул HTTP ${response.status} для ${path}.`);
+  }
+
+  try {
+    return JSON.parse(responseText) as T;
+  } catch {
+    throw new Error(`iiko вернул некорректный JSON для ${path}.`);
+  }
+}
+
+export async function getStores(): Promise<IikoStorePayload[]> {
+  const stores = await fetchIikoJson<unknown>("/resto/api/corporation/stores");
+
+  return Array.isArray(stores) ? (stores as IikoStorePayload[]) : [];
+}
+
+export async function getProducts(): Promise<IikoProductPayload[]> {
+  const products = await fetchIikoJson<unknown>("/resto/api/v2/entities/products/list");
+
+  return Array.isArray(products) ? (products as IikoProductPayload[]) : [];
 }
 
 export async function testIikoServerConnection(): Promise<IikoConnectionTestResult> {
