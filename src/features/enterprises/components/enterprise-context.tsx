@@ -32,11 +32,20 @@ export function EnterpriseProvider({
   initialEnterprises: Enterprise[];
 }) {
   const [enterprises, setEnterprises] = useState(initialEnterprises);
-  const [activeEnterpriseId, setActiveEnterpriseId] = useState<string | null>(null);
+  const [activeEnterpriseId, setActiveEnterpriseId] = useState<string | null>(
+    initialEnterprises.length === 1 ? initialEnterprises[0]?.id ?? null : null,
+  );
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     setEnterprises(initialEnterprises);
+    setActiveEnterpriseId((current) => {
+      if (current) {
+        return current;
+      }
+
+      return initialEnterprises.length === 1 ? initialEnterprises[0]?.id ?? null : null;
+    });
   }, [initialEnterprises]);
 
   async function refreshEnterprises() {
@@ -57,8 +66,10 @@ export function EnterpriseProvider({
   }
 
   useEffect(() => {
-    void refreshEnterprises();
-  }, []);
+    if (initialEnterprises.length === 0) {
+      void refreshEnterprises();
+    }
+  }, [initialEnterprises.length]);
 
   useEffect(() => {
     const storedEnterpriseId = window.localStorage.getItem(STORAGE_KEY);
