@@ -32,14 +32,11 @@ export function EnterpriseProvider({
   initialEnterprises: Enterprise[];
 }) {
   const [enterprises, setEnterprises] = useState(initialEnterprises);
-  const [activeEnterpriseId, setActiveEnterpriseId] = useState<string | null>(
-    initialEnterprises[0]?.id ?? null,
-  );
+  const [activeEnterpriseId, setActiveEnterpriseId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     setEnterprises(initialEnterprises);
-    setActiveEnterpriseId((current) => current ?? initialEnterprises[0]?.id ?? null);
   }, [initialEnterprises]);
 
   async function refreshEnterprises() {
