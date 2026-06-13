@@ -135,6 +135,7 @@ model IikoStore {
 model IikoProduct {
   id                     String     @id @default(cuid())
   enterpriseId           String
+  productMasterId        String?
   externalId             String
   name                   String?
   code                   String?
@@ -304,6 +305,9 @@ model InvoiceDocument {
   storageKey           String?
   originalFileName     String?
   status               InvoiceDocumentStatus @default(uploaded)
+  source               InvoiceDocumentSource @default(manual)
+  sourceMeta           Json?
+  sourceExternalId     String?               @unique
 
   detectedSupplierName String?
   confidence           Float?
