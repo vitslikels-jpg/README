@@ -1,5 +1,5 @@
-import { HomeDashboard } from "@/features/home/components/home-dashboard";
+import { HomeDashboardClient } from "./home-dashboard-client";
 
 export default function HomePage() {
-  return <HomeDashboard />;
+  return <HomeDashboardClient />;
 }

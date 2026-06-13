@@ -47,128 +47,6 @@ const emptyOverview: HomeOverviewPayload = {
   attentionItems: [],
 };
 
-const previewOverview: HomeOverviewPayload = {
-  periodLabel: "Май 2026",
-  summaryCards: [
-    {
-      label: "Закупки за месяц",
-      value: "2 840 000 ₽",
-      detail: "Факт по iiko",
-      tone: "success",
-      icon: "shoppingCart",
-    },
-    {
-      label: "Экономия",
-      value: "186 400 ₽",
-      detail: "К прошлой цене и лучшим ценам",
-      tone: "success",
-      icon: "trendingUp",
-    },
-    {
-      label: "Упущенная экономия",
-      value: "42 700 ₽",
-      detail: "Купили дороже, чем могли",
-      tone: "warning",
-      icon: "badgePercent",
-    },
-    {
-      label: "Проблемы",
-      value: "27",
-      detail: "Требуют проверки",
-      tone: "danger",
-      icon: "triangleAlert",
-    },
-    {
-      label: "Рост цен",
-      value: "18 товаров",
-      detail: "За последние 30 дней",
-      tone: "success",
-      icon: "trendingUp",
-    },
-  ],
-  heroFacts: [],
-  workflowStats: [
-    {
-      label: "Заказано",
-      value: "428",
-      detail: "товаров",
-      tone: "success",
-    },
-    {
-      label: "Выгодно распределено",
-      value: "361",
-      detail: "товар",
-      tone: "success",
-    },
-    {
-      label: "Купили не по лучшей цене",
-      value: "24",
-      detail: "товара",
-      tone: "warning",
-    },
-    {
-      label: "Без актуальной цены",
-      value: "43",
-      detail: "товара",
-      tone: "neutral",
-    },
-  ],
-  lossRows: [
-    {
-      title: "Куриное филе",
-      supplier: "Поставщик N2",
-      purchasePrice: "320,00 ₽/кг",
-      bestPrice: "280,00 ₽/кг",
-      quantity: "150 кг",
-      loss: "6 000 ₽",
-      tone: "danger",
-    },
-    {
-      title: "Масло сливочное",
-      supplier: "Поставщик N3",
-      purchasePrice: "780,00 ₽/кг",
-      bestPrice: "650,00 ₽/кг",
-      quantity: "40 кг",
-      loss: "5 200 ₽",
-      tone: "danger",
-    },
-    {
-      title: "Томаты",
-      supplier: "Поставщик N1",
-      purchasePrice: "210,00 ₽/кг",
-      bestPrice: "175,00 ₽/кг",
-      quantity: "60 кг",
-      loss: "2 100 ₽",
-      tone: "danger",
-    },
-    {
-      title: "Сыр моцарелла",
-      supplier: "Поставщик N2",
-      purchasePrice: "610,00 ₽/кг",
-      bestPrice: "560,00 ₽/кг",
-      quantity: "25 кг",
-      loss: "1 250 ₽",
-      tone: "danger",
-    },
-  ],
-  attentionItems: [
-    {
-      title: "5 товаров куплены дороже лучшей цены",
-      description: "Проверьте распределение перед следующим заказом.",
-      value: "Критично",
-      tone: "danger",
-      icon: "triangleAlert",
-    },
-    {
-      title: "43 товара без актуальной цены",
-      description: "Нужно обновить прайсы или сопоставление.",
-      value: "Проверить",
-      tone: "warning",
-      icon: "fileSpreadsheet",
-    },
-  ],
-};
-
 const lossProductIcons = ["🥩", "🧈", "🍅", "🧀", "🥬"];
 
 function HomeSummaryCard({ item }: { item: HomeOverviewSummaryCard }) {
@@ -233,7 +111,9 @@ function HomeLossTable({ rows }: { rows: HomeOverviewLossRow[] }) {
     return (
       <div className="emptyState">
         <p className="emptyStateTitle">Потерь пока не видно</p>
-        <p className="emptyStateText">Когда появятся закупки с сопоставимыми ценами, здесь будут конкретные потери.</p>
+        <p className="emptyStateText">
+          Когда появятся закупки с сопоставимыми ценами, здесь будут конкретные потери.
+        </p>
       </div>
     );
   }
@@ -303,12 +183,15 @@ export function HomeDashboard() {
 
   useEffect(() => {
     if (!activeEnterpriseId) {
+      setOverview(emptyOverview);
+      setIsLoading(false);
       return;
     }
 
     const controller = new AbortController();
 
     const loadOverview = async () => {
+      setOverview(emptyOverview);
       setIsLoading(true);
       setErrorMessage("");
 
