@@ -79,6 +79,11 @@ enum InvoiceDocumentStatus {
   failed
 }
 
+enum InvoiceDocumentSource {
+  manual
+  telegram
+}
+
 enum InvoicePriceChangeStatus {
   pending
   approved
