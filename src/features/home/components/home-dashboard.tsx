@@ -342,7 +342,7 @@ export function HomeDashboard() {
     return () => controller.abort();
   }, [activeEnterpriseId]);
 
-  const visibleOverview = activeEnterpriseId && overview.summaryCards.length > 0 ? overview : previewOverview;
+  const visibleOverview = overview.summaryCards.length > 0 ? overview : emptyOverview;
 
   return (
     <div className="pageStack homeDashboard homeDashboardV2">
