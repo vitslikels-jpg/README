@@ -150,10 +150,12 @@ model IikoProduct {
   createdAt              DateTime   @default(now())
   updatedAt              DateTime   @updatedAt
   enterprise             Enterprise @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  productMaster          ProductMaster? @relation(fields: [productMasterId], references: [id], onDelete: SetNull)
 
   @@unique([enterpriseId, externalId])
   @@index([enterpriseId])
   @@index([enterpriseId, type])
+  @@index([productMasterId])
 }
 
 model Supplier {
@@ -441,6 +443,7 @@ model ProductMaster {
   enterprise      Enterprise       @relation(fields: [enterpriseId], references: [id])
   unit            Unit?            @relation(fields: [unitId], references: [id], onDelete: SetNull)
   mappings        ProductMapping[]
+  iikoProducts    IikoProduct[]
   orderItems      OrderItem[]
   optimizationResults OrderOptimizationResult[] @relation("OrderOptimizationSelectedProductMaster")
   createdAt       DateTime         @default(now())
